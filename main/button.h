@@ -16,4 +16,5 @@
 
 esp_err_t button_init(void);
 
-int button_get_current_mode(void);
+int  button_get_current_mode(void);
+void button_set_current_mode(int mode);

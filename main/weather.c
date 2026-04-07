@@ -41,10 +41,11 @@ static weather_config_t s_cfg = {
     .refresh_min = 60,
 };
 
-static weather_data_t   s_data;
+static weather_data_t     s_data;
 static EventGroupHandle_t s_event;
 static SemaphoreHandle_t  s_fetch_mutex;
-static volatile bool    s_skip_initial_task_fetch;
+static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool               s_skip_initial_task_fetch;
 
 /* ── weather icons (24x24 bitmaps, 72 bytes each) ────────────────── */
 
@@ -659,14 +660,18 @@ esp_err_t weather_init(void)
 esp_err_t weather_get_config(weather_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cfg_mux);
     *out = s_cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
     return ESP_OK;
 }
 
 esp_err_t weather_set_config(const weather_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cfg_mux);
     s_cfg = *cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
     nvs_save();
     ESP_LOGI(TAG, "Config saved: enabled=%d, loc=%s, refresh=%lum",
              s_cfg.enabled, s_cfg.location, (unsigned long)s_cfg.refresh_min);

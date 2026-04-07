@@ -35,6 +35,7 @@ static slideshow_config_t s_config = {
 };
 
 static EventGroupHandle_t s_event;
+static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 static char  s_current_image[64];
 static int   s_current_index;
 
@@ -229,7 +230,9 @@ esp_err_t scheduler_init(void)
 esp_err_t scheduler_get_config(slideshow_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cfg_mux);
     *out = s_config;
+    portEXIT_CRITICAL(&s_cfg_mux);
     return ESP_OK;
 }
 
@@ -240,8 +243,10 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
     if (cfg->interval_sec < 60) return ESP_ERR_INVALID_ARG;
     if (cfg->interval_sec > 86400) return ESP_ERR_INVALID_ARG;
 
+    portENTER_CRITICAL(&s_cfg_mux);
     bool slideshow_was_on = s_config.enabled;
     s_config = *cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
     nvs_save();
 
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%lus, mode=%d",

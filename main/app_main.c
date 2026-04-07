@@ -117,8 +117,7 @@ static void render_welcome_screen(void)
         fb_utf8_scaled(fb, (W - iw) / 2, H - bot_h + sc, info, COLOR_WHITE, sc);
     }
 
-    epd_display_from_buffer(fb);
-    fb_destroy(fb);
+    epd_display_fb_free(fb);
     ESP_LOGI(TAG, "Welcome screen displayed");
 }
 
@@ -132,8 +131,15 @@ static void boot_display_route(void)
     ESP_LOGI(TAG, "boot_display_route: welcome screen done, delaying 10s");
     vTaskDelay(pdMS_TO_TICKS(10000));
 
-    display_policy_set_manual_screen_active(false);
-    ESP_LOGI(TAG, "boot_display_route: done, auto-refresh enabled");
+    int mode = power_mgr_load_mode();
+    int n = display_mode_count();
+    if (mode < 0 || mode >= n) mode = 0;
+    ESP_LOGI(TAG, "boot_display_route: switching to mode %d (%s)",
+             mode, display_mode_name(mode));
+    display_mode_show(mode);
+    button_set_current_mode(mode);
+
+    ESP_LOGI(TAG, "boot_display_route: done, mode %d active", mode);
 }
 
 static void start_mdns(void)
@@ -235,6 +241,8 @@ static void full_boot(void)
 
     ESP_ERROR_CHECK(epd_init());
 
+    display_policy_set_manual_screen_active(true);
+
     ESP_ERROR_CHECK(scheduler_init());
     ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
@@ -252,8 +260,6 @@ static void full_boot(void)
     display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
     display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
 
-    ESP_ERROR_CHECK(button_init());
-
     http_app_config_t cfg = {
         .mount_path = "/spiffs",
         .upload_path = "/spiffs/upload.jpg",
@@ -261,6 +267,8 @@ static void full_boot(void)
     ESP_ERROR_CHECK(http_app_start(&cfg));
 
     boot_display_route();
+
+    ESP_ERROR_CHECK(button_init());
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     if (running) {

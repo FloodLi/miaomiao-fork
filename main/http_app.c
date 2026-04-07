@@ -129,6 +129,8 @@ static esp_err_t auth_config_get_handler(httpd_req_t *req)
 
 static esp_err_t auth_config_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     char buf[160] = {0};
     int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (len <= 0) {
@@ -149,8 +151,13 @@ static esp_err_t auth_config_post_handler(httpd_req_t *req)
     if (nvs_open(AUTH_NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
         if (ju && cJSON_IsString(ju) && jp && cJSON_IsString(jp) &&
             strlen(ju->valuestring) > 0 && strlen(jp->valuestring) > 0) {
-            nvs_set_str(h, AUTH_NVS_USER, ju->valuestring);
-            nvs_set_str(h, AUTH_NVS_PASS, jp->valuestring);
+            char user_trunc[32], pass_trunc[64];
+            strncpy(user_trunc, ju->valuestring, sizeof(user_trunc) - 1);
+            user_trunc[sizeof(user_trunc) - 1] = '\0';
+            strncpy(pass_trunc, jp->valuestring, sizeof(pass_trunc) - 1);
+            pass_trunc[sizeof(pass_trunc) - 1] = '\0';
+            nvs_set_str(h, AUTH_NVS_USER, user_trunc);
+            nvs_set_str(h, AUTH_NVS_PASS, pass_trunc);
         } else {
             nvs_erase_key(h, AUTH_NVS_USER);
             nvs_erase_key(h, AUTH_NVS_PASS);
@@ -426,6 +433,7 @@ static esp_err_t slideshow_get_handler(httpd_req_t *req)
 
 static esp_err_t slideshow_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[128] = {0};
     int len = req->content_len;
     if (len <= 0 || len >= (int)sizeof(buf)) {
@@ -653,6 +661,7 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
 
 static esp_err_t weather_config_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[512] = {0};
     int len = req->content_len;
     if (len <= 0 || len >= (int)sizeof(buf)) {
@@ -742,6 +751,7 @@ static esp_err_t clock_config_get_handler(httpd_req_t *req)
 
 static esp_err_t clock_config_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[128] = {0};
     int len = req->content_len;
     if (len <= 0 || len >= (int)sizeof(buf)) {
@@ -835,6 +845,7 @@ static esp_err_t msg_config_get_handler(httpd_req_t *req)
 
 static esp_err_t msg_config_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     char *buf = malloc(MSG_MAX_LEN + 128);
     if (!buf) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存分配失败");
@@ -934,6 +945,7 @@ static esp_err_t panel_config_get_handler(httpd_req_t *req)
 
 static esp_err_t panel_config_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[128];
     int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (len <= 0) {

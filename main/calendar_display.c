@@ -361,8 +361,7 @@ static void cal_run_render(int year, int month)
 
     cal_render_month(fb, year, month, ty, tm, td);
 
-    esp_err_t err = epd_display_from_buffer(fb);
-    fb_destroy(fb);
+    esp_err_t err = epd_display_fb_free(fb);
 
     if (err == ESP_OK) {
         display_policy_set_manual_screen_active(true);

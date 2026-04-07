@@ -81,6 +81,9 @@ esp_err_t epd_set_panel(epd_panel_t panel)
     if (panel != EPD_PANEL_42_BWR && panel != EPD_PANEL_583_BWR)
         return ESP_ERR_INVALID_ARG;
 
+    if (s_epd_mutex)
+        xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+
     if (s_panel != panel) {
         s_panel_seq_done = false;
         ESP_LOGW(TAG, "Panel changed to %s, will re-init on next display",
@@ -88,6 +91,9 @@ esp_err_t epd_set_panel(epd_panel_t panel)
     }
 
     s_panel = panel;
+
+    if (s_epd_mutex)
+        xSemaphoreGive(s_epd_mutex);
 
     nvs_handle_t h;
     if (nvs_open("epd", NVS_READWRITE, &h) == ESP_OK) {
@@ -183,16 +189,35 @@ static void epd_dat(uint8_t data)
 static void epd_bulk(const uint8_t *data, size_t len)
 {
     gpio_set_level(PIN_EPD_DC, 1);
+
+    bool src_is_dma = esp_ptr_dma_capable(data);
+    uint8_t *bounce = NULL;
+    if (!src_is_dma) {
+        bounce = heap_caps_malloc(EPD_FILL_CHUNK, MALLOC_CAP_DMA);
+        if (!bounce) {
+            ESP_LOGE(TAG, "DMA bounce alloc failed");
+            return;
+        }
+    }
+
     size_t offset = 0;
     while (offset < len) {
         size_t n = (len - offset > EPD_FILL_CHUNK) ? EPD_FILL_CHUNK : (len - offset);
-        esp_err_t e = spi_tx(data + offset, n);
+        const uint8_t *tx_ptr;
+        if (bounce) {
+            memcpy(bounce, data + offset, n);
+            tx_ptr = bounce;
+        } else {
+            tx_ptr = data + offset;
+        }
+        esp_err_t e = spi_tx(tx_ptr, n);
         if (e != ESP_OK) {
             ESP_LOGE(TAG, "bulk spi err %s", esp_err_to_name(e));
             break;
         }
         offset += n;
     }
+    free(bounce);
 }
 
 static void epd_fill(uint8_t value, size_t len)
@@ -734,7 +759,6 @@ esp_err_t epd_display_from_file(const char *path)
     panel_ensure_ready();
 
     if (s_panel == EPD_PANEL_42_BWR) {
-        /* buf = black plane; then reuse buf for red plane */
         ssd1619_cursor_home();
         epd_cmd(0x24);
         epd_bulk(buf, (size_t)pb);
@@ -746,6 +770,9 @@ esp_err_t epd_display_from_file(const char *path)
         ssd1619_cursor_home();
         epd_cmd(0x26);
         epd_bulk(buf, (size_t)pb);
+
+        fclose(f); f = NULL;
+        free(buf); buf = NULL;
         ssd1619_refresh();
     } else {
         epd_cmd(0x10);
@@ -766,11 +793,14 @@ esp_err_t epd_display_from_file(const char *path)
         delay_ms(2);
         epd_bulk(buf, (size_t)pb);
         delay_ms(2);
+
+        fclose(f); f = NULL;
+        free(buf); buf = NULL;
         uc8179_refresh();
     }
 
     xSemaphoreGive(s_epd_mutex);
-    fclose(f);
+    if (f) fclose(f);
     free(buf);
 
     ESP_LOGI(TAG, "display from %s", path);
@@ -809,6 +839,51 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
         delay_ms(2);
         epd_bulk(fb->red, (size_t)pb);
         delay_ms(2);
+        uc8179_refresh();
+    }
+
+    xSemaphoreGive(s_epd_mutex);
+
+    ESP_LOGI(TAG, "display from buffer");
+    return ESP_OK;
+}
+
+esp_err_t epd_display_fb_free(fb_t *fb)
+{
+    if (!fb) return ESP_ERR_INVALID_ARG;
+    if (!s_epd_mutex || !s_epd_ready) {
+        fb_destroy(fb);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int pb = epd_plane_bytes();
+
+    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+    panel_ensure_ready();
+
+    if (s_panel == EPD_PANEL_42_BWR) {
+        ssd1619_cursor_home();
+        epd_cmd(0x24);
+        epd_bulk(fb->black, (size_t)pb);
+
+        ssd1619_cursor_home();
+        epd_cmd(0x26);
+        epd_bulk(fb->red, (size_t)pb);
+
+        fb_destroy(fb);
+        ssd1619_refresh();
+    } else {
+        epd_cmd(0x10);
+        delay_ms(2);
+        epd_bulk(fb->black, (size_t)pb);
+        delay_ms(2);
+
+        epd_cmd(0x13);
+        delay_ms(2);
+        epd_bulk(fb->red, (size_t)pb);
+        delay_ms(2);
+
+        fb_destroy(fb);
         uc8179_refresh();
     }
 

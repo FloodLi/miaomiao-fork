@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_system.h"
 
 static const char *TAG = "fb";
 
@@ -26,13 +27,24 @@ fb_t *fb_create(void)
     fb->plane_bytes = pb;
     fb->row_bytes   = W / 8;
 
-    fb->black = heap_caps_malloc(pb, MALLOC_CAP_DMA);
-    fb->red   = heap_caps_malloc(pb, MALLOC_CAP_DMA);
-    if (!fb->black || !fb->red) {
-        free(fb->black); free(fb->red); free(fb);
-        ESP_LOGE(TAG, "Failed to allocate frame buffer (2x%d bytes)", pb);
-        return NULL;
+    /* Allocate both planes as one block to avoid fragmentation */
+    uint8_t *buf = heap_caps_malloc((size_t)pb * 2, MALLOC_CAP_DMA);
+    if (!buf) {
+        buf = malloc((size_t)pb * 2);
+        if (!buf) {
+            free(fb);
+            ESP_LOGE(TAG, "Failed to allocate frame buffer (2x%d bytes), "
+                     "free heap: %lu, largest block: %lu",
+                     pb,
+                     (unsigned long)esp_get_free_heap_size(),
+                     (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+            return NULL;
+        }
+        ESP_LOGW(TAG, "DMA alloc failed, using regular heap (2x%d bytes)", pb);
     }
+    fb->black = buf;
+    fb->red   = buf + pb;
+
     fb_clear(fb);
     return fb;
 }
@@ -41,7 +53,6 @@ void fb_destroy(fb_t *fb)
 {
     if (!fb) return;
     free(fb->black);
-    free(fb->red);
     free(fb);
 }
 

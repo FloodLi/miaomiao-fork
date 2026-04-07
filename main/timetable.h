@@ -7,8 +7,8 @@
 
 #define TT_MAX_PERIODS   12
 #define TT_DAYS          7
-#define TT_NAME_LEN      20
-#define TT_ROOM_LEN      12
+#define TT_NAME_LEN      40
+#define TT_ROOM_LEN      20
 #define TT_MAX_WEEKS     25
 
 typedef struct {

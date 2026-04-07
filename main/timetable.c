@@ -16,6 +16,7 @@
 #include "cJSON.h"
 #include "display_policy.h"
 #include "epd.h"
+#include "http_internal.h"
 #include "esp_log.h"
 #include "fb_render.h"
 #include "nvs.h"
@@ -301,6 +302,229 @@ static int tt_text_px(const char *s, int scale)
     return w;
 }
 
+/* ── EPD: full-week grid view (for 5.83" 648x480) ────────────────── */
+
+static void tt_draw_dashed_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
+{
+    for (int i = 0; i < w; i += 4)
+        fb_hline(fb, x + i, y, (i + 2 <= w) ? 2 : w - i, c);
+}
+
+static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
+                                          const struct tm *tm)
+{
+    fb_t *fb = fb_create();
+    if (!fb)
+        return ESP_ERR_NO_MEM;
+    fb_clear(fb);
+
+    int W = fb->width;
+    int H = fb->height;
+    int cols = s_cfg.show_days;
+
+    /* ── title bar ── */
+    int title_h = 40;
+    fb_fill_rect(fb, 0, 0, W, title_h, COLOR_BLACK);
+    {
+        char title[64];
+        if (week > 0)
+            snprintf(title, sizeof(title),
+                     "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8 \xc2\xb7 \xe7\xac\xac%d\xe5\x91\xa8",
+                     week);
+        else
+            snprintf(title, sizeof(title),
+                     "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8");
+        fb_utf8_scaled(fb, 12, 8, title, COLOR_WHITE, 2);
+
+        char ts[64];
+        snprintf(ts, sizeof(ts), "%d/%02d/%02d %02d:%02d",
+                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+                 tm->tm_hour, tm->tm_min);
+        int tw = tt_text_px(ts, 1);
+        fb_utf8_scaled(fb, W - tw - 10, 14, ts, COLOR_WHITE, 1);
+    }
+
+    int pc = s_cfg.period_count;
+    if (pc == 0) {
+        const char *msg = "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b";
+        int mw = tt_text_px(msg, 2);
+        fb_utf8_scaled(fb, (W - mw) / 2, H / 2 - 16, msg, COLOR_BLACK, 2);
+        esp_err_t err = epd_display_fb_free(fb);
+        return err;
+    }
+
+    /* ── layout dimensions ── */
+    int hdr_h = 30;
+    int pcol_w = 58;
+    int footer_h = 20;
+    int y_start = title_h;
+    int grid_h = H - y_start - footer_h;
+    int cell_w = (W - pcol_w) / cols;
+    int cell_h = (grid_h - hdr_h) / pc;
+    if (cell_h < 16) cell_h = 16;
+    int body_y = y_start + hdr_h;
+
+    /* ── day header row ── */
+    fb_fill_rect(fb, 0, y_start, W, hdr_h, COLOR_BLACK);
+    {
+        const char *jie = "\xe8\x8a\x82\xe6\xac\xa1";
+        int jw = tt_text_px(jie, 1);
+        fb_utf8_scaled(fb, (pcol_w - jw) / 2, y_start + 7, jie, COLOR_WHITE, 1);
+    }
+
+    static const char *const DAY_SHORT[] = {
+        "\xe4\xb8\x80", "\xe4\xba\x8c", "\xe4\xb8\x89",
+        "\xe5\x9b\x9b", "\xe4\xba\x94", "\xe5\x85\xad", "\xe6\x97\xa5",
+    };
+    for (int d = 0; d < cols; d++) {
+        int cx = pcol_w + d * cell_w;
+
+        if (d == today)
+            fb_fill_rect(fb, cx + 1, y_start + 1, cell_w - 1, hdr_h - 2, COLOR_RED);
+
+        char label[16];
+        snprintf(label, sizeof(label), "\xe5\x91\xa8%s", DAY_SHORT[d]);
+        int lw = tt_text_px(label, 1);
+        fb_color_t lc = (d == today) ? COLOR_WHITE : COLOR_WHITE;
+        fb_utf8_scaled(fb, cx + (cell_w - lw) / 2, y_start + 7, label, lc, 1);
+    }
+
+    /* ── today column background highlight (subtle dotted pattern) ── */
+    if (today >= 0 && today < cols) {
+        int tx = pcol_w + today * cell_w;
+        for (int y = body_y + 1; y < body_y + pc * cell_h; y += 6)
+            for (int x = tx + 2; x < tx + cell_w - 1; x += 6)
+                fb_pixel(fb, x, y, COLOR_RED);
+    }
+
+    /* ── grid body ── */
+    for (int p = 0; p < pc; p++) {
+        int ry = body_y + p * cell_h;
+        if (ry + cell_h > H - footer_h) break;
+
+        /* row separator: solid for top, dashed for others */
+        if (p == 0)
+            fb_hline(fb, 0, ry, W, COLOR_BLACK);
+        else
+            tt_draw_dashed_hline(fb, pcol_w, ry, W - pcol_w, COLOR_BLACK);
+
+        fb_hline(fb, 0, ry, pcol_w, COLOR_BLACK);
+
+        /* period column: number + time range */
+        const tt_period_def_t *pd = &s_cfg.periods[p];
+        char pnum[4];
+        snprintf(pnum, sizeof(pnum), "%d", p + 1);
+
+        char t_start[8], t_end[8];
+        snprintf(t_start, sizeof(t_start), "%02d:%02d",
+                 pd->start_hour, pd->start_minute);
+        snprintf(t_end, sizeof(t_end), "%02d:%02d",
+                 pd->end_hour, pd->end_minute);
+
+        if (cell_h >= 64) {
+            int pnw = tt_text_px(pnum, 2);
+            int t1w = tt_text_px(t_start, 1);
+            int t2w = tt_text_px(t_end, 1);
+            int vy = ry + (cell_h - 64) / 2;
+            fb_utf8_scaled(fb, (pcol_w - pnw) / 2, vy, pnum, COLOR_BLACK, 2);
+            fb_utf8_scaled(fb, (pcol_w - t1w) / 2, vy + 32, t_start, COLOR_BLACK, 1);
+            fb_utf8_scaled(fb, (pcol_w - t2w) / 2, vy + 48, t_end, COLOR_BLACK, 1);
+        } else if (cell_h >= 48) {
+            int pnw1 = tt_text_px(pnum, 1);
+            int t1w = tt_text_px(t_start, 1);
+            int t2w = tt_text_px(t_end, 1);
+            int vy = ry + (cell_h - 48) / 2;
+            fb_utf8_scaled(fb, (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
+            fb_utf8_scaled(fb, (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
+            fb_utf8_scaled(fb, (pcol_w - t2w) / 2, vy + 32, t_end, COLOR_BLACK, 1);
+        } else {
+            int pnw1 = tt_text_px(pnum, 1);
+            int t1w = tt_text_px(t_start, 1);
+            int vy = ry + (cell_h - 32) / 2;
+            fb_utf8_scaled(fb, (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
+            fb_utf8_scaled(fb, (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
+        }
+
+        /* each day's cell */
+        for (int d = 0; d < cols; d++) {
+            int cx = pcol_w + d * cell_w;
+            const tt_cell_t *cell = &s_cfg.grid[d][p];
+
+            fb_vline(fb, cx, ry, cell_h, COLOR_BLACK);
+
+            if (!tt_cell_active(cell, week))
+                continue;
+
+            bool is_cur = (d == today && p == tt_current_period_idx(today, now_min));
+
+            if (is_cur)
+                fb_fill_rect(fb, cx + 1, ry + 1, cell_w - 2, cell_h - 2, COLOR_RED);
+
+            fb_color_t nc = is_cur ? COLOR_WHITE : COLOR_BLACK;
+            fb_color_t rc = is_cur ? COLOR_WHITE : COLOR_RED;
+
+            int pad = 3;
+            int content_w = cell_w - pad * 2;
+
+            int nw2 = tt_text_px(cell->name, 2);
+            int name_sc = (cell_h >= 48 && nw2 <= content_w) ? 2 : 1;
+            int name_h = 16 * name_sc;
+            int room_h = (cell->room[0] && cell_h >= 34) ? 16 : 0;
+            int gap = room_h ? 2 : 0;
+            int total_h = name_h + gap + room_h;
+            int ny = ry + (cell_h - total_h) / 2;
+            if (ny < ry + 1) ny = ry + 1;
+
+            fb_utf8_scaled_maxw(fb, cx + pad, ny,
+                                cell->name, nc, name_sc, content_w);
+            if (room_h)
+                fb_utf8_scaled_maxw(fb, cx + pad, ny + name_h + gap,
+                                    cell->room, rc, 1, content_w);
+        }
+    }
+
+    /* ── bottom border ── */
+    int last_y = body_y + pc * cell_h;
+    if (last_y < H - footer_h)
+        fb_hline(fb, 0, last_y, W, COLOR_BLACK);
+
+    /* column borders */
+    fb_vline(fb, 0, y_start, hdr_h + pc * cell_h, COLOR_BLACK);
+    fb_vline(fb, pcol_w, y_start, hdr_h + pc * cell_h, COLOR_BLACK);
+    for (int d = 1; d <= cols; d++)
+        fb_vline(fb, pcol_w + d * cell_w, y_start, hdr_h + pc * cell_h, COLOR_BLACK);
+
+    /* ── footer ── */
+    {
+        int today_courses = 0;
+        if (today >= 0 && today < TT_DAYS)
+            for (int p = 0; p < pc; p++)
+                if (tt_cell_active(&s_cfg.grid[today][p], week))
+                    today_courses++;
+
+        int week_courses = 0;
+        for (int d = 0; d < cols; d++)
+            for (int p = 0; p < pc; p++)
+                if (tt_cell_active(&s_cfg.grid[d][p], week))
+                    week_courses++;
+
+        char foot[96];
+        snprintf(foot, sizeof(foot),
+                 "%s %d\xe8\x8a\x82\xe8\xaf\xbe  \xe6\x9c\xac\xe5\x91\xa8\xe5\x85\xb1%d\xe8\x8a\x82",
+                 TT_DAY_FULL[today], today_courses, week_courses);
+        int fw = tt_text_px(foot, 1);
+        fb_utf8_scaled(fb, (W - fw) / 2, H - footer_h + 2, foot, COLOR_BLACK, 1);
+    }
+
+    esp_err_t err = epd_display_fb_free(fb);
+
+    if (err == ESP_OK)
+        ESP_LOGI(TAG, "show week grid: %d periods, %d days (week=%d)", pc, cols, week);
+    return err;
+}
+
+/* ── EPD: single-day agenda view ─────────────────────────────────── */
+
 esp_err_t timetable_show_day(int day)
 {
     if (!s_cfg.enabled)
@@ -317,14 +541,26 @@ esp_err_t timetable_show_day(int day)
         return ESP_ERR_INVALID_STATE;
     }
 
+    int W = epd_width();
+    int H = epd_height();
+
+    /* 5.83" (648x480): use full-week grid view */
+    if (W >= 600) {
+        int today   = tt_weekday_mon0(&tm);
+        int now_min = tt_now_minutes(&tm);
+        int week    = timetable_current_week();
+        return timetable_show_week_grid(today, now_min, week, &tm);
+    }
+
+    /* 4.2" (400x300): keep single-day agenda view */
     fb_t *fb = fb_create();
     if (!fb)
         return ESP_ERR_NO_MEM;
     fb_clear(fb);
 
-    int W = fb->width;
-    int H = fb->height;
-    int s = (W >= 600) ? 2 : 1;
+    W = fb->width;
+    H = fb->height;
+    int s = 1;
 
     int today   = tt_weekday_mon0(&tm);
     int now_min = tt_now_minutes(&tm);
@@ -365,8 +601,7 @@ esp_err_t timetable_show_day(int day)
         int ly = my + 8 * (s + 1);
         fb_hline(fb, mx - 28 * s, ly, 20 * s, COLOR_BLACK);
         fb_hline(fb, mx + mw + 8 * s, ly, 20 * s, COLOR_BLACK);
-        esp_err_t err = epd_display_from_buffer(fb);
-        fb_destroy(fb);
+        esp_err_t err = epd_display_fb_free(fb);
         return err;
     }
 
@@ -489,8 +724,7 @@ esp_err_t timetable_show_day(int day)
         fb_utf8_scaled(fb, (W - fw) / 2, H - footer_h, foot, COLOR_BLACK, 1);
     }
 
-    esp_err_t err = epd_display_from_buffer(fb);
-    fb_destroy(fb);
+    esp_err_t err = epd_display_fb_free(fb);
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "epd: %s", esp_err_to_name(err));
@@ -640,8 +874,9 @@ esp_err_t timetable_http_get_handler(httpd_req_t *req)
 
 esp_err_t timetable_http_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     int total = req->content_len;
-    if (total <= 0 || total > 8192) {
+    if (total <= 0 || total > 16384) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad content length");
         return ESP_OK;
     }

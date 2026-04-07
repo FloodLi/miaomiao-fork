@@ -9,6 +9,7 @@
 #include "nvs_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "power";
 
@@ -31,9 +32,10 @@ static power_config_t s_cfg = {
     .idle_timeout_s = DEFAULT_IDLE_TIMEOUT_S,
 };
 
-static bool           s_timer_wake;
-static volatile int64_t s_last_activity_us;
-static TaskHandle_t   s_idle_task;
+static bool              s_timer_wake;
+static int64_t           s_last_activity_us;
+static portMUX_TYPE      s_activity_mux = portMUX_INITIALIZER_UNLOCKED;
+static TaskHandle_t      s_idle_task;
 
 /* ── NVS helpers ──────────────────────────────────────────────────── */
 
@@ -77,7 +79,11 @@ static void idle_monitor_task(void *arg)
 
         if (!s_cfg.enabled) continue;
 
-        int64_t idle_us = esp_timer_get_time() - s_last_activity_us;
+        int64_t last;
+        portENTER_CRITICAL(&s_activity_mux);
+        last = s_last_activity_us;
+        portEXIT_CRITICAL(&s_activity_mux);
+        int64_t idle_us = esp_timer_get_time() - last;
         int64_t threshold_us = (int64_t)s_cfg.idle_timeout_s * 1000000LL;
 
         if (idle_us >= threshold_us) {
@@ -97,7 +103,9 @@ esp_err_t power_mgr_init(void)
     esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
     s_timer_wake = (cause == ESP_SLEEP_WAKEUP_TIMER);
 
+    portENTER_CRITICAL(&s_activity_mux);
     s_last_activity_us = esp_timer_get_time();
+    portEXIT_CRITICAL(&s_activity_mux);
 
     if (cause == ESP_SLEEP_WAKEUP_TIMER) {
         ESP_LOGI(TAG, "Woke from deep sleep (timer)");
@@ -121,14 +129,18 @@ bool power_mgr_is_timer_wake(void)
 esp_err_t power_mgr_get_config(power_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_activity_mux);
     *out = s_cfg;
+    portEXIT_CRITICAL(&s_activity_mux);
     return ESP_OK;
 }
 
 esp_err_t power_mgr_set_config(const power_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_activity_mux);
     s_cfg = *cfg;
+    portEXIT_CRITICAL(&s_activity_mux);
     if (s_cfg.interval_min < 1) s_cfg.interval_min = 1;
     if (s_cfg.interval_min > 1440) s_cfg.interval_min = 1440;
     if (s_cfg.idle_timeout_s < 30) s_cfg.idle_timeout_s = 30;
@@ -141,7 +153,9 @@ esp_err_t power_mgr_set_config(const power_config_t *cfg)
 
 void power_mgr_reset_activity(void)
 {
+    portENTER_CRITICAL(&s_activity_mux);
     s_last_activity_us = esp_timer_get_time();
+    portEXIT_CRITICAL(&s_activity_mux);
 }
 
 void power_mgr_arm(void)
@@ -156,7 +170,9 @@ void power_mgr_arm(void)
                     NULL, 2, &s_idle_task);
     }
 
+    portENTER_CRITICAL(&s_activity_mux);
     s_last_activity_us = esp_timer_get_time();
+    portEXIT_CRITICAL(&s_activity_mux);
     ESP_LOGI(TAG, "Armed: will sleep after %d s of inactivity", s_cfg.idle_timeout_s);
 }
 
@@ -170,6 +186,14 @@ void power_mgr_enter_sleep(void)
 
     ESP_LOGI(TAG, "Entering deep sleep for %d min (GPIO 3/9 can wake)",
              s_cfg.interval_min);
+
+    /* Wait for any in-progress EPD refresh before sleeping */
+    extern bool epd_is_ready(void);
+    int wait_count = 0;
+    while (!epd_is_ready() && wait_count < 100) {
+        vTaskDelay(pdMS_TO_TICKS(200));
+        wait_count++;
+    }
 
     nvs_flush_all();
     vTaskDelay(pdMS_TO_TICKS(100));

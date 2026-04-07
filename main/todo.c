@@ -7,6 +7,7 @@
 #include "display_policy.h"
 #include "epd.h"
 #include "esp_log.h"
+#include "http_internal.h"
 #include "fb_render.h"
 #include "nvs.h"
 #include "time_sync.h"
@@ -90,8 +91,7 @@ static void render_todo(void)
         int esc = s + 1;
         int mw = 4 * 16 * esc;
         fb_utf8_scaled(fb, (W - mw) / 2, H / 2 - 8 * esc, empty, COLOR_BLACK, esc);
-        epd_display_from_buffer(fb);
-        fb_destroy(fb);
+        epd_display_fb_free(fb);
         return;
     }
 
@@ -187,8 +187,7 @@ static void render_todo(void)
                 fb_pixel(fb, dx, y + item_h - 1, COLOR_BLACK);
     }
 
-    epd_display_from_buffer(fb);
-    fb_destroy(fb);
+    epd_display_fb_free(fb);
 }
 
 /* ── public API ──────────────────────────────────────────────────── */
@@ -265,6 +264,7 @@ esp_err_t todo_http_get_handler(httpd_req_t *req)
 
 esp_err_t todo_http_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     int len = req->content_len;
     if (len <= 0 || len > 4096) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad length");

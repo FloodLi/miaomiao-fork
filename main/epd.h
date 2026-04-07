@@ -14,6 +14,8 @@ esp_err_t    epd_init(void);
 bool         epd_is_ready(void);
 esp_err_t    epd_display_from_file(const char *path);
 esp_err_t    epd_display_from_buffer(const fb_t *fb);
+/** 同上，但 SPI 传输完成后立即释放 fb，再等待 EPD 刷新——节省 18s 内存占用 */
+esp_err_t    epd_display_fb_free(fb_t *fb);
 /**
  * Fast BW-only refresh using a custom short LUT (~1-2s instead of ~10s).
  * Only the black plane is driven; red is left unchanged.

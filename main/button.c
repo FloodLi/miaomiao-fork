@@ -47,7 +47,8 @@ static int            s_mode_idx;
 static volatile bool  s_busy;
 static QueueHandle_t  s_cmd_queue;
 
-int button_get_current_mode(void) { return s_mode_idx; }
+int  button_get_current_mode(void) { return s_mode_idx; }
+void button_set_current_mode(int mode) { s_mode_idx = mode; }
 
 static const gpio_num_t btn_pins[BTN_COUNT] = {
     BTN_LEFT, BTN_MID, BTN_RIGHT,
@@ -74,8 +75,7 @@ static void show_unconfigured_hint(int idx)
     fb_utf8_scaled(fb, epd_width() / 2 - 36, cy + 42, "未配置", COLOR_BLACK, 2);
     fb_utf8_scaled(fb, epd_width() / 2 - 80, cy + 72, "请通过网页进行设置", COLOR_BLACK, 1);
 
-    epd_display_from_buffer(fb);
-    fb_destroy(fb);
+    epd_display_fb_free(fb);
 }
 
 static void switch_mode(int dir)

@@ -744,8 +744,9 @@ esp_err_t image_convert_file_to_epd_raw(const char *input_path, const char *out_
     uint8_t magic[4] = {0};
     FILE *mf = fopen(input_path, "rb");
     if (!mf) { ESP_LOGE(TAG, "open failed: %s", input_path); return ESP_FAIL; }
-    fread(magic, 1, 4, mf);
+    size_t mr = fread(magic, 1, 4, mf);
     fclose(mf);
+    if (mr < 2) { ESP_LOGE(TAG, "file too small: %s", input_path); return ESP_FAIL; }
 
     ESP_LOGI(TAG, "convert_file: %s (magic: %02X %02X), free heap: %lu",
              input_path, magic[0], magic[1], (unsigned long)esp_get_free_heap_size());

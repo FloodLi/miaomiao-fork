@@ -39,6 +39,7 @@ static clock_config_t s_cfg = {
 
 static EventGroupHandle_t s_event;
 static SemaphoreHandle_t  s_render_mutex;
+static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* ── 7-segment digit rendering ────────────────────────────────────── */
 
@@ -174,6 +175,8 @@ static void render_clock(void)
     if (!time_sync_get_local(&tm)) {
         ESP_LOGW(TAG, "Time not synced yet");
         fb_destroy(fb);
+        if (s_render_mutex)
+            xSemaphoreGive(s_render_mutex);
         return;
     }
 
@@ -228,22 +231,23 @@ static void render_clock(void)
     fb_hline(fb, MX + 10, sep_y, W - 2 * MX - 20, COLOR_BLACK);
     fb_hline(fb, MX + 10, sep_y + 1, W - 2 * MX - 20, COLOR_BLACK);
 
-    const weather_data_t *wd = NULL;
+    weather_data_t wd_local = {0};
     weather_config_t wcfg = {0};
     bool has_weather = false;
 
     if (s_cfg.show_weather) {
-        wd = weather_get_data();
-        if (wd && wd->valid) {
+        weather_get_data_copy(&wd_local);
+        if (wd_local.valid) {
             weather_get_config(&wcfg);
             has_weather = true;
         }
     }
+    const weather_data_t *wd = &wd_local;
 
     int bot_y = sep_y + 16;
 
     if (has_weather) {
-        char line1[96];
+        char line1[280];
         if (wcfg.city_name[0]) {
             snprintf(line1, sizeof(line1), "%s   %s   %d'C",
                      wcfg.city_name, wd->now.text, wd->now.temp);
@@ -258,7 +262,7 @@ static void render_clock(void)
             fb_utf8_scaled_maxw(fb, lx, bot_y, line1, COLOR_BLACK, sc, lw);
         }
 
-        char line2[96];
+        char line2[280];
         snprintf(line2, sizeof(line2),
                  "\xe4\xbd\x93\xe6\x84\x9f%d'C   "
                  "\xe6\xb9\xbf\xe5\xba\xa6%d%%   "
@@ -416,14 +420,18 @@ esp_err_t clock_display_init(void)
 esp_err_t clock_display_get_config(clock_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cfg_mux);
     *out = s_cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
     return ESP_OK;
 }
 
 esp_err_t clock_display_set_config(const clock_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cfg_mux);
     s_cfg = *cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
     nvs_save();
     ESP_LOGI(TAG, "Config saved: enabled=%d, style=%d, weather=%d",
              s_cfg.enabled, s_cfg.style, s_cfg.show_weather);
