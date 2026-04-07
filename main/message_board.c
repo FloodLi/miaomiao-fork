@@ -1,0 +1,292 @@
+#include "message_board.h"
+
+#include <string.h>
+#include <stdio.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_log.h"
+
+#include "fb_render.h"
+#include "epd.h"
+#include "scheduler.h"
+#include "display_policy.h"
+
+static const char *TAG    = "msgboard";
+static const char *NVS_NS = "msgboard";
+
+static msg_config_t s_cfg = {
+    .text      = "",
+    .font_size = 0,
+    .align     = MSG_ALIGN_CENTER,
+    .color     = 0,
+    .x_offset  = 0,
+    .y_offset  = 0,
+};
+
+/* ── NVS ──────────────────────────────────────────────────────────── */
+
+static void nvs_load(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
+
+    size_t len = sizeof(s_cfg.text);
+    nvs_get_str(h, "text", s_cfg.text, &len);
+
+    uint8_t v8;
+    if (nvs_get_u8(h, "font", &v8) == ESP_OK) s_cfg.font_size = v8;
+    if (nvs_get_u8(h, "align", &v8) == ESP_OK) s_cfg.align = (msg_align_t)v8;
+    if (nvs_get_u8(h, "color", &v8) == ESP_OK) s_cfg.color = v8;
+
+    int16_t v16;
+    if (nvs_get_i16(h, "xoff", &v16) == ESP_OK) s_cfg.x_offset = v16;
+    if (nvs_get_i16(h, "yoff", &v16) == ESP_OK) s_cfg.y_offset = v16;
+
+    nvs_close(h);
+}
+
+static void nvs_save(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_str(h, "text",  s_cfg.text);
+    nvs_set_u8(h,  "font",  s_cfg.font_size);
+    nvs_set_u8(h,  "align", (uint8_t)s_cfg.align);
+    nvs_set_u8(h,  "color", s_cfg.color);
+    nvs_set_i16(h, "xoff",  s_cfg.x_offset);
+    nvs_set_i16(h, "yoff",  s_cfg.y_offset);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+/* ── UTF-8 helpers ────────────────────────────────────────────────── */
+
+static int utf8_decode(const char **pp)
+{
+    const uint8_t *p = (const uint8_t *)*pp;
+    if (p[0] == 0)
+        return -1;
+    if (p[0] < 0x80) {
+        *pp += 1;
+        return p[0];
+    }
+    if ((p[0] & 0xE0) == 0xC0) {
+        if ((p[1] & 0xC0) != 0x80) { *pp += 1; return -1; }
+        *pp += 2;
+        return ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+    }
+    if ((p[0] & 0xF0) == 0xE0) {
+        if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80) { *pp += 1; return -1; }
+        *pp += 3;
+        return ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+    }
+    if ((p[0] & 0xF8) == 0xF0) {
+        if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80 || (p[3] & 0xC0) != 0x80) { *pp += 1; return -1; }
+        *pp += 4;
+        return ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+    }
+    *pp += 1;
+    return -1;
+}
+
+static int utf8_char_width(int cp, int scale)
+{
+    if (cp < 0x80) return 8 * scale;
+    return 16 * scale;
+}
+
+/* ── word-wrap rendering ──────────────────────────────────────────── */
+
+#define MARGIN_X  20
+#define MARGIN_Y  16
+
+static void render_message(void)
+{
+    fb_t *fb = fb_create();
+    if (!fb) {
+        ESP_LOGE(TAG, "fb_create failed");
+        return;
+    }
+
+    if (s_cfg.text[0] == '\0') {
+        fb_destroy(fb);
+        ESP_LOGW(TAG, "No message to display");
+        return;
+    }
+
+    int scale = s_cfg.font_size + 1;
+    if (scale < 1) scale = 1;
+    if (scale > 6) scale = 6;
+    int char_h = 16 * scale;
+    int line_h = char_h + 2 * scale;
+    int max_w  = fb->width - 2 * MARGIN_X;
+    fb_color_t color = (s_cfg.color == 1) ? COLOR_RED : COLOR_BLACK;
+
+    ESP_LOGI(TAG, "Rendering: scale=%d, color=%d, align=%d, offset=(%d,%d), text_len=%d",
+             scale, s_cfg.color, (int)s_cfg.align, s_cfg.x_offset, s_cfg.y_offset,
+             (int)strlen(s_cfg.text));
+
+    fb_rect(fb, 6, 6, fb->width - 12, fb->height - 12, COLOR_BLACK);
+
+    /* first pass: calculate lines for vertical centering */
+    typedef struct { const char *start; int len; int px_w; } line_t;
+    line_t lines[32];
+    int line_count = 0;
+
+    const char *p = s_cfg.text;
+    const char *line_start = p;
+    int cur_w = 0;
+
+    while (*p && line_count < 32) {
+        if (*p == '\n') {
+            lines[line_count].start = line_start;
+            lines[line_count].len   = (int)(p - line_start);
+            lines[line_count].px_w  = cur_w;
+            line_count++;
+            p++;
+            line_start = p;
+            cur_w = 0;
+            continue;
+        }
+
+        const char *next = p;
+        int cp = utf8_decode(&next);
+        if (cp < 0) { p = next; continue; }
+        int cw = utf8_char_width(cp, scale);
+
+        if (cur_w + cw > max_w && cur_w > 0) {
+            lines[line_count].start = line_start;
+            lines[line_count].len   = (int)(p - line_start);
+            lines[line_count].px_w  = cur_w;
+            line_count++;
+            line_start = p;
+            cur_w = 0;
+            if (line_count >= 32) break;
+        }
+
+        cur_w += cw;
+        p = next;
+    }
+
+    if (line_count < 32 && (cur_w > 0 || p > line_start)) {
+        lines[line_count].start = line_start;
+        lines[line_count].len   = (int)(p - line_start);
+        lines[line_count].px_w  = cur_w;
+        line_count++;
+    }
+
+    int total_h = line_count * line_h;
+    int start_y = (fb->height - total_h) / 2 + s_cfg.y_offset;
+    if (start_y < 0) start_y = 0;
+
+    for (int i = 0; i < line_count; i++) {
+        int y = start_y + i * line_h;
+        if (y + char_h > fb->height) break;
+
+        int x;
+        if (s_cfg.align == MSG_ALIGN_CENTER) {
+            x = (fb->width - lines[i].px_w) / 2 + s_cfg.x_offset;
+        } else {
+            x = MARGIN_X + s_cfg.x_offset;
+        }
+
+        char buf[MSG_MAX_LEN + 1];
+        int copy_len = lines[i].len;
+        if (copy_len > MSG_MAX_LEN) copy_len = MSG_MAX_LEN;
+        memcpy(buf, lines[i].start, copy_len);
+        buf[copy_len] = '\0';
+
+        fb_utf8_scaled(fb, x, y, buf, color, scale);
+    }
+
+    /* export and display */
+    const char *raw_path = "/spiffs/image.bin";
+    esp_err_t err = fb_export(fb, raw_path);
+    fb_destroy(fb);
+
+    if (err == ESP_OK && epd_is_ready()) {
+        ESP_LOGI(TAG, "FB exported, sending to EPD (%d lines, scale=%d)...", line_count, scale);
+        epd_display_from_file(raw_path);
+        display_policy_set_manual_screen_active(true);
+        scheduler_notify_manual_show();
+        ESP_LOGI(TAG, "Message displayed on EPD");
+    } else if (err != ESP_OK) {
+        ESP_LOGE(TAG, "fb_export failed: %s", esp_err_to_name(err));
+    }
+}
+
+/* ── public API ───────────────────────────────────────────────────── */
+
+esp_err_t message_board_init(void)
+{
+    nvs_load();
+    ESP_LOGI(TAG, "Message board init (text_len=%d, font=%d, align=%d, color=%d, xy=%d,%d)",
+             (int)strlen(s_cfg.text), s_cfg.font_size, (int)s_cfg.align, s_cfg.color,
+             s_cfg.x_offset, s_cfg.y_offset);
+    return ESP_OK;
+}
+
+esp_err_t message_board_get_config(msg_config_t *out)
+{
+    if (!out) return ESP_ERR_INVALID_ARG;
+    *out = s_cfg;
+    return ESP_OK;
+}
+
+esp_err_t message_board_set_config(const msg_config_t *cfg)
+{
+    if (!cfg) return ESP_ERR_INVALID_ARG;
+    s_cfg = *cfg;
+    nvs_save();
+    ESP_LOGI(TAG, "Config saved (text_len=%d)", (int)strlen(s_cfg.text));
+    return ESP_OK;
+}
+
+static SemaphoreHandle_t s_render_mutex = NULL;
+static volatile bool     s_pending = false;
+
+static void render_task(void *arg)
+{
+    (void)arg;
+    do {
+        s_pending = false;
+        ESP_LOGI(TAG, "Render task started");
+        render_message();
+        ESP_LOGI(TAG, "Render task done");
+    } while (s_pending && s_cfg.text[0]);
+
+    xSemaphoreGive(s_render_mutex);
+    vTaskDelete(NULL);
+}
+
+esp_err_t message_board_show(void)
+{
+    if (s_cfg.text[0] == '\0') {
+        ESP_LOGW(TAG, "No message text set");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!s_render_mutex) {
+        s_render_mutex = xSemaphoreCreateBinary();
+        xSemaphoreGive(s_render_mutex);
+    }
+
+    if (xSemaphoreTake(s_render_mutex, 0) != pdTRUE) {
+        s_pending = true;
+        ESP_LOGI(TAG, "Render queued (will re-render after current finishes)");
+        return ESP_OK;
+    }
+
+    BaseType_t ret = xTaskCreate(render_task, "msg_render", 8192, NULL, 5, NULL);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create render task");
+        xSemaphoreGive(s_render_mutex);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}

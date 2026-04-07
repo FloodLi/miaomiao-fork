@@ -1,0 +1,313 @@
+#include "scheduler.h"
+
+#include <string.h>
+#include <dirent.h>
+#include <stdlib.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "esp_log.h"
+#include "esp_random.h"
+
+#include "image_convert.h"
+#include "epd.h"
+#include "clock_display.h"
+#include "display_policy.h"
+#include "weather.h"
+#include "fb_render.h"
+#include "time_sync.h"
+
+static const char *TAG        = "scheduler";
+static const char *IMAGES_DIR = "/spiffs/images";
+static const char *NVS_NS     = "slideshow";
+
+#define BIT_CFG_CHANGED  BIT0
+#define BIT_MANUAL_SHOW  BIT1
+#define MAX_GALLERY      32
+
+static slideshow_config_t s_config = {
+    .enabled      = false,
+    .interval_sec = 3600,
+    .mode         = SLIDESHOW_SEQ,
+};
+
+static EventGroupHandle_t s_event;
+static char  s_current_image[64];
+static int   s_current_index;
+
+/* ── NVS helpers ──────────────────────────────────────────────────── */
+
+static void nvs_load(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
+
+    uint8_t v8;
+    if (nvs_get_u8(h, "enabled", &v8) == ESP_OK)
+        s_config.enabled = (v8 != 0);
+    uint32_t v32;
+    if (nvs_get_u32(h, "interval", &v32) == ESP_OK)
+        s_config.interval_sec = v32;
+    if (nvs_get_u8(h, "mode", &v8) == ESP_OK)
+        s_config.mode = (slideshow_mode_t)v8;
+    if (nvs_get_u8(h, "clk_ovl", &v8) == ESP_OK)
+        s_config.clock_overlay = (v8 != 0);
+
+    nvs_close(h);
+    ESP_LOGI(TAG, "NVS loaded: enabled=%d, interval=%lus, mode=%d",
+             s_config.enabled, (unsigned long)s_config.interval_sec, s_config.mode);
+}
+
+static void nvs_save(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+
+    nvs_set_u8(h,  "enabled",  s_config.enabled ? 1 : 0);
+    nvs_set_u32(h, "interval", s_config.interval_sec);
+    nvs_set_u8(h,  "mode",     (uint8_t)s_config.mode);
+    nvs_set_u8(h,  "clk_ovl", s_config.clock_overlay ? 1 : 0);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+/* ── gallery listing ──────────────────────────────────────────────── */
+
+static int list_images(char out[][64], int max)
+{
+    DIR *dir = opendir(IMAGES_DIR);
+    if (!dir) return 0;
+
+    int count = 0;
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL && count < max) {
+        if (ent->d_type != DT_REG && ent->d_type != DT_UNKNOWN) continue;
+        strncpy(out[count], ent->d_name, 63);
+        out[count][63] = '\0';
+        count++;
+    }
+    closedir(dir);
+    return count;
+}
+
+/* ── show next image ──────────────────────────────────────────────── */
+
+static void show_next_image(void)
+{
+    display_policy_set_manual_screen_active(false);
+
+    /* heap-allocate the gallery list to save ~2KB stack */
+    char (*names)[64] = calloc(MAX_GALLERY, 64);
+    if (!names) {
+        ESP_LOGE(TAG, "gallery list alloc failed");
+        return;
+    }
+
+    int count = list_images(names, MAX_GALLERY);
+    if (count == 0) {
+        free(names);
+        ESP_LOGW(TAG, "Gallery empty, skipping cycle");
+        return;
+    }
+
+    int idx;
+    if (s_config.mode == SLIDESHOW_RANDOM) {
+        idx = (int)(esp_random() % (uint32_t)count);
+    } else {
+        idx = s_current_index % count;
+        s_current_index = (idx + 1) % count;
+    }
+
+    char path[160];
+    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, names[idx]);
+    ESP_LOGI(TAG, "Slideshow: '%s' (%d/%d)", names[idx], idx + 1, count);
+
+    strncpy(s_current_image, names[idx], sizeof(s_current_image) - 1);
+    s_current_image[sizeof(s_current_image) - 1] = '\0';
+    free(names);
+
+    const char *raw_path = "/spiffs/image.bin";
+    esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Convert failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    if (s_config.clock_overlay && time_sync_is_synced()) {
+        fb_t *fb = fb_create();
+        if (fb) {
+            fb_import(fb, raw_path);
+            struct tm tm;
+            if (time_sync_get_local(&tm)) {
+                char ts[8];
+                snprintf(ts, sizeof(ts), "%02d:%02d", tm.tm_hour, tm.tm_min);
+                int W = epd_width();
+                int tx = W - 8 * 2 * 5 - 8;
+                fb_fill_rect(fb, tx - 4, 2, 8 * 2 * 5 + 12, 22, COLOR_WHITE);
+                fb_utf8_scaled(fb, tx, 4, ts, COLOR_BLACK, 2);
+            }
+            fb_export(fb, raw_path);
+            fb_destroy(fb);
+        }
+    }
+
+    err = epd_display_from_file(raw_path);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Display failed: %s", esp_err_to_name(err));
+    }
+}
+
+/* ── FreeRTOS task ────────────────────────────────────────────────── */
+
+static void slideshow_task(void *arg)
+{
+    ESP_LOGI(TAG, "Slideshow task running");
+
+    if (s_config.enabled && !display_policy_manual_screen_active()) {
+        ESP_LOGI(TAG, "Slideshow was enabled, showing first image now");
+        show_next_image();
+    }
+
+    for (;;) {
+        if (!s_config.enabled) {
+            xEventGroupWaitBits(s_event, BIT_CFG_CHANGED,
+                                pdTRUE, pdFALSE, portMAX_DELAY);
+            if (s_config.enabled && !display_policy_manual_screen_active()) {
+                ESP_LOGI(TAG, "Slideshow enabled, showing first image now");
+                show_next_image();
+            }
+            continue;
+        }
+
+        uint32_t wait_ms = s_config.interval_sec * 1000;
+        EventBits_t bits = xEventGroupWaitBits(
+            s_event, BIT_CFG_CHANGED | BIT_MANUAL_SHOW,
+            pdTRUE, pdFALSE, pdMS_TO_TICKS(wait_ms));
+
+        if (bits & BIT_CFG_CHANGED) continue;
+        if (bits & BIT_MANUAL_SHOW) continue;
+
+        if (!s_config.enabled) continue;
+
+        /* 全页天气/日历等占屏时暂停切下一张，避免与 HTTPS 刷新同一时段抢网络与刷屏 */
+        if (display_policy_manual_screen_active()) {
+            (void)xEventGroupWaitBits(s_event, BIT_CFG_CHANGED | BIT_MANUAL_SHOW,
+                                    pdTRUE, pdFALSE, pdMS_TO_TICKS(500));
+            continue;
+        }
+
+        show_next_image();
+    }
+}
+
+/* ── public API ───────────────────────────────────────────────────── */
+
+esp_err_t scheduler_init(void)
+{
+    s_event = xEventGroupCreate();
+    if (!s_event) return ESP_ERR_NO_MEM;
+
+    s_current_image[0] = '\0';
+    s_current_index    = 0;
+
+    nvs_load();
+
+    BaseType_t ok = xTaskCreate(slideshow_task, "slideshow", 10240, NULL, 4, NULL);
+    if (ok != pdPASS) {
+        vEventGroupDelete(s_event);
+        s_event = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "Scheduler initialized (enabled=%d)", s_config.enabled);
+    return ESP_OK;
+}
+
+esp_err_t scheduler_get_config(slideshow_config_t *out)
+{
+    if (!out) return ESP_ERR_INVALID_ARG;
+    *out = s_config;
+    return ESP_OK;
+}
+
+esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
+{
+    if (!cfg) return ESP_ERR_INVALID_ARG;
+
+    if (cfg->interval_sec < 60) return ESP_ERR_INVALID_ARG;
+    if (cfg->interval_sec > 86400) return ESP_ERR_INVALID_ARG;
+
+    bool slideshow_was_on = s_config.enabled;
+    s_config = *cfg;
+    nvs_save();
+
+    ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%lus, mode=%d",
+             s_config.enabled, (unsigned long)s_config.interval_sec, s_config.mode);
+
+    /* HTTP may call this before scheduler_init() creates the event group (see app_main order). */
+    if (s_event)
+        xEventGroupSetBits(s_event, BIT_CFG_CHANGED);
+    clock_display_notify_home_changed();
+    if (slideshow_was_on && !s_config.enabled)
+        weather_notify_slideshow_stopped();
+    return ESP_OK;
+}
+
+void scheduler_notify_manual_show(void)
+{
+    /* 轮播未开启时无需置位；避免在无意义路径上频繁 xEventGroupSetBits（SMP 下偶发损坏等待链表） */
+    if (!s_config.enabled)
+        return;
+    if (!s_event)
+        return;
+    xEventGroupSetBits(s_event, BIT_MANUAL_SHOW);
+}
+
+const char *scheduler_get_current_image(void)
+{
+    return s_current_image[0] ? s_current_image : NULL;
+}
+
+esp_err_t scheduler_show_next_image(void)
+{
+    if (!epd_is_ready())
+        return ESP_ERR_INVALID_STATE;
+
+    char (*names)[64] = calloc(MAX_GALLERY, 64);
+    if (!names) return ESP_ERR_NO_MEM;
+
+    int count = list_images(names, MAX_GALLERY);
+    if (count == 0) {
+        free(names);
+        ESP_LOGW(TAG, "Gallery empty");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    int idx;
+    if (s_config.mode == SLIDESHOW_RANDOM) {
+        idx = (int)(esp_random() % (uint32_t)count);
+    } else {
+        idx = s_current_index % count;
+        s_current_index = (idx + 1) % count;
+    }
+
+    char path[160];
+    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, names[idx]);
+    ESP_LOGI(TAG, "Manual show: '%s' (%d/%d)", names[idx], idx + 1, count);
+
+    strncpy(s_current_image, names[idx], sizeof(s_current_image) - 1);
+    s_current_image[sizeof(s_current_image) - 1] = '\0';
+    free(names);
+
+    const char *raw_path = "/spiffs/image.bin";
+    esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
+    if (err != ESP_OK) return err;
+
+    err = epd_display_from_file(raw_path);
+    if (err == ESP_OK)
+        display_policy_set_manual_screen_active(true);
+    return err;
+}

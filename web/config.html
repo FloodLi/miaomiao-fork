@@ -1,0 +1,1301 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配置面板</title>
+<script>(function(){document.documentElement.setAttribute('data-theme',localStorage.getItem('epd_theme')||'loopy')})()</script>
+<style>
+/* ── Theme: Loopy (粉蓝梦幻) ── */
+[data-theme="loopy"]{
+  --bg:#FFF0F5;--g1:rgba(255,182,203,.32);--g2:rgba(173,216,250,.28);
+  --cd:#fff;--cb:rgba(255,155,179,.22);--ch:rgba(255,155,179,.10);--cs:0 6px 28px rgba(255,155,179,.13);
+  --sf:rgba(255,236,245,.75);--sb:rgba(255,155,179,.20);
+  --tx:#5A3050;--t2:rgba(120,70,100,.62);
+  --ac:#FF9BB3;--a2:#8CC8F0;--ag:rgba(255,155,179,.28);
+  --bt:#fff;--ok:#2E9E52;--er:#E53935;--wn:#E68A00;
+  --hv:rgba(255,155,179,.10);--tg:rgba(255,155,179,.22);
+  --deco:"🌸"
+}
+/* ── Theme: Hello Kitty (经典红粉) ── */
+[data-theme="kitty"]{
+  --bg:#FFF8F8;--g1:rgba(255,77,109,.18);--g2:rgba(255,215,0,.14);
+  --cd:#fff;--cb:rgba(255,77,109,.17);--ch:rgba(255,77,109,.07);--cs:0 6px 28px rgba(255,77,109,.10);
+  --sf:rgba(255,245,247,.8);--sb:rgba(255,77,109,.14);
+  --tx:#4A1525;--t2:rgba(130,50,70,.58);
+  --ac:#FF4D6D;--a2:#FFB347;--ag:rgba(255,77,109,.24);
+  --bt:#fff;--ok:#2E9E52;--er:#D32F2F;--wn:#E68A00;
+  --hv:rgba(255,77,109,.07);--tg:rgba(255,77,109,.15);
+  --deco:"🎀"
+}
+/* ── Theme: 草莓熊 (浆果玫瑰) ── */
+[data-theme="lotso"]{
+  --bg:#FBF0F3;--g1:rgba(183,70,120,.20);--g2:rgba(232,160,184,.18);
+  --cd:#fff;--cb:rgba(183,70,120,.17);--ch:rgba(183,70,120,.07);--cs:0 6px 28px rgba(183,70,120,.10);
+  --sf:rgba(251,238,244,.8);--sb:rgba(183,70,120,.14);
+  --tx:#4A1428;--t2:rgba(120,40,70,.58);
+  --ac:#B74678;--a2:#E8A0B8;--ag:rgba(183,70,120,.24);
+  --bt:#fff;--ok:#2E9E52;--er:#C62828;--wn:#E68A00;
+  --hv:rgba(183,70,120,.07);--tg:rgba(183,70,120,.15);
+  --deco:"🍓"
+}
+/* ── Base ── */
+*{box-sizing:border-box;transition:background-color .35s,border-color .35s,color .3s,box-shadow .35s}
+body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+  background:radial-gradient(1200px 800px at 20% -10%,var(--g1),transparent 60%),
+  radial-gradient(900px 600px at 100% 0%,var(--g2),transparent 55%),var(--bg);
+  color:var(--tx);min-height:100vh}
+.wrap{max-width:640px;margin:0 auto;padding:20px 16px}
+.hdr{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap}
+.title{font-weight:800;letter-spacing:.2px;font-size:20px}
+a.back{color:var(--ac);font-size:13px;text-decoration:none;font-weight:600}
+a.back:hover{text-decoration:underline}
+/* ── Cards ── */
+.card{position:relative;background:var(--cd);border:1px solid var(--cb);border-radius:18px;overflow:hidden;box-shadow:var(--cs);margin-bottom:16px}
+.card .hd{position:relative;padding:16px 16px 10px;background:linear-gradient(180deg,var(--ch),transparent)}
+.card .hd::after{content:var(--deco);position:absolute;top:12px;right:14px;font-size:16px;opacity:.55;pointer-events:none}
+.card .bd{padding:16px}
+.sub{color:var(--t2);font-size:13px;line-height:1.5}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:8px 12px;font-size:13px;margin-bottom:12px}
+.k{color:var(--t2)}.v{font-weight:700}
+.ok{color:var(--ok)}.bad{color:var(--er)}.warn{color:var(--wn)}
+/* ── Buttons ── */
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:13px;color:var(--bt);
+  background:linear-gradient(135deg,var(--ac),var(--a2));box-shadow:0 6px 20px var(--ag);transition:filter .2s,transform .15s}
+.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.btn.ghost{background:var(--sf);color:var(--tx);border:1px solid var(--cb);box-shadow:none}
+.btn.ghost:hover{background:var(--hv);border-color:var(--ac)}
+.btn.sm{padding:6px 10px;font-size:12px;border-radius:8px}
+.btn.danger{background:linear-gradient(135deg,#FF5C7C,#FF3060);color:#fff}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;filter:none}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+/* ── Inputs ── */
+.log{margin-top:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;
+  background:var(--sf);border:1px solid var(--sb);border-radius:12px;padding:10px;min-height:48px;white-space:pre-wrap}
+select,input[type=text],input[type=password],input[type=number],textarea{
+  padding:10px 12px;background:var(--sf);border:1px solid var(--sb);color:var(--tx);border-radius:12px;font-size:14px;width:100%;max-width:360px;font-family:inherit}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px var(--ag)}
+input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);color:var(--tx);border-radius:12px;font-size:13px;max-width:360px}
+/* ── Toggle ── */
+.toggle{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle .sl{position:absolute;cursor:pointer;inset:0;background:var(--tg);border-radius:24px;transition:.3s}
+.toggle .sl:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:var(--cd);border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.toggle input:checked+.sl{background:var(--ac)}
+.toggle input:checked+.sl:before{transform:translateX(20px)}
+/* ── WiFi List ── */
+.ap-list{list-style:none;padding:0;margin:0}
+.ap-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--sb);cursor:pointer;transition:.12s;border-radius:8px}
+.ap-item:hover{background:var(--hv)}
+.ap-item.selected{background:var(--hv);border-color:var(--ac)}
+.ap-ssid{flex:1;font-weight:600;font-size:14px}
+.ap-rssi{font-size:11px;color:var(--t2);min-width:55px;text-align:right}
+.ap-lock{font-size:13px;min-width:18px;text-align:center}
+.signal{display:inline-flex;gap:1px;align-items:flex-end;height:14px}
+.signal span{width:3px;background:var(--t2);border-radius:1px}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;color:var(--t2);margin-bottom:4px}
+.empty{text-align:center;padding:24px;color:var(--t2);font-size:14px}
+/* ── Theme Switcher ── */
+.tsw{display:flex;gap:5px;align-items:center}
+.tsw button{cursor:pointer;border:2px solid transparent;border-radius:999px;padding:4px 10px 4px 7px;
+  font-size:11px;font-weight:600;color:var(--t2);background:var(--cd);display:flex;align-items:center;gap:5px;transition:all .2s;white-space:nowrap;line-height:1}
+.tsw button:hover{border-color:var(--sb);transform:translateY(-1px)}
+.tsw button.on{border-color:var(--ac);color:var(--ac);box-shadow:0 2px 10px var(--ag);font-weight:800}
+.tsw button:focus{outline:none}
+.tsw button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.td{width:16px;height:16px;border-radius:50%;display:block;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+@media(max-width:480px){.tsw button{padding:4px 7px 4px 5px;font-size:10px}.td{width:13px;height:13px}.hdr{gap:8px}}
+/* ── Mascot ── */
+.mascot{flex-shrink:0}
+.mascot svg{display:none;width:64px;height:64px;filter:drop-shadow(0 3px 8px rgba(0,0,0,.08));animation:m-bob 3s ease-in-out infinite}
+[data-theme="loopy"] .m-loopy,[data-theme="kitty"] .m-kitty,[data-theme="lotso"] .m-lotso{display:block}
+@keyframes m-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@media(max-width:480px){.mascot svg{width:48px;height:48px}}
+/* ── Side Decorations ── */
+.side-deco{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.wrap{position:relative;z-index:1}
+.sd-g{display:none;width:100%;height:100%}
+[data-theme="loopy"] .sd-g.sl{display:block}
+[data-theme="kitty"] .sd-g.sk{display:block}
+[data-theme="lotso"] .sd-g.so{display:block}
+.wm{position:absolute}
+.sd{position:absolute;animation:sdd 8s ease-in-out infinite}
+.sd:nth-child(even){animation-direction:alternate-reverse;animation-duration:11s}
+@keyframes sdd{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-12px) rotate(4deg)}}
+@media(max-width:1000px){.side-deco{display:none}}
+/* ── Nav Bar ── */
+.nav{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.nav a{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:12px;font-size:13px;font-weight:700;
+  color:var(--tx);background:var(--cd);border:1px solid var(--cb);text-decoration:none;transition:all .2s;white-space:nowrap}
+.nav a:hover{border-color:var(--ac);background:var(--hv);transform:translateY(-1px)}
+.nav a.active{border-color:var(--ac);color:var(--ac);background:var(--hv);box-shadow:0 2px 8px var(--ag)}
+.nav .ni{font-size:15px}
+</style>
+</head>
+<body>
+<div class="side-deco">
+  <div class="sd-g sl">
+    <svg class="wm" style="left:1%;top:5%;width:200px;height:200px;opacity:.055" viewBox="0 0 100 100"><circle cx="22" cy="28" r="11" fill="#FFB5C8"/><circle cx="78" cy="28" r="11" fill="#FFB5C8"/><circle cx="50" cy="55" r="36" fill="#FFB5C8"/><ellipse cx="50" cy="62" rx="20" ry="14" fill="#FFD6E0"/><circle cx="28" cy="58" r="6" fill="#FF8FA8" opacity=".5"/><circle cx="72" cy="58" r="6" fill="#FF8FA8" opacity=".5"/></svg>
+    <svg class="wm" style="right:1%;bottom:8%;width:180px;height:180px;opacity:.045;transform:scaleX(-1)" viewBox="0 0 100 100"><circle cx="22" cy="28" r="11" fill="#FFB5C8"/><circle cx="78" cy="28" r="11" fill="#FFB5C8"/><circle cx="50" cy="55" r="36" fill="#FFB5C8"/><ellipse cx="50" cy="62" rx="20" ry="14" fill="#FFD6E0"/><circle cx="28" cy="58" r="6" fill="#FF8FA8" opacity=".5"/><circle cx="72" cy="58" r="6" fill="#FF8FA8" opacity=".5"/></svg>
+    <span class="sd" style="left:2%;top:15%;font-size:32px;opacity:.2">🌸</span>
+    <span class="sd" style="left:7%;top:35%;font-size:22px;opacity:.14;animation-delay:-2s">💗</span>
+    <span class="sd" style="left:3%;top:55%;font-size:28px;opacity:.18;animation-delay:-4s">✨</span>
+    <span class="sd" style="left:6%;top:75%;font-size:20px;opacity:.14;animation-delay:-6s">🌷</span>
+    <span class="sd" style="left:1%;top:90%;font-size:24px;opacity:.16;animation-delay:-1s">💗</span>
+    <span class="sd" style="right:3%;top:12%;font-size:26px;opacity:.18;animation-delay:-.5s">💗</span>
+    <span class="sd" style="right:6%;top:32%;font-size:32px;opacity:.2;animation-delay:-2.5s">🌸</span>
+    <span class="sd" style="right:2%;top:52%;font-size:20px;opacity:.14;animation-delay:-4.5s">✨</span>
+    <span class="sd" style="right:5%;top:72%;font-size:28px;opacity:.18;animation-delay:-6.5s">🌸</span>
+    <span class="sd" style="right:1%;top:88%;font-size:22px;opacity:.14;animation-delay:-1.5s">🌷</span>
+  </div>
+  <div class="sd-g sk">
+    <svg class="wm" style="left:1%;top:5%;width:200px;height:200px;opacity:.055" viewBox="0 0 100 100"><path d="M28,38 L18,6 L44,30Z" fill="#FFD0D8"/><path d="M72,38 L82,6 L56,30Z" fill="#FFD0D8"/><ellipse cx="50" cy="55" rx="36" ry="33" fill="#FFD0D8"/><circle cx="18" cy="16" r="9" fill="#FF4D6D" opacity=".6"/><circle cx="12" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/><circle cx="24" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/></svg>
+    <svg class="wm" style="right:1%;bottom:8%;width:180px;height:180px;opacity:.045;transform:scaleX(-1)" viewBox="0 0 100 100"><path d="M28,38 L18,6 L44,30Z" fill="#FFD0D8"/><path d="M72,38 L82,6 L56,30Z" fill="#FFD0D8"/><ellipse cx="50" cy="55" rx="36" ry="33" fill="#FFD0D8"/><circle cx="18" cy="16" r="9" fill="#FF4D6D" opacity=".6"/><circle cx="12" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/><circle cx="24" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/></svg>
+    <span class="sd" style="left:2%;top:15%;font-size:32px;opacity:.2">🎀</span>
+    <span class="sd" style="left:7%;top:35%;font-size:22px;opacity:.14;animation-delay:-2s">❤️</span>
+    <span class="sd" style="left:3%;top:55%;font-size:28px;opacity:.18;animation-delay:-4s">⭐</span>
+    <span class="sd" style="left:6%;top:75%;font-size:20px;opacity:.14;animation-delay:-6s">🎀</span>
+    <span class="sd" style="left:1%;top:90%;font-size:24px;opacity:.16;animation-delay:-1s">💛</span>
+    <span class="sd" style="right:3%;top:12%;font-size:26px;opacity:.18;animation-delay:-.5s">🎀</span>
+    <span class="sd" style="right:6%;top:32%;font-size:32px;opacity:.2;animation-delay:-2.5s">❤️</span>
+    <span class="sd" style="right:2%;top:52%;font-size:20px;opacity:.14;animation-delay:-4.5s">⭐</span>
+    <span class="sd" style="right:5%;top:72%;font-size:28px;opacity:.18;animation-delay:-6.5s">🎀</span>
+    <span class="sd" style="right:1%;top:88%;font-size:22px;opacity:.14;animation-delay:-1.5s">💛</span>
+  </div>
+  <div class="sd-g so">
+    <svg class="wm" style="left:1%;top:5%;width:200px;height:200px;opacity:.055" viewBox="0 0 100 100"><circle cx="22" cy="24" r="13" fill="#D06888"/><circle cx="22" cy="24" r="7" fill="#E8A8C0"/><circle cx="78" cy="24" r="13" fill="#D06888"/><circle cx="78" cy="24" r="7" fill="#E8A8C0"/><circle cx="50" cy="55" r="36" fill="#D06888"/><ellipse cx="50" cy="63" rx="18" ry="12" fill="#F0C8D8"/></svg>
+    <svg class="wm" style="right:1%;bottom:8%;width:180px;height:180px;opacity:.045;transform:scaleX(-1)" viewBox="0 0 100 100"><circle cx="22" cy="24" r="13" fill="#D06888"/><circle cx="22" cy="24" r="7" fill="#E8A8C0"/><circle cx="78" cy="24" r="13" fill="#D06888"/><circle cx="78" cy="24" r="7" fill="#E8A8C0"/><circle cx="50" cy="55" r="36" fill="#D06888"/><ellipse cx="50" cy="63" rx="18" ry="12" fill="#F0C8D8"/></svg>
+    <span class="sd" style="left:2%;top:15%;font-size:32px;opacity:.2">🍓</span>
+    <span class="sd" style="left:7%;top:35%;font-size:22px;opacity:.14;animation-delay:-2s">💗</span>
+    <span class="sd" style="left:3%;top:55%;font-size:28px;opacity:.18;animation-delay:-4s">🍓</span>
+    <span class="sd" style="left:6%;top:75%;font-size:20px;opacity:.14;animation-delay:-6s">🌺</span>
+    <span class="sd" style="left:1%;top:90%;font-size:24px;opacity:.16;animation-delay:-1s">💗</span>
+    <span class="sd" style="right:3%;top:12%;font-size:26px;opacity:.18;animation-delay:-.5s">🍓</span>
+    <span class="sd" style="right:6%;top:32%;font-size:32px;opacity:.2;animation-delay:-2.5s">💗</span>
+    <span class="sd" style="right:2%;top:52%;font-size:20px;opacity:.14;animation-delay:-4.5s">🍓</span>
+    <span class="sd" style="right:5%;top:72%;font-size:28px;opacity:.18;animation-delay:-6.5s">🌺</span>
+    <span class="sd" style="right:1%;top:88%;font-size:22px;opacity:.14;animation-delay:-1.5s">🍓</span>
+  </div>
+</div>
+<div class="wrap">
+  <div class="hdr">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="mascot">
+        <svg class="m-loopy" viewBox="0 0 100 100"><circle cx="22" cy="25" r="12" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><circle cx="78" cy="25" r="12" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><circle cx="50" cy="55" r="38" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><ellipse cx="50" cy="62" rx="22" ry="16" fill="#FFDCE6"/><ellipse cx="37" cy="48" rx="7" ry="8" fill="#fff" stroke="#555" stroke-width="1.5"/><ellipse cx="63" cy="48" rx="7" ry="8" fill="#fff" stroke="#555" stroke-width="1.5"/><circle cx="39" cy="47" r="4" fill="#333"/><circle cx="65" cy="47" r="4" fill="#333"/><circle cx="40.5" cy="45" r="1.5" fill="#fff"/><circle cx="66.5" cy="45" r="1.5" fill="#fff"/><circle cx="26" cy="60" r="7" fill="#FF8FA8" opacity=".45"/><circle cx="74" cy="60" r="7" fill="#FF8FA8" opacity=".45"/><ellipse cx="50" cy="58" rx="3" ry="2" fill="#E88AA6"/><path d="M43,66 Q50,73 57,66" fill="none" stroke="#D07090" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="m-kitty" viewBox="0 0 100 100"><path d="M25,35 L15,5 L45,28Z" fill="#fff" stroke="#555" stroke-width="2" stroke-linejoin="round"/><path d="M75,35 L85,5 L55,28Z" fill="#fff" stroke="#555" stroke-width="2" stroke-linejoin="round"/><ellipse cx="50" cy="55" rx="38" ry="35" fill="#fff" stroke="#555" stroke-width="2"/><circle cx="18" cy="15" r="9" fill="#FF4D6D"/><circle cx="10" cy="10" r="7" fill="#FF6B88"/><circle cx="26" cy="10" r="7" fill="#FF6B88"/><circle cx="18" cy="12" r="2.5" fill="#FFD700"/><ellipse cx="38" cy="52" rx="3" ry="3.5" fill="#333"/><ellipse cx="62" cy="52" rx="3" ry="3.5" fill="#333"/><ellipse cx="50" cy="60" rx="3" ry="2" fill="#FFD700"/><line x1="5" y1="52" x2="28" y2="56" stroke="#555" stroke-width="1.2"/><line x1="5" y1="59" x2="28" y2="60" stroke="#555" stroke-width="1.2"/><line x1="5" y1="66" x2="28" y2="64" stroke="#555" stroke-width="1.2"/><line x1="95" y1="52" x2="72" y2="56" stroke="#555" stroke-width="1.2"/><line x1="95" y1="59" x2="72" y2="60" stroke="#555" stroke-width="1.2"/><line x1="95" y1="66" x2="72" y2="64" stroke="#555" stroke-width="1.2"/></svg>
+        <svg class="m-lotso" viewBox="0 0 100 100"><circle cx="20" cy="22" r="14" fill="#D06888" stroke="#B74678" stroke-width="2"/><circle cx="20" cy="22" r="8" fill="#E8A8C0"/><circle cx="80" cy="22" r="14" fill="#D06888" stroke="#B74678" stroke-width="2"/><circle cx="80" cy="22" r="8" fill="#E8A8C0"/><circle cx="50" cy="55" r="38" fill="#D06888" stroke="#B74678" stroke-width="2"/><ellipse cx="50" cy="64" rx="20" ry="14" fill="#F0C8D8"/><ellipse cx="36" cy="48" rx="6" ry="7" fill="#fff" stroke="#555" stroke-width="1.5"/><ellipse cx="64" cy="48" rx="6" ry="7" fill="#fff" stroke="#555" stroke-width="1.5"/><circle cx="37.5" cy="47" r="3.5" fill="#333"/><circle cx="65.5" cy="47" r="3.5" fill="#333"/><circle cx="39" cy="45" r="1.2" fill="#fff"/><circle cx="67" cy="45" r="1.2" fill="#fff"/><path d="M29,40 Q34,36 42,39" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/><path d="M58,39 Q66,36 71,40" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/><ellipse cx="50" cy="60" rx="5" ry="3.5" fill="#9B3F6B"/><path d="M40,69 Q50,77 60,69" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="title">配置面板</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="tsw" id="themeSw">
+        <button type="button" data-t="loopy" aria-pressed="false" onclick="setTheme('loopy')"><span class="td" style="background:linear-gradient(135deg,#FF9BB3,#8CC8F0)"></span>Loopy</button>
+        <button type="button" data-t="kitty" aria-pressed="false" onclick="setTheme('kitty')"><span class="td" style="background:linear-gradient(135deg,#FF4D6D,#FFB347)"></span>Kitty</button>
+        <button type="button" data-t="lotso" aria-pressed="false" onclick="setTheme('lotso')"><span class="td" style="background:linear-gradient(135deg,#B74678,#E8A0B8)"></span>草莓熊</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <div class="nav">
+    <a href="/"><span class="ni">🖼</span> 上传面板</a>
+    <a href="/config" class="active"><span class="ni">⚙</span> 设备配置</a>
+    <a href="/timetable"><span class="ni">📅</span> 课程表</a>
+    <a href="/todo"><span class="ni">✅</span> 待办事项</a>
+    <a href="/countdown"><span class="ni">⏳</span> 倒计时</a>
+  </div>
+
+  <!-- Current Status -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">当前状态</div>
+    </div>
+    <div class="bd">
+      <div class="kv">
+        <div class="k">运行模式</div><div class="v" id="st_mode">-</div>
+        <div class="k">STA 状态</div><div class="v" id="st_sta">-</div>
+        <div class="k">已连接 SSID</div><div class="v" id="st_ssid">-</div>
+        <div class="k">STA IP</div><div class="v" id="st_ip">-</div>
+        <div class="k">本机热点名</div><div class="v" id="st_ap_ssid">-</div>
+        <div class="k">设备 ID</div><div class="v" id="st_id6">-</div>
+        <div class="k">mDNS</div><div class="v" id="st_mdns">-</div>
+        <div class="k">AP 地址</div><div class="v">192.168.4.1</div>
+      </div>
+      <div class="row">
+        <button class="btn ghost sm" onclick="loadStatus()">刷新状态</button>
+        <button class="btn danger sm" onclick="forgetWifi()">忘记 WiFi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scan & Connect -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">连接 WiFi</div>
+      <div class="sub">扫描附近热点，选择后输入密码连接。多台设备同一路由器时，请用上方「设备 ID / mDNS」区分；连接成功后可用 <b>mDNS</b> 或 STA IP 访问。</div>
+    </div>
+    <div class="bd">
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn ghost sm" id="scanBtn" onclick="scanWifi()">扫描附近 WiFi</button>
+        <span class="sub" id="scanHint"></span>
+      </div>
+      <ul class="ap-list" id="apList"><div class="empty">点击「扫描」搜索附近 WiFi。</div></ul>
+      <div style="height:16px"></div>
+      <div class="form-row">
+        <label>SSID（可点击上方列表选择）</label>
+        <input type="text" id="inSSID" placeholder="WiFi 名称">
+      </div>
+      <div class="form-row">
+        <label>密码</label>
+        <input type="password" id="inPass" placeholder="WiFi 密码">
+      </div>
+      <div class="row">
+        <button class="btn" id="connBtn" onclick="connectWifi()">连接</button>
+      </div>
+      <div class="log" id="log">就绪。</div>
+    </div>
+  </div>
+
+  <!-- Screen Panel Selection -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">屏幕选择</div>
+      <div class="sub">选择当前连接的墨水屏型号，切换后需要重启设备生效。</div>
+    </div>
+    <div class="bd">
+      <div class="kv">
+        <div class="k">当前屏幕</div><div class="v" id="pn_current">-</div>
+        <div class="k">分辨率</div><div class="v" id="pn_res">-</div>
+      </div>
+      <div class="form-row">
+        <label>屏幕型号</label>
+        <select id="pnPanel">
+          <option value="0">4.2 寸 黑白红 (400×300, SSD1619)</option>
+          <option value="1">5.83 寸 黑白红 (648×480, UC8179)</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="savePanel()">保存并重启</button>
+        <button class="btn ghost sm" onclick="loadPanel()">刷新</button>
+      </div>
+      <div class="log" id="pnLog">加载中…</div>
+    </div>
+  </div>
+
+  <!-- Slideshow Settings -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">定时轮播</div>
+      <div class="sub">自动在画廊图片之间切换，定时刷新墨水屏显示。</div>
+    </div>
+    <div class="bd">
+      <div class="kv">
+        <div class="k">轮播状态</div><div class="v" id="ss_status">-</div>
+        <div class="k">当前图片</div><div class="v" id="ss_current">-</div>
+      </div>
+      <div class="form-row">
+        <label>启用轮播</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+          <span class="toggle"><input type="checkbox" id="ssEnabled"><span class="sl"></span></span>
+          <span id="ssLabel" style="font-size:13px">已关闭</span>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>轮播间隔</label>
+        <select id="ssInterval">
+          <option value="300">5 分钟</option>
+          <option value="600">10 分钟</option>
+          <option value="900">15 分钟</option>
+          <option value="1800">30 分钟</option>
+          <option value="3600">1 小时</option>
+          <option value="7200">2 小时</option>
+          <option value="14400">4 小时</option>
+          <option value="28800">8 小时</option>
+          <option value="43200">12 小时</option>
+          <option value="86400">24 小时</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>轮播模式</label>
+        <select id="ssMode">
+          <option value="0">顺序播放</option>
+          <option value="1">随机播放</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>图片叠加时钟</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+          <span class="toggle"><input type="checkbox" id="ssClkOverlay"><span class="sl"></span></span>
+          <span style="font-size:13px;color:var(--t2)">在图片右上角显示当前时间</span>
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="saveSlideshow()">保存设置</button>
+        <button class="btn ghost sm" onclick="loadSlideshow()">刷新</button>
+      </div>
+      <div class="log" id="ssLog">加载中…</div>
+    </div>
+  </div>
+
+  <!-- Weather -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">天气与日历</div>
+      <div class="sub">联网获取天气信息，在墨水屏上显示天气、温度、日期等。需要<a href="https://dev.qweather.com/" target="_blank" style="color:var(--ac)">和风天气</a>免费 API Key。</div>
+    </div>
+    <div class="bd">
+      <div class="kv">
+        <div class="k">天气状态</div><div class="v" id="w_status">-</div>
+        <div class="k">最新数据</div><div class="v" id="w_data">-</div>
+      </div>
+      <div class="form-row">
+        <label>启用天气</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+          <span class="toggle"><input type="checkbox" id="wEnabled"><span class="sl"></span></span>
+          <span id="wLabel" style="font-size:13px">已关闭</span>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>API Key（和风天气）</label>
+        <input type="text" id="wApiKey" placeholder="在 dev.qweather.com 获取">
+      </div>
+      <div class="form-row">
+        <label>API Host（控制台 → 设置中查看）</label>
+        <input type="text" id="wApiHost" placeholder="xxx.re.qweatherapi.com">
+      </div>
+      <div class="form-row" style="position:relative">
+        <label>搜索城市（输入后自动匹配城市和区县）</label>
+        <input type="text" id="wCitySearch" placeholder="输入城市名，如：北京、杭州、浦东" autocomplete="off" oninput="searchCity(this.value)">
+        <div id="cityResults" style="display:none;position:absolute;z-index:10;left:0;right:0;max-width:360px;max-height:200px;overflow-y:auto;background:var(--cd);border:1px solid var(--ac);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);margin-top:2px"></div>
+      </div>
+      <div class="form-row">
+        <label>城市 Location ID</label>
+        <input type="text" id="wLocation" placeholder="101010100" style="background:var(--sf);color:var(--t2)">
+      </div>
+      <div class="form-row">
+        <label>城市名称（显示用）</label>
+        <input type="text" id="wCity" placeholder="北京">
+      </div>
+      <div class="form-row">
+        <label>自动刷新间隔</label>
+        <select id="wRefresh">
+          <option value="0">仅手动</option>
+          <option value="30">30 分钟</option>
+          <option value="60">1 小时</option>
+          <option value="120">2 小时</option>
+          <option value="240">4 小时</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="saveWeather()">保存设置</button>
+        <button class="btn ghost sm" onclick="showWeather()">立即显示天气</button>
+        <button class="btn ghost sm" onclick="loadWeather()">刷新</button>
+      </div>
+      <div class="log" id="wLog">加载中…</div>
+    </div>
+  </div>
+
+  <!-- Clock Display -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">时钟表盘</div>
+      <div class="sub">大字 7 段数码管风格显示当前时间、日期和星期，每分钟自动刷新。可选显示天气摘要。</div>
+    </div>
+    <div class="bd">
+      <div class="form-row">
+        <label>启用时钟</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+          <span class="toggle"><input type="checkbox" id="ckEnabled"><span class="sl"></span></span>
+          <span id="ckLabel" style="font-size:13px">已关闭</span>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>显示天气摘要</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+          <span class="toggle"><input type="checkbox" id="ckWeather"><span class="sl"></span></span>
+          <span style="font-size:13px;color:var(--t2)">在时间下方显示天气信息（需先配置天气）</span>
+        </label>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="saveClock()">保存设置</button>
+        <button class="btn ghost sm" onclick="showClock()">立即显示时钟</button>
+        <button class="btn ghost sm" onclick="loadClock()">刷新</button>
+      </div>
+      <div class="log" id="ckLog">加载中…</div>
+    </div>
+  </div>
+
+  <!-- Message Board -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">自定义留言板</div>
+      <div class="sub">输入文字内容，直接渲染到墨水屏上。支持中英文混排、换行、字号选择。</div>
+    </div>
+    <div class="bd">
+      <div class="form-row">
+        <label>留言内容（最多 500 字符，支持换行）</label>
+        <textarea id="msgText" rows="5" placeholder="在此输入要显示的文字…" style="resize:vertical"></textarea>
+      </div>
+      <div class="form-row">
+        <label>字号</label>
+        <select id="msgFont">
+          <option value="0">1x 标准 (16px)</option>
+          <option value="1">2x 中号 (32px)</option>
+          <option value="2">3x 大号 (48px)</option>
+          <option value="3">4x 超大 (64px)</option>
+          <option value="4">5x 巨大 (80px)</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>对齐</label>
+        <select id="msgAlign">
+          <option value="0">左对齐</option>
+          <option value="1">居中</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>颜色</label>
+        <select id="msgColor">
+          <option value="0">黑色</option>
+          <option value="1">红色</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>X 偏移（像素，正=右移，负=左移）</label>
+        <input type="number" id="msgXOff" value="0" min="-200" max="200" style="max-width:120px">
+      </div>
+      <div class="form-row">
+        <label>Y 偏移（像素，正=下移，负=上移）</label>
+        <input type="number" id="msgYOff" value="0" min="-150" max="150" style="max-width:120px">
+      </div>
+      <div class="row">
+        <button class="btn" onclick="saveMsg()">保存设置</button>
+        <button class="btn ghost sm" onclick="showMsg()">立即显示</button>
+        <button class="btn ghost sm" onclick="loadMsg()">刷新</button>
+      </div>
+      <div class="log" id="msgLog">加载中…</div>
+    </div>
+  </div>
+
+  <!-- Calendar -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">万年历</div>
+      <div class="sub">显示月历视图，含公历、农历、节气、节日。周末和今日用红色高亮。</div>
+    </div>
+    <div class="bd">
+      <div class="form-row">
+        <label>年份</label>
+        <input type="number" id="calYear" value="" min="1900" max="2100" placeholder="留空=当前年" style="max-width:120px">
+      </div>
+      <div class="form-row">
+        <label>月份</label>
+        <input type="number" id="calMonth" value="" min="1" max="12" placeholder="留空=当前月" style="max-width:120px">
+      </div>
+      <div class="row">
+        <button class="btn" onclick="showCalendar()">显示万年历</button>
+        <button class="btn ghost sm" onclick="showCalendarPrev()">上月</button>
+        <button class="btn ghost sm" onclick="showCalendarNext()">下月</button>
+      </div>
+      <div class="log" id="calLog">就绪</div>
+    </div>
+  </div>
+
+  <!-- Web Auth -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">访问密码</div>
+      <div class="sub">设置后，上传/删除/OTA/配网等操作需输入密码。留空则关闭认证。</div>
+    </div>
+    <div class="bd">
+      <div class="form-row"><label>用户名</label><input id="authUser" placeholder="留空关闭认证"></div>
+      <div class="form-row"><label>密码</label><input id="authPass" type="password" placeholder="留空关闭认证"></div>
+      <div class="row">
+        <button class="btn" onclick="saveAuth()">保存</button>
+        <button class="btn ghost sm" onclick="loadAuth()">刷新</button>
+      </div>
+      <div class="log" id="authLog">加载中…</div>
+    </div>
+  </div>
+
+  <!-- Power Management / Deep Sleep -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">低功耗 / 深度睡眠</div>
+      <div class="sub">启用后，设备在闲置超时后自动进入深度睡眠。由定时器或按键 (SW3/SW5) 唤醒。<br><b>注意</b>：SW4（中间键）无法唤醒设备。</div>
+    </div>
+    <div class="bd">
+      <div class="form-row">
+        <label>启用睡眠模式</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+          <span class="toggle"><input type="checkbox" id="pwrEnabled"><span class="sl"></span></span>
+          <span id="pwrLabel" style="font-size:13px">已关闭</span>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>定时唤醒间隔</label>
+        <select id="pwrInterval">
+          <option value="5">5 分钟</option>
+          <option value="10">10 分钟</option>
+          <option value="15">15 分钟</option>
+          <option value="30">30 分钟</option>
+          <option value="60">1 小时</option>
+          <option value="120">2 小时</option>
+          <option value="240">4 小时</option>
+          <option value="480">8 小时</option>
+          <option value="1440">24 小时</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>闲置超时（无操作多久后入睡）</label>
+        <select id="pwrIdle">
+          <option value="60">1 分钟</option>
+          <option value="120">2 分钟</option>
+          <option value="300">5 分钟</option>
+          <option value="600">10 分钟</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="savePower()">保存设置</button>
+        <button class="btn ghost sm" onclick="loadPower()">刷新</button>
+      </div>
+      <div class="log" id="pwrLog">加载中…</div>
+    </div>
+  </div>
+
+  <!-- Config Backup/Restore -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">配置导出/导入</div>
+      <div class="sub">一键备份所有设置到 JSON 文件，或从备份文件恢复。包含天气、时钟、轮播、课程表、待办事项、倒计时等全部配置。</div>
+    </div>
+    <div class="bd">
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn" onclick="exportConfig()">导出配置</button>
+        <label class="btn ghost" style="cursor:pointer">
+          导入配置
+          <input type="file" id="importFile" accept=".json" style="display:none" onchange="importConfig(this)">
+        </label>
+      </div>
+      <div class="log" id="bkLog">点击「导出配置」下载备份文件。</div>
+    </div>
+  </div>
+
+  <!-- OTA Firmware Update -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">固件升级 (OTA)</div>
+      <div class="sub">上传新固件 <b>.bin</b> 文件，设备将自动写入备用分区并重启。保留 factory 分区用于回滚保护。</div>
+    </div>
+    <div class="bd">
+      <div class="kv">
+        <div class="k">固件版本</div><div class="v" id="fw_ver">-</div>
+        <div class="k">编译时间</div><div class="v" id="fw_date">-</div>
+        <div class="k">IDF 版本</div><div class="v" id="fw_idf">-</div>
+        <div class="k">当前分区</div><div class="v" id="fw_part">-</div>
+        <div class="k">升级目标</div><div class="v" id="fw_next">-</div>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn ghost sm" onclick="loadVersion()">刷新版本信息</button>
+      </div>
+      <div class="form-row">
+        <label>选择固件文件（.bin，最大 2MB）</label>
+        <input type="file" id="otaFile" accept=".bin">
+      </div>
+      <div id="otaProgress" style="display:none;margin-bottom:12px">
+        <div style="background:var(--sf);border:1px solid var(--sb);border-radius:10px;overflow:hidden;height:24px">
+          <div id="otaBar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--ac),var(--a2));border-radius:10px;transition:width .3s;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--bt)">0%</div>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn" id="otaBtn" onclick="uploadOTA()">开始升级</button>
+      </div>
+      <div class="log" id="otaLog">选择 .bin 固件文件后点击「开始升级」。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  localStorage.setItem('epd_theme',t);
+  document.querySelectorAll('.tsw button').forEach(function(b){
+    b.classList.remove('on');
+    b.setAttribute('aria-pressed','false');
+    b.blur();
+  });
+  document.querySelectorAll('.tsw button[data-t="'+t+'"]').forEach(function(b){
+    b.classList.add('on');
+    b.setAttribute('aria-pressed','true');
+  });
+}
+(function(){var t=localStorage.getItem('epd_theme')||'loopy';setTheme(t)})();
+
+function log(s,cls){const el=document.getElementById('log');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+function signalBars(rssi){
+  if(rssi>=-50) return 4;
+  if(rssi>=-65) return 3;
+  if(rssi>=-75) return 2;
+  return 1;
+}
+
+function authName(a){
+  const m=['Open','WEP','WPA','WPA2','WPA/WPA2','WPA3','WPA2/WPA3','WAPI','OWE'];
+  return m[a]||('Auth:'+a);
+}
+
+async function loadStatus(){
+  try{
+    const r=await fetch('/wifi_status');const j=await r.json();
+    const modeMap={0:'未初始化',1:'AP 模式',2:'STA 模式',3:'AP+STA 模式'};
+    document.getElementById('st_mode').textContent=modeMap[j.mode]||j.mode;
+    const sta=document.getElementById('st_sta');
+    if(j.sta_connected){sta.textContent='已连接';sta.className='v ok';}
+    else{sta.textContent='未连接';sta.className='v warn';}
+    document.getElementById('st_ssid').textContent=j.sta_ssid||'-';
+    document.getElementById('st_ip').textContent=j.sta_ip||'-';
+    document.getElementById('st_ap_ssid').textContent=j.ap_ssid||'-';
+    document.getElementById('st_id6').textContent=j.id6||'-';
+    const mh=j.mdns_host||'epd';
+    document.getElementById('st_mdns').innerHTML='<a href="http://'+mh+'.local/" style="color:var(--ac)">'+mh+'.local</a>';
+  }catch(e){log('获取状态失败: '+e,'bad');}
+}
+
+async function scanWifi(){
+  const btn=document.getElementById('scanBtn');
+  btn.disabled=true;
+  document.getElementById('scanHint').textContent='扫描中…约需 3-5 秒';
+  document.getElementById('apList').innerHTML='<div class="empty">扫描中…</div>';
+  try{
+    const r=await fetch('/scan');const j=await r.json();
+    const list=document.getElementById('apList');
+    if(!j.aps||j.aps.length===0){list.innerHTML='<div class="empty">未发现任何 WiFi 热点。</div>';return;}
+    list.innerHTML=j.aps.map((a,i)=>{
+      const bars=signalBars(a.rssi);
+      const barsHtml='<span class="signal">'+[3,6,9,12].map((h,bi)=>`<span style="height:${h}px;${bi<bars?'background:var(--ac)':''}"></span>`).join('')+'</span>';
+      return `<li class="ap-item" onclick="selectAP(this,'${a.ssid.replace(/'/g,"\\'")}')">
+        <span class="ap-lock">${a.auth>0?'🔒':''}</span>
+        <span class="ap-ssid">${a.ssid}</span>
+        ${barsHtml}
+        <span class="ap-rssi">${a.rssi} dBm</span>
+      </li>`;
+    }).join('');
+    document.getElementById('scanHint').textContent='发现 '+j.aps.length+' 个热点';
+  }catch(e){
+    document.getElementById('apList').innerHTML='<div class="empty bad">扫描失败</div>';
+    document.getElementById('scanHint').textContent='';
+    log('扫描失败: '+e,'bad');
+  }
+  btn.disabled=false;
+}
+
+function selectAP(el,ssid){
+  document.querySelectorAll('.ap-item').forEach(e=>e.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('inSSID').value=ssid;
+  document.getElementById('inPass').focus();
+}
+
+async function connectWifi(){
+  const ssid=document.getElementById('inSSID').value.trim();
+  const pass=document.getElementById('inPass').value;
+  if(!ssid){log('请输入或选择 SSID。','bad');return;}
+  const btn=document.getElementById('connBtn');
+  btn.disabled=true;
+  log('正在连接 "'+ssid+'"，请稍候（约 10 秒）…');
+  try{
+    const r=await fetch('/wifi_connect',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ssid,password:pass})
+    });
+    const j=await r.json();
+    if(j.ok){
+      const mh=j.mdns_host||'epd';
+      const ap=j.ap_ssid||'';
+      log('连接成功！\nSTA IP: '+j.sta_ip+'\n\n访问: http://'+mh+'.local/ 或 http://'+j.sta_ip+'/\n本机热点名: '+ap+'（仍可用于配网）','ok');
+    }else{
+      log('连接失败：'+j.msg+'\n请检查密码是否正确，或 WiFi 是否在范围内。','bad');
+    }
+    await loadStatus();
+  }catch(e){log('请求失败: '+e+'\n\n如果设备已切换网络，请重新连接设备热点后刷新页面。','bad');}
+  btn.disabled=false;
+}
+
+async function forgetWifi(){
+  if(!confirm('确定忘记已保存的 WiFi 凭据？设备将回到纯 AP 模式。')) return;
+  try{
+    const r=await fetch('/wifi_forget',{method:'POST'});
+    const j=await r.json();
+    log(j.ok?'已清除保存的 WiFi，设备回到 AP 模式。':'操作失败: '+j.msg, j.ok?'ok':'bad');
+    await loadStatus();
+  }catch(e){log('操作失败: '+e,'bad');}
+}
+
+function ssLog(s,cls){const el=document.getElementById('ssLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function loadSlideshow(){
+  try{
+    const r=await fetch('/slideshow');const j=await r.json();
+    document.getElementById('ssEnabled').checked=j.enabled;
+    document.getElementById('ssLabel').textContent=j.enabled?'已开启':'已关闭';
+    document.getElementById('ssInterval').value=String(j.interval_sec);
+    document.getElementById('ssMode').value=String(j.mode);
+    document.getElementById('ssClkOverlay').checked=!!j.clock_overlay;
+    const st=document.getElementById('ss_status');
+    if(j.enabled){st.textContent='运行中';st.className='v ok';}
+    else{st.textContent='已关闭';st.className='v warn';}
+    document.getElementById('ss_current').textContent=j.current_image||'无';
+    ssLog('设置已加载。');
+  }catch(e){ssLog('加载失败: '+e,'bad');}
+}
+
+async function saveSlideshow(){
+  const cfg={
+    enabled:document.getElementById('ssEnabled').checked,
+    interval_sec:parseInt(document.getElementById('ssInterval').value),
+    mode:parseInt(document.getElementById('ssMode').value),
+    clock_overlay:document.getElementById('ssClkOverlay').checked
+  };
+  ssLog('保存中…');
+  try{
+    const r=await fetch('/slideshow',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(cfg)
+    });
+    const j=await r.json();
+    if(j.ok){
+      ssLog('设置已保存！'+(cfg.enabled?'轮播将在 '+formatInterval(cfg.interval_sec)+' 后显示下一张。':'轮播已关闭。'),'ok');
+      await loadSlideshow();
+    }else{ssLog('保存失败','bad');}
+  }catch(e){ssLog('请求失败: '+e,'bad');}
+}
+
+function formatInterval(sec){
+  if(sec>=3600) return (sec/3600)+'小时';
+  return (sec/60)+'分钟';
+}
+
+function wLog(s,cls){const el=document.getElementById('wLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function fetchJsonRetry(url,options,retries,delayMs){
+  retries=retries===undefined?4:retries;
+  delayMs=delayMs===undefined?400:delayMs;
+  let last;
+  for(let i=0;i<retries;i++){
+    try{
+      const r=await fetch(url,options);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return await r.json();
+    }catch(e){
+      last=e;
+      if(i<retries-1) await new Promise(function(res){setTimeout(res,delayMs*(i+1));});
+    }
+  }
+  throw last;
+}
+
+let weatherHydrating=false;
+let weatherAutoSaveTimer=null;
+let weatherSaveInFlight=false;
+
+var CITIES=[
+["北京","101010100"],["北京朝阳","101010300"],["北京海淀","101010200"],
+["上海","101020100"],["上海浦东","101021500"],["上海徐汇","101020600"],
+["广州","101280101"],["深圳","101280601"],["天津","101030100"],["重庆","101040100"],
+["杭州","101210101"],["南京","101190101"],["成都","101270101"],["武汉","101200101"],
+["西安","101110101"],["苏州","101190401"],["长沙","101250101"],["郑州","101180101"],
+["青岛","101120201"],["大连","101070201"],["沈阳","101070101"],["哈尔滨","101050101"],
+["长春","101060101"],["济南","101120101"],["合肥","101220101"],["福州","101230101"],
+["厦门","101230201"],["昆明","101290101"],["贵阳","101260101"],["南宁","101300101"],
+["南昌","101240101"],["太原","101100101"],["石家庄","101090101"],["呼和浩特","101080101"],
+["乌鲁木齐","101130101"],["兰州","101160101"],["银川","101170101"],["西宁","101150101"],
+["拉萨","101140101"],["海口","101310101"],["三亚","101310201"],["珠海","101280701"],
+["佛山","101280800"],["东莞","101281601"],["宁波","101210401"],["无锡","101190201"],
+["温州","101210701"],["常州","101191101"],["中山","101281701"],["惠州","101280301"],
+["烟台","101120501"],["潍坊","101120601"],["绍兴","101210501"],["台州","101210601"],
+["嘉兴","101210301"],["金华","101210901"],["泉州","101230501"],["保定","101090201"],
+["唐山","101090501"],["洛阳","101180901"],["襄阳","101200201"],["芜湖","101220301"],
+["徐州","101190801"],["扬州","101190601"],["南通","101190501"],["连云港","101190701"],
+["桂林","101300501"],["绵阳","101270401"],["遵义","101260201"],["柳州","101300301"],
+["香港","101320101"],["澳门","101330101"]
+];
+function searchCity(q){
+  var box=document.getElementById('cityResults');
+  if(!q||q.length<1){box.style.display='none';return;}
+  var results=CITIES.filter(function(c){return c[0].indexOf(q)>=0;});
+  if(!results.length){box.style.display='none';return;}
+  box.innerHTML=results.slice(0,10).map(function(c){
+    return '<div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--sb);transition:background .15s" '+
+      'onmouseover="this.style.background=\'var(--hv)\'" onmouseout="this.style.background=\'\'" '+
+      'onclick="pickCity(\''+c[0]+'\',\''+c[1]+'\')">'+c[0]+' <span style="color:var(--t2);font-size:11px">'+c[1]+'</span></div>';
+  }).join('');
+  box.style.display='block';
+}
+function pickCity(name,id){
+  document.getElementById('wLocation').value=id;
+  document.getElementById('wCity').value=name;
+  document.getElementById('wCitySearch').value=name;
+  document.getElementById('cityResults').style.display='none';
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#wCitySearch')&&!e.target.closest('#cityResults'))
+    document.getElementById('cityResults').style.display='none';
+});
+
+function collectWeatherCfg(){
+  return{
+    enabled:document.getElementById('wEnabled').checked,
+    api_key:document.getElementById('wApiKey').value.trim(),
+    api_host:document.getElementById('wApiHost').value.trim().replace(/^https?:\/\//,''),
+    location:document.getElementById('wLocation').value.trim(),
+    city_name:document.getElementById('wCity').value.trim(),
+    refresh_min:parseInt(document.getElementById('wRefresh').value)
+  };
+}
+
+function scheduleWeatherAutoSave(){
+  if(weatherHydrating||weatherSaveInFlight) return;
+  clearTimeout(weatherAutoSaveTimer);
+  weatherAutoSaveTimer=setTimeout(function(){
+    weatherAutoSaveTimer=null;
+    var cfg=collectWeatherCfg();
+    if(cfg.enabled&&(!cfg.api_key||!cfg.api_host||!cfg.location)) return;
+    saveWeather({silent:true});
+  },2000);
+}
+
+async function loadWeather(){
+  try{
+    weatherHydrating=true;
+    const j=await fetchJsonRetry('/weather_config');
+    document.getElementById('wEnabled').checked=j.enabled;
+    document.getElementById('wLabel').textContent=j.enabled?'已开启':'已关闭';
+    document.getElementById('wApiKey').value=j.api_key||'';
+    document.getElementById('wApiHost').value=j.api_host||'';
+    document.getElementById('wLocation').value=j.location||'';
+    document.getElementById('wCity').value=j.city_name||'';
+    document.getElementById('wRefresh').value=String(j.refresh_min||0);
+    const st=document.getElementById('w_status');
+    if(j.enabled){st.textContent='运行中';st.className='v ok';}
+    else{st.textContent='已关闭';st.className='v warn';}
+    const wd=document.getElementById('w_data');
+    if(j.has_data){wd.textContent=j.temp+'°C '+j.text+' ('+j.update_time+')';wd.className='v';}
+    else{wd.textContent='暂无数据';wd.className='v warn';}
+    wLog('设置已加载。');
+  }catch(e){wLog('加载失败: '+e,'bad');}
+  finally{weatherHydrating=false;}
+}
+
+async function saveWeather(opts){
+  opts=opts||{};
+  var silent=opts.silent===true;
+  var cfg=collectWeatherCfg();
+  if(cfg.enabled&&(!cfg.api_key||!cfg.api_host||!cfg.location)){
+    if(!silent) wLog('请填写 API Key、API Host 和城市 ID','bad');
+    return;
+  }
+  if(!silent) wLog('保存中…');
+  else wLog('自动保存中…');
+  weatherSaveInFlight=true;
+  try{
+    var j=await fetchJsonRetry('/weather_config',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(cfg)
+    },3,500);
+    if(j.ok){
+      if(!silent) wLog('设置已保存。设备将自动拉取天气。','ok');
+      else wLog('已自动保存，设备正在拉取天气…','ok');
+      await loadWeather();
+    }else wLog('保存失败','bad');
+  }catch(e){wLog('请求失败: '+e,'bad');}
+  finally{weatherSaveInFlight=false;}
+}
+
+async function showWeather(){
+  wLog('正在获取天气数据并渲染…墨水屏较慢，请耐心等待（最长约 2 分钟）');
+  var ctrl=new AbortController();
+  var t=setTimeout(function(){ctrl.abort();},120000);
+  try{
+    const r=await fetch('/weather_show',{method:'POST',signal:ctrl.signal});
+    const j=await r.json();
+    if(j.ok){wLog('天气已显示在墨水屏上！','ok');await loadWeather();}
+    else wLog('获取天气失败，请检查 API Key 和城市 ID 是否正确。','bad');
+  }catch(e){
+    wLog('请求失败: '+(e.name==='AbortError'?'超时（墨水屏仍在刷新可稍后再试）':e),'bad');
+  }finally{clearTimeout(t);}
+}
+
+function ckLog(s,cls){const el=document.getElementById('ckLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function loadClock(){
+  try{
+    const r=await fetch('/clock_config');const j=await r.json();
+    document.getElementById('ckEnabled').checked=j.enabled;
+    document.getElementById('ckLabel').textContent=j.enabled?'已开启':'已关闭';
+    document.getElementById('ckWeather').checked=j.show_weather;
+    ckLog('设置已加载。');
+  }catch(e){ckLog('加载失败: '+e,'bad');}
+}
+
+/* 任一主开关变更后，从设备拉取其它区块，使未操作过的开关与 NVS 一致 */
+async function syncOtherSectionsFromDevice(changedKey){
+  var tasks=[];
+  if(changedKey!=='ss') tasks.push(loadSlideshow());
+  if(changedKey!=='w') tasks.push(loadWeather());
+  if(changedKey!=='ck' && changedKey!=='cwk') tasks.push(loadClock());
+  if(tasks.length===0) return;
+  try{
+    await Promise.all(tasks);
+  }catch(e){}
+}
+
+async function saveClock(){
+  const cfg={
+    enabled:document.getElementById('ckEnabled').checked,
+    style:0,
+    show_weather:document.getElementById('ckWeather').checked
+  };
+  ckLog('保存中…');
+  try{
+    const r=await fetch('/clock_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const j=await r.json();
+    if(j.ok){ckLog('设置已保存。'+(cfg.enabled?'时钟将每分钟自动刷新。':'时钟已关闭。'),'ok');await loadClock();}
+    else ckLog('保存失败','bad');
+  }catch(e){ckLog('请求失败: '+e,'bad');}
+}
+
+async function showClock(){
+  ckLog('正在渲染时钟…请稍候（约 15 秒刷新）');
+  try{
+    const r=await fetch('/clock_show',{method:'POST'});
+    const j=await r.json();
+    if(j.ok) ckLog('时钟已显示在墨水屏上！','ok');
+    else ckLog('显示失败（可能时间尚未同步）','bad');
+  }catch(e){ckLog('请求失败: '+e,'bad');}
+}
+
+function msgLog(s,cls){const el=document.getElementById('msgLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function loadMsg(){
+  try{
+    const r=await fetch('/msg_config');const j=await r.json();
+    document.getElementById('msgText').value=j.text||'';
+    document.getElementById('msgFont').value=String(j.font_size||0);
+    document.getElementById('msgAlign').value=String(j.align||0);
+    document.getElementById('msgColor').value=String(j.color||0);
+    document.getElementById('msgXOff').value=j.x_offset||0;
+    document.getElementById('msgYOff').value=j.y_offset||0;
+    msgLog('设置已加载。');
+  }catch(e){msgLog('加载失败: '+e,'bad');}
+}
+
+async function saveMsg(){
+  const text=document.getElementById('msgText').value;
+  if(text.length>500){msgLog('文字过长，最多 500 字符','bad');return;}
+  const cfg={
+    text:text,
+    font_size:parseInt(document.getElementById('msgFont').value),
+    align:parseInt(document.getElementById('msgAlign').value),
+    color:parseInt(document.getElementById('msgColor').value),
+    x_offset:parseInt(document.getElementById('msgXOff').value)||0,
+    y_offset:parseInt(document.getElementById('msgYOff').value)||0
+  };
+  msgLog('保存中…');
+  try{
+    const r=await fetch('/msg_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const j=await r.json();
+    if(j.ok){msgLog('设置已保存。','ok');await loadMsg();}
+    else msgLog('保存失败','bad');
+  }catch(e){msgLog('请求失败: '+e,'bad');}
+}
+
+async function showMsg(){
+  const text=document.getElementById('msgText').value;
+  if(!text.trim()){msgLog('请先输入留言内容','bad');return;}
+  await saveMsg();
+  msgLog('正在渲染…请稍候（约 15 秒刷新）');
+  try{
+    const r=await fetch('/msg_show',{method:'POST'});
+    const j=await r.json();
+    if(j.ok) msgLog('留言已显示在墨水屏上！','ok');
+    else msgLog('显示失败，请确保已输入文字内容。','bad');
+  }catch(e){msgLog('请求失败: '+e,'bad');}
+}
+
+/* ── Calendar ── */
+function calLog(s,cls){const el=document.getElementById('calLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function showCalendar(){
+  const y=parseInt(document.getElementById('calYear').value)||0;
+  const m=parseInt(document.getElementById('calMonth').value)||0;
+  calLog('正在渲染万年历…请稍候（约 20 秒刷新）');
+  try{
+    const body={};
+    if(y) body.year=y;
+    if(m) body.month=m;
+    const r=await fetch('/calendar_show',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j.ok) calLog('万年历已显示在墨水屏上！','ok');
+    else calLog('显示失败','bad');
+  }catch(e){calLog('请求失败: '+e,'bad');}
+}
+
+function calStep(delta){
+  let y=parseInt(document.getElementById('calYear').value)||new Date().getFullYear();
+  let m=parseInt(document.getElementById('calMonth').value)||new Date().getMonth()+1;
+  m+=delta;
+  if(m>12){m=1;y++;}
+  if(m<1){m=12;y--;}
+  document.getElementById('calYear').value=y;
+  document.getElementById('calMonth').value=m;
+  showCalendar();
+}
+function showCalendarPrev(){calStep(-1);}
+function showCalendarNext(){calStep(1);}
+
+function otaLog(s,cls){const el=document.getElementById('otaLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function loadVersion(){
+  try{
+    const r=await fetch('/version');const j=await r.json();
+    document.getElementById('fw_ver').textContent=j.version;
+    document.getElementById('fw_date').textContent=j.date+' '+j.time;
+    document.getElementById('fw_idf').textContent=j.idf;
+    document.getElementById('fw_part').textContent=j.running;
+    document.getElementById('fw_next').textContent=j.next_ota||'none';
+  }catch(e){document.getElementById('fw_ver').textContent='获取失败';}
+}
+
+function uploadOTA(){
+  const input=document.getElementById('otaFile');
+  if(!input.files.length){otaLog('请选择固件文件 (.bin)','bad');return;}
+  const file=input.files[0];
+  if(!file.name.endsWith('.bin')){otaLog('请选择 .bin 格式的固件文件','bad');return;}
+  if(file.size>2*1024*1024){otaLog('固件文件过大（最大 2MB）','bad');return;}
+  if(!confirm('确定升级固件？升级期间请勿断开电源或关闭页面。')) return;
+
+  const btn=document.getElementById('otaBtn');
+  btn.disabled=true;
+  const progress=document.getElementById('otaProgress');
+  const bar=document.getElementById('otaBar');
+  progress.style.display='block';
+
+  const xhr=new XMLHttpRequest();
+  xhr.open('POST','/ota',true);
+  xhr.setRequestHeader('Content-Type','application/octet-stream');
+
+  xhr.upload.onprogress=function(e){
+    if(e.lengthComputable){
+      const pct=Math.round(e.loaded/e.total*100);
+      bar.style.width=pct+'%';
+      bar.textContent=pct+'%';
+      otaLog('上传中… '+pct+'%  ('+Math.round(e.loaded/1024)+'/'+Math.round(e.total/1024)+' KB)');
+    }
+  };
+
+  xhr.onload=function(){
+    try{
+      const j=JSON.parse(xhr.responseText);
+      if(j.ok){
+        bar.style.width='100%';bar.textContent='100%';
+        otaLog('固件上传成功！设备正在重启…\n\n8 秒后自动刷新页面。','ok');
+        setTimeout(()=>{window.location.reload();},8000);
+      }else{
+        otaLog('升级失败：'+j.msg,'bad');
+        btn.disabled=false;progress.style.display='none';
+      }
+    }catch(e){
+      otaLog('设备可能正在重启…8 秒后自动刷新。','warn');
+      setTimeout(()=>{window.location.reload();},8000);
+    }
+  };
+
+  xhr.onerror=function(){
+    otaLog('上传失败，请检查网络连接。','bad');
+    btn.disabled=false;progress.style.display='none';
+  };
+
+  xhr.ontimeout=function(){
+    otaLog('上传超时，请重试。','bad');
+    btn.disabled=false;progress.style.display='none';
+  };
+
+  xhr.timeout=120000;
+  otaLog('正在上传固件…请勿断电或关闭页面。');
+  xhr.send(file);
+}
+
+function pnLog(s,cls){const el=document.getElementById('pnLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+const panelNames=['4.2 寸 黑白红 (400×300)','5.83 寸 黑白 (648×480)'];
+
+async function loadPanel(){
+  try{
+    const r=await fetch('/panel_config');const j=await r.json();
+    document.getElementById('pnPanel').value=j.panel;
+    document.getElementById('pn_current').textContent=panelNames[j.panel]||'未知';
+    document.getElementById('pn_res').textContent=j.width+'×'+j.height+(j.has_red?' (BW+R)':' (BW)');
+    pnLog('已加载当前屏幕配置。');
+  }catch(e){pnLog('加载失败: '+e,'bad');}
+}
+
+async function savePanel(){
+  const panel=parseInt(document.getElementById('pnPanel').value);
+  if(!confirm('确定切换屏幕型号？切换后需要断电重启设备才能生效。')) return;
+  pnLog('保存中…');
+  try{
+    const r=await fetch('/panel_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({panel})});
+    const j=await r.json();
+    if(j.ok){
+      pnLog('已保存！请断电重启设备使新屏幕配置生效。（'+panelNames[panel]+'）','ok');
+      await loadPanel();
+    }else pnLog('保存失败','bad');
+  }catch(e){pnLog('请求失败: '+e,'bad');}
+}
+
+(function(){
+  ['wEnabled','wApiKey','wApiHost','wLocation','wCity','wRefresh'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(!el) return;
+    var ev=(el.tagName==='SELECT'||el.type==='checkbox')?'change':'input';
+    el.addEventListener(ev,function(){scheduleWeatherAutoSave();});
+  });
+})();
+
+(function(){
+  var ss=document.getElementById('ssEnabled');
+  var we=document.getElementById('wEnabled');
+  var ce=document.getElementById('ckEnabled');
+  var cw=document.getElementById('ckWeather');
+  if(ss) ss.addEventListener('change',function(e){
+    document.getElementById('ssLabel').textContent=e.target.checked?'已开启':'已关闭';
+    syncOtherSectionsFromDevice('ss');
+  });
+  if(we) we.addEventListener('change',function(e){
+    document.getElementById('wLabel').textContent=e.target.checked?'已开启':'已关闭';
+    syncOtherSectionsFromDevice('w');
+  });
+  if(ce) ce.addEventListener('change',function(e){
+    document.getElementById('ckLabel').textContent=e.target.checked?'已开启':'已关闭';
+    syncOtherSectionsFromDevice('ck');
+  });
+  if(cw) cw.addEventListener('change',function(){ syncOtherSectionsFromDevice('cwk'); });
+})();
+
+function authLog(m,t){document.getElementById('authLog').innerHTML='<span class="'+(t||'')+'">'+ m+'</span>';}
+async function loadAuth(){
+  try{const r=await fetch('/auth_config');const j=await r.json();
+    document.getElementById('authUser').value=j.user||'';
+    document.getElementById('authPass').value='';
+    authLog(j.enabled?'认证已开启（用户: '+j.user+'）':'认证未开启（任何人可操作）');
+  }catch(e){authLog('加载失败','bad');}
+}
+async function saveAuth(){
+  const user=document.getElementById('authUser').value.trim();
+  const pass=document.getElementById('authPass').value;
+  authLog('保存中…');
+  try{const r=await fetch('/auth_config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({user,pass})});
+    const j=await r.json();
+    if(j.ok){authLog(user&&pass?'认证已设置，刷新页面后生效':'认证已关闭','ok');
+    }else authLog('保存失败','bad');
+  }catch(e){authLog('请求失败: '+e,'bad');}
+}
+
+function pwrLog(s,cls){const el=document.getElementById('pwrLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function loadPower(){
+  try{
+    const r=await fetch('/power_config');const j=await r.json();
+    document.getElementById('pwrEnabled').checked=j.enabled;
+    document.getElementById('pwrLabel').textContent=j.enabled?'已开启':'已关闭';
+    document.getElementById('pwrInterval').value=String(j.interval);
+    document.getElementById('pwrIdle').value=String(j.idle);
+    pwrLog(j.enabled?'睡眠模式已启用，闲置 '+j.idle+' 秒后入睡，每 '+j.interval+' 分钟唤醒刷新。':'睡眠模式已关闭，设备将常亮运行。');
+  }catch(e){pwrLog('加载失败: '+e,'bad');}
+}
+
+async function savePower(){
+  const cfg={
+    enabled:document.getElementById('pwrEnabled').checked,
+    interval:parseInt(document.getElementById('pwrInterval').value),
+    idle:parseInt(document.getElementById('pwrIdle').value)
+  };
+  pwrLog('保存中…');
+  try{
+    const r=await fetch('/power_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const j=await r.json();
+    if(j.ok){
+      pwrLog(cfg.enabled?'已保存！设备将在闲置 '+cfg.idle+' 秒后进入深度睡眠。':'已保存，睡眠模式已关闭。','ok');
+      await loadPower();
+    }else pwrLog('保存失败','bad');
+  }catch(e){pwrLog('请求失败: '+e,'bad');}
+}
+
+(function(){
+  var pe=document.getElementById('pwrEnabled');
+  if(pe) pe.addEventListener('change',function(e){
+    document.getElementById('pwrLabel').textContent=e.target.checked?'已开启':'已关闭';
+  });
+})();
+
+function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function exportConfig(){
+  bkLog('正在收集所有配置…');
+  try{
+    var endpoints=['/weather_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/auth_config'];
+    var names=['weather','clock','message','slideshow','timetable','todo','countdown','power','auth'];
+    var backup={_version:1,_date:new Date().toISOString()};
+    for(var i=0;i<endpoints.length;i++){
+      try{var r=await fetch(endpoints[i]);backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
+    }
+    var blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='epd_config_'+new Date().toISOString().slice(0,10)+'.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    bkLog('配置已导出！文件名：'+a.download,'ok');
+  }catch(e){bkLog('导出失败：'+e,'bad');}
+}
+
+async function importConfig(input){
+  if(!input.files.length)return;
+  bkLog('正在读取备份文件…');
+  try{
+    var text=await input.files[0].text();
+    var backup=JSON.parse(text);
+    if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
+    var map={weather:'/weather_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
+      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',auth:'/auth_config'};
+    var ok=0,fail=0;
+    for(var key in map){
+      if(!backup[key])continue;
+      try{
+        await fetch(map[key],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup[key])});
+        ok++;
+      }catch(e){fail++;}
+    }
+    bkLog('导入完成！成功 '+ok+' 项'+(fail?' ，失败 '+fail+' 项':'')+'。页面将刷新…','ok');
+    setTimeout(function(){location.reload();},1500);
+  }catch(e){bkLog('导入失败：'+e,'bad');}
+  input.value='';
+}
+
+loadStatus();
+loadPanel();
+loadSlideshow();
+loadWeather();
+loadClock();
+loadMsg();
+loadVersion();
+loadAuth();
+loadPower();
+</script>
+</body>
+</html>

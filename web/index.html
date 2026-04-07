@@ -1,0 +1,440 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>墨水屏上传</title>
+<script>(function(){document.documentElement.setAttribute('data-theme',localStorage.getItem('epd_theme')||'loopy')})()</script>
+<style>
+/* ── Theme: Loopy (粉蓝梦幻) ── */
+[data-theme="loopy"]{
+  --bg:#FFF0F5;--g1:rgba(255,182,203,.32);--g2:rgba(173,216,250,.28);
+  --cd:#fff;--cb:rgba(255,155,179,.22);--ch:rgba(255,155,179,.10);--cs:0 6px 28px rgba(255,155,179,.13);
+  --sf:rgba(255,236,245,.75);--sb:rgba(255,155,179,.20);
+  --tx:#5A3050;--t2:rgba(120,70,100,.62);
+  --ac:#FF9BB3;--a2:#8CC8F0;--ag:rgba(255,155,179,.28);
+  --bt:#fff;--ok:#2E9E52;--er:#E53935;--wn:#E68A00;
+  --hv:rgba(255,155,179,.10);--tg:rgba(255,155,179,.22);
+  --deco:"🌸"
+}
+/* ── Theme: Hello Kitty (经典红粉) ── */
+[data-theme="kitty"]{
+  --bg:#FFF8F8;--g1:rgba(255,77,109,.18);--g2:rgba(255,215,0,.14);
+  --cd:#fff;--cb:rgba(255,77,109,.17);--ch:rgba(255,77,109,.07);--cs:0 6px 28px rgba(255,77,109,.10);
+  --sf:rgba(255,245,247,.8);--sb:rgba(255,77,109,.14);
+  --tx:#4A1525;--t2:rgba(130,50,70,.58);
+  --ac:#FF4D6D;--a2:#FFB347;--ag:rgba(255,77,109,.24);
+  --bt:#fff;--ok:#2E9E52;--er:#D32F2F;--wn:#E68A00;
+  --hv:rgba(255,77,109,.07);--tg:rgba(255,77,109,.15);
+  --deco:"🎀"
+}
+/* ── Theme: 草莓熊 (浆果玫瑰) ── */
+[data-theme="lotso"]{
+  --bg:#FBF0F3;--g1:rgba(183,70,120,.20);--g2:rgba(232,160,184,.18);
+  --cd:#fff;--cb:rgba(183,70,120,.17);--ch:rgba(183,70,120,.07);--cs:0 6px 28px rgba(183,70,120,.10);
+  --sf:rgba(251,238,244,.8);--sb:rgba(183,70,120,.14);
+  --tx:#4A1428;--t2:rgba(120,40,70,.58);
+  --ac:#B74678;--a2:#E8A0B8;--ag:rgba(183,70,120,.24);
+  --bt:#fff;--ok:#2E9E52;--er:#C62828;--wn:#E68A00;
+  --hv:rgba(183,70,120,.07);--tg:rgba(183,70,120,.15);
+  --deco:"🍓"
+}
+/* ── Base ── */
+*{box-sizing:border-box;transition:background-color .35s,border-color .35s,color .3s,box-shadow .35s}
+body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;
+  background:radial-gradient(1200px 800px at 20% -10%,var(--g1),transparent 60%),
+  radial-gradient(900px 600px at 100% 0%,var(--g2),transparent 55%),var(--bg);
+  color:var(--tx);min-height:100vh}
+.wrap{max-width:920px;margin:0 auto;padding:20px 16px}
+.hdr{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap}
+.title{font-weight:800;letter-spacing:.2px;font-size:20px}
+.pill{font-size:12px;color:var(--t2);padding:7px 11px;border:1px solid var(--cb);border-radius:999px;background:var(--sf);white-space:nowrap}
+.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}
+/* ── Cards ── */
+.card{position:relative;background:var(--cd);border:1px solid var(--cb);border-radius:18px;overflow:hidden;box-shadow:var(--cs)}
+.card .hd{position:relative;padding:16px 16px 10px;background:linear-gradient(180deg,var(--ch),transparent)}
+.card .hd::after{content:var(--deco);position:absolute;top:12px;right:14px;font-size:16px;opacity:.55;pointer-events:none}
+.card .bd{padding:16px}
+.sub{color:var(--t2);font-size:13px;line-height:1.5}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);color:var(--tx);border-radius:12px;max-width:220px;font-size:13px}
+/* ── Buttons ── */
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:13px;color:var(--bt);
+  background:linear-gradient(135deg,var(--ac),var(--a2));box-shadow:0 6px 20px var(--ag);transition:filter .2s,transform .15s}
+.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.btn.ghost{background:var(--sf);color:var(--tx);border:1px solid var(--cb);box-shadow:none}
+.btn.ghost:hover{background:var(--hv);border-color:var(--ac)}
+.btn.sm{padding:6px 10px;font-size:12px;border-radius:8px}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;filter:none}
+/* ── Data ── */
+.kv{display:grid;grid-template-columns:130px 1fr;gap:8px 12px;font-size:13px}
+.k{color:var(--t2)}.v{font-weight:700}
+.log{margin-top:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;
+  background:var(--sf);border:1px solid var(--sb);border-radius:12px;padding:10px;min-height:72px;white-space:pre-wrap}
+.ok{color:var(--ok)}.bad{color:var(--er)}
+.bar-wrap{height:6px;background:var(--sb);border-radius:3px;margin-top:6px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .4s}
+/* ── Gallery ── */
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:8px}
+.gcard{background:var(--sf);border:1px solid var(--sb);border-radius:14px;overflow:hidden;transition:transform .15s,border-color .2s}
+.gcard:hover{border-color:var(--ac);transform:translateY(-2px)}
+.gcard img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:rgba(0,0,0,.04)}
+.gcard .ginfo{padding:8px 10px 4px;display:flex;justify-content:space-between;align-items:center}
+.gcard .gname{font-size:11px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px}
+.gcard .gsz{font-size:11px;font-weight:700;color:var(--tx)}
+.gcard .gactions{padding:4px 10px 10px;display:flex;gap:6px}
+.empty{text-align:center;padding:32px;color:var(--t2);font-size:14px}
+.fullcard{margin-top:14px}
+/* ── Nav Bar ── */
+.nav{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.nav a{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:12px;font-size:13px;font-weight:700;
+  color:var(--tx);background:var(--cd);border:1px solid var(--cb);text-decoration:none;transition:all .2s;white-space:nowrap}
+.nav a:hover{border-color:var(--ac);background:var(--hv);transform:translateY(-1px)}
+.nav a.active{border-color:var(--ac);color:var(--ac);background:var(--hv);box-shadow:0 2px 8px var(--ag)}
+.nav .ni{font-size:15px}
+/* ── Dashboard ── */
+.dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px}
+.dash-item{background:var(--cd);border:1px solid var(--cb);border-radius:14px;padding:12px;text-align:center}
+.dash-icon{font-size:22px;margin-bottom:4px}
+.dash-label{font-size:11px;color:var(--t2)}
+.dash-value{font-size:14px;font-weight:800;margin-top:2px}
+/* ── Onboarding ── */
+.onboard-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center}
+.onboard-card{background:var(--cd);border-radius:20px;padding:28px 24px;max-width:400px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,.2)}
+.onboard-card h2{margin:0 0 12px;font-size:18px}
+.onboard-card p{font-size:13px;line-height:1.7;color:var(--t2);margin:0 0 8px}
+.onboard-card .steps{list-style:none;padding:0;margin:12px 0}
+.onboard-card .steps li{padding:8px 0;font-size:13px;border-bottom:1px solid var(--sb)}
+.onboard-card .steps li span{font-weight:700;color:var(--ac);margin-right:6px}
+/* ── Theme Switcher ── */
+.tsw{display:flex;gap:5px;align-items:center}
+.tsw button{cursor:pointer;border:2px solid transparent;border-radius:999px;padding:4px 10px 4px 7px;
+  font-size:11px;font-weight:600;color:var(--t2);background:var(--cd);display:flex;align-items:center;gap:5px;transition:all .2s;white-space:nowrap;line-height:1}
+.tsw button:hover{border-color:var(--sb);transform:translateY(-1px)}
+.tsw button.on{border-color:var(--ac);color:var(--ac);box-shadow:0 2px 10px var(--ag);font-weight:800}
+.tsw button:focus{outline:none}
+.tsw button:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.td{width:16px;height:16px;border-radius:50%;display:block;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+@media(max-width:860px){.grid{grid-template-columns:1fr}.hdr{gap:10px}}
+@media(max-width:480px){.tsw button{padding:4px 7px 4px 5px;font-size:10px}.td{width:13px;height:13px}}
+/* ── Mascot ── */
+.mascot{flex-shrink:0}
+.mascot svg{display:none;width:64px;height:64px;filter:drop-shadow(0 3px 8px rgba(0,0,0,.08));animation:m-bob 3s ease-in-out infinite}
+[data-theme="loopy"] .m-loopy,[data-theme="kitty"] .m-kitty,[data-theme="lotso"] .m-lotso{display:block}
+@keyframes m-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@media(max-width:480px){.mascot svg{width:48px;height:48px}}
+/* ── Side Decorations ── */
+.side-deco{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.wrap{position:relative;z-index:1}
+.sd-g{display:none;width:100%;height:100%}
+[data-theme="loopy"] .sd-g.sl{display:block}
+[data-theme="kitty"] .sd-g.sk{display:block}
+[data-theme="lotso"] .sd-g.so{display:block}
+.wm{position:absolute}
+.sd{position:absolute;animation:sdd 8s ease-in-out infinite}
+.sd:nth-child(even){animation-direction:alternate-reverse;animation-duration:11s}
+@keyframes sdd{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-12px) rotate(4deg)}}
+@media(max-width:1000px){.side-deco{display:none}}
+</style>
+</head>
+<body>
+<div class="side-deco">
+  <div class="sd-g sl">
+    <svg class="wm" style="left:1%;top:5%;width:200px;height:200px;opacity:.055" viewBox="0 0 100 100"><circle cx="22" cy="28" r="11" fill="#FFB5C8"/><circle cx="78" cy="28" r="11" fill="#FFB5C8"/><circle cx="50" cy="55" r="36" fill="#FFB5C8"/><ellipse cx="50" cy="62" rx="20" ry="14" fill="#FFD6E0"/><circle cx="28" cy="58" r="6" fill="#FF8FA8" opacity=".5"/><circle cx="72" cy="58" r="6" fill="#FF8FA8" opacity=".5"/></svg>
+    <svg class="wm" style="right:1%;bottom:8%;width:180px;height:180px;opacity:.045;transform:scaleX(-1)" viewBox="0 0 100 100"><circle cx="22" cy="28" r="11" fill="#FFB5C8"/><circle cx="78" cy="28" r="11" fill="#FFB5C8"/><circle cx="50" cy="55" r="36" fill="#FFB5C8"/><ellipse cx="50" cy="62" rx="20" ry="14" fill="#FFD6E0"/><circle cx="28" cy="58" r="6" fill="#FF8FA8" opacity=".5"/><circle cx="72" cy="58" r="6" fill="#FF8FA8" opacity=".5"/></svg>
+    <span class="sd" style="left:2%;top:15%;font-size:32px;opacity:.2">🌸</span>
+    <span class="sd" style="left:7%;top:35%;font-size:22px;opacity:.14;animation-delay:-2s">💗</span>
+    <span class="sd" style="left:3%;top:55%;font-size:28px;opacity:.18;animation-delay:-4s">✨</span>
+    <span class="sd" style="left:6%;top:75%;font-size:20px;opacity:.14;animation-delay:-6s">🌷</span>
+    <span class="sd" style="left:1%;top:90%;font-size:24px;opacity:.16;animation-delay:-1s">💗</span>
+    <span class="sd" style="right:3%;top:12%;font-size:26px;opacity:.18;animation-delay:-.5s">💗</span>
+    <span class="sd" style="right:6%;top:32%;font-size:32px;opacity:.2;animation-delay:-2.5s">🌸</span>
+    <span class="sd" style="right:2%;top:52%;font-size:20px;opacity:.14;animation-delay:-4.5s">✨</span>
+    <span class="sd" style="right:5%;top:72%;font-size:28px;opacity:.18;animation-delay:-6.5s">🌸</span>
+    <span class="sd" style="right:1%;top:88%;font-size:22px;opacity:.14;animation-delay:-1.5s">🌷</span>
+  </div>
+  <div class="sd-g sk">
+    <svg class="wm" style="left:1%;top:5%;width:200px;height:200px;opacity:.055" viewBox="0 0 100 100"><path d="M28,38 L18,6 L44,30Z" fill="#FFD0D8"/><path d="M72,38 L82,6 L56,30Z" fill="#FFD0D8"/><ellipse cx="50" cy="55" rx="36" ry="33" fill="#FFD0D8"/><circle cx="18" cy="16" r="9" fill="#FF4D6D" opacity=".6"/><circle cx="12" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/><circle cx="24" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/></svg>
+    <svg class="wm" style="right:1%;bottom:8%;width:180px;height:180px;opacity:.045;transform:scaleX(-1)" viewBox="0 0 100 100"><path d="M28,38 L18,6 L44,30Z" fill="#FFD0D8"/><path d="M72,38 L82,6 L56,30Z" fill="#FFD0D8"/><ellipse cx="50" cy="55" rx="36" ry="33" fill="#FFD0D8"/><circle cx="18" cy="16" r="9" fill="#FF4D6D" opacity=".6"/><circle cx="12" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/><circle cx="24" cy="11" r="6.5" fill="#FF6B88" opacity=".6"/></svg>
+    <span class="sd" style="left:2%;top:15%;font-size:32px;opacity:.2">🎀</span>
+    <span class="sd" style="left:7%;top:35%;font-size:22px;opacity:.14;animation-delay:-2s">❤️</span>
+    <span class="sd" style="left:3%;top:55%;font-size:28px;opacity:.18;animation-delay:-4s">⭐</span>
+    <span class="sd" style="left:6%;top:75%;font-size:20px;opacity:.14;animation-delay:-6s">🎀</span>
+    <span class="sd" style="left:1%;top:90%;font-size:24px;opacity:.16;animation-delay:-1s">💛</span>
+    <span class="sd" style="right:3%;top:12%;font-size:26px;opacity:.18;animation-delay:-.5s">🎀</span>
+    <span class="sd" style="right:6%;top:32%;font-size:32px;opacity:.2;animation-delay:-2.5s">❤️</span>
+    <span class="sd" style="right:2%;top:52%;font-size:20px;opacity:.14;animation-delay:-4.5s">⭐</span>
+    <span class="sd" style="right:5%;top:72%;font-size:28px;opacity:.18;animation-delay:-6.5s">🎀</span>
+    <span class="sd" style="right:1%;top:88%;font-size:22px;opacity:.14;animation-delay:-1.5s">💛</span>
+  </div>
+  <div class="sd-g so">
+    <svg class="wm" style="left:1%;top:5%;width:200px;height:200px;opacity:.055" viewBox="0 0 100 100"><circle cx="22" cy="24" r="13" fill="#D06888"/><circle cx="22" cy="24" r="7" fill="#E8A8C0"/><circle cx="78" cy="24" r="13" fill="#D06888"/><circle cx="78" cy="24" r="7" fill="#E8A8C0"/><circle cx="50" cy="55" r="36" fill="#D06888"/><ellipse cx="50" cy="63" rx="18" ry="12" fill="#F0C8D8"/></svg>
+    <svg class="wm" style="right:1%;bottom:8%;width:180px;height:180px;opacity:.045;transform:scaleX(-1)" viewBox="0 0 100 100"><circle cx="22" cy="24" r="13" fill="#D06888"/><circle cx="22" cy="24" r="7" fill="#E8A8C0"/><circle cx="78" cy="24" r="13" fill="#D06888"/><circle cx="78" cy="24" r="7" fill="#E8A8C0"/><circle cx="50" cy="55" r="36" fill="#D06888"/><ellipse cx="50" cy="63" rx="18" ry="12" fill="#F0C8D8"/></svg>
+    <span class="sd" style="left:2%;top:15%;font-size:32px;opacity:.2">🍓</span>
+    <span class="sd" style="left:7%;top:35%;font-size:22px;opacity:.14;animation-delay:-2s">💗</span>
+    <span class="sd" style="left:3%;top:55%;font-size:28px;opacity:.18;animation-delay:-4s">🍓</span>
+    <span class="sd" style="left:6%;top:75%;font-size:20px;opacity:.14;animation-delay:-6s">🌺</span>
+    <span class="sd" style="left:1%;top:90%;font-size:24px;opacity:.16;animation-delay:-1s">💗</span>
+    <span class="sd" style="right:3%;top:12%;font-size:26px;opacity:.18;animation-delay:-.5s">🍓</span>
+    <span class="sd" style="right:6%;top:32%;font-size:32px;opacity:.2;animation-delay:-2.5s">💗</span>
+    <span class="sd" style="right:2%;top:52%;font-size:20px;opacity:.14;animation-delay:-4.5s">🍓</span>
+    <span class="sd" style="right:5%;top:72%;font-size:28px;opacity:.18;animation-delay:-6.5s">🌺</span>
+    <span class="sd" style="right:1%;top:88%;font-size:22px;opacity:.14;animation-delay:-1.5s">🍓</span>
+  </div>
+</div>
+<div class="wrap">
+  <div class="hdr">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="mascot">
+        <svg class="m-loopy" viewBox="0 0 100 100"><circle cx="22" cy="25" r="12" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><circle cx="78" cy="25" r="12" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><circle cx="50" cy="55" r="38" fill="#FFB5C8" stroke="#E88AA6" stroke-width="2"/><ellipse cx="50" cy="62" rx="22" ry="16" fill="#FFDCE6"/><ellipse cx="37" cy="48" rx="7" ry="8" fill="#fff" stroke="#555" stroke-width="1.5"/><ellipse cx="63" cy="48" rx="7" ry="8" fill="#fff" stroke="#555" stroke-width="1.5"/><circle cx="39" cy="47" r="4" fill="#333"/><circle cx="65" cy="47" r="4" fill="#333"/><circle cx="40.5" cy="45" r="1.5" fill="#fff"/><circle cx="66.5" cy="45" r="1.5" fill="#fff"/><circle cx="26" cy="60" r="7" fill="#FF8FA8" opacity=".45"/><circle cx="74" cy="60" r="7" fill="#FF8FA8" opacity=".45"/><ellipse cx="50" cy="58" rx="3" ry="2" fill="#E88AA6"/><path d="M43,66 Q50,73 57,66" fill="none" stroke="#D07090" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="m-kitty" viewBox="0 0 100 100"><path d="M25,35 L15,5 L45,28Z" fill="#fff" stroke="#555" stroke-width="2" stroke-linejoin="round"/><path d="M75,35 L85,5 L55,28Z" fill="#fff" stroke="#555" stroke-width="2" stroke-linejoin="round"/><ellipse cx="50" cy="55" rx="38" ry="35" fill="#fff" stroke="#555" stroke-width="2"/><circle cx="18" cy="15" r="9" fill="#FF4D6D"/><circle cx="10" cy="10" r="7" fill="#FF6B88"/><circle cx="26" cy="10" r="7" fill="#FF6B88"/><circle cx="18" cy="12" r="2.5" fill="#FFD700"/><ellipse cx="38" cy="52" rx="3" ry="3.5" fill="#333"/><ellipse cx="62" cy="52" rx="3" ry="3.5" fill="#333"/><ellipse cx="50" cy="60" rx="3" ry="2" fill="#FFD700"/><line x1="5" y1="52" x2="28" y2="56" stroke="#555" stroke-width="1.2"/><line x1="5" y1="59" x2="28" y2="60" stroke="#555" stroke-width="1.2"/><line x1="5" y1="66" x2="28" y2="64" stroke="#555" stroke-width="1.2"/><line x1="95" y1="52" x2="72" y2="56" stroke="#555" stroke-width="1.2"/><line x1="95" y1="59" x2="72" y2="60" stroke="#555" stroke-width="1.2"/><line x1="95" y1="66" x2="72" y2="64" stroke="#555" stroke-width="1.2"/></svg>
+        <svg class="m-lotso" viewBox="0 0 100 100"><circle cx="20" cy="22" r="14" fill="#D06888" stroke="#B74678" stroke-width="2"/><circle cx="20" cy="22" r="8" fill="#E8A8C0"/><circle cx="80" cy="22" r="14" fill="#D06888" stroke="#B74678" stroke-width="2"/><circle cx="80" cy="22" r="8" fill="#E8A8C0"/><circle cx="50" cy="55" r="38" fill="#D06888" stroke="#B74678" stroke-width="2"/><ellipse cx="50" cy="64" rx="20" ry="14" fill="#F0C8D8"/><ellipse cx="36" cy="48" rx="6" ry="7" fill="#fff" stroke="#555" stroke-width="1.5"/><ellipse cx="64" cy="48" rx="6" ry="7" fill="#fff" stroke="#555" stroke-width="1.5"/><circle cx="37.5" cy="47" r="3.5" fill="#333"/><circle cx="65.5" cy="47" r="3.5" fill="#333"/><circle cx="39" cy="45" r="1.2" fill="#fff"/><circle cx="67" cy="45" r="1.2" fill="#fff"/><path d="M29,40 Q34,36 42,39" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/><path d="M58,39 Q66,36 71,40" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/><ellipse cx="50" cy="60" rx="5" ry="3.5" fill="#9B3F6B"/><path d="M40,69 Q50,77 60,69" fill="none" stroke="#8A3050" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="title">墨水屏上传面板</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="tsw" id="themeSw">
+        <button type="button" data-t="loopy" aria-pressed="false" onclick="setTheme('loopy')"><span class="td" style="background:linear-gradient(135deg,#FF9BB3,#8CC8F0)"></span>Loopy</button>
+        <button type="button" data-t="kitty" aria-pressed="false" onclick="setTheme('kitty')"><span class="td" style="background:linear-gradient(135deg,#FF4D6D,#FFB347)"></span>Kitty</button>
+        <button type="button" data-t="lotso" aria-pressed="false" onclick="setTheme('lotso')"><span class="td" style="background:linear-gradient(135deg,#B74678,#E8A0B8)"></span>草莓熊</button>
+      </div>
+      <div class="pill" id="netPill">ESP32-S3</div>
+    </div>
+  </div>
+
+  <!-- Navigation -->
+  <div class="nav">
+    <a href="/" class="active"><span class="ni">🖼</span> 上传面板</a>
+    <a href="/config"><span class="ni">⚙</span> 设备配置</a>
+    <a href="/timetable"><span class="ni">📅</span> 课程表</a>
+    <a href="/todo"><span class="ni">✅</span> 待办事项</a>
+    <a href="/countdown"><span class="ni">⏳</span> 倒计时</a>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="dash" id="dash">
+    <div class="dash-item"><div class="dash-icon">📡</div><div class="dash-label">网络</div><div class="dash-value" id="d_net">-</div></div>
+    <div class="dash-item"><div class="dash-icon">🖥</div><div class="dash-label">当前模式</div><div class="dash-value" id="d_mode">-</div></div>
+    <div class="dash-item"><div class="dash-icon">🕐</div><div class="dash-label">设备时间</div><div class="dash-value" id="d_time">-</div></div>
+    <div class="dash-item"><div class="dash-icon">💾</div><div class="dash-label">存储</div><div class="dash-value" id="d_storage">-</div></div>
+    <div class="dash-item"><div class="dash-icon">🔋</div><div class="dash-label">电源</div><div class="dash-value" id="d_power">-</div></div>
+    <div class="dash-item"><div class="dash-icon">🧠</div><div class="dash-label">内存</div><div class="dash-value" id="d_heap">-</div></div>
+  </div>
+
+  <div class="grid">
+    <!-- Upload -->
+    <div class="card">
+      <div class="hd">
+        <div class="title" style="font-size:16px">上传图片</div>
+        <div class="sub">支持 JPEG / PNG / BMP，浏览器自动压缩后上传，设备缩放居中、抖动处理后刷新墨水屏。</div>
+      </div>
+      <div class="bd">
+        <div class="row">
+          <input type="file" id="f" accept="image/jpeg,image/png,image/bmp">
+          <button class="btn" id="up" onclick="upload()">上传并显示</button>
+        </div>
+        <div class="log" id="log">已就绪。</div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="card">
+      <div class="hd">
+        <div class="title" style="font-size:16px">设备状态</div>
+        <div class="sub">文件与存储空间</div>
+      </div>
+      <div class="bd">
+        <div class="kv">
+          <div class="k">upload.jpg</div><div class="v" id="u_sz">-</div>
+          <div class="k">image.bin</div><div class="v" id="r_sz">-</div>
+          <div class="k">SPIFFS</div><div class="v" id="sp_txt">-</div>
+          <div class="k">设备时间</div><div class="v" id="dev_time">-</div>
+        </div>
+        <div class="bar-wrap"><div class="bar-fill" id="sp_bar" style="width:0;background:var(--ok)"></div></div>
+        <div style="height:12px"></div>
+        <div class="row">
+          <button class="btn ghost sm" onclick="refresh()">刷新状态</button>
+          <button class="btn ghost sm" onclick="delFiles()">删除文件并清屏</button>
+        </div>
+        <div class="sub" style="margin-top:10px">墨水屏断电保留画面，删除文件时会同时清屏。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gallery -->
+  <div class="card fullcard">
+    <div class="hd">
+      <div class="title" style="font-size:16px">画廊</div>
+      <div class="sub">已存储的图片，点击「显示」推送到墨水屏。</div>
+    </div>
+    <div class="bd">
+      <div id="gallery" class="gallery"><div class="empty">加载中…</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  localStorage.setItem('epd_theme',t);
+  document.querySelectorAll('.tsw button').forEach(function(b){
+    b.classList.remove('on');
+    b.removeAttribute('aria-pressed');
+    b.blur();
+  });
+  document.querySelectorAll('.tsw button[data-t="'+t+'"]').forEach(function(b){
+    b.classList.add('on');
+    b.setAttribute('aria-pressed','true');
+  });
+}
+(function(){var t=localStorage.getItem('epd_theme')||'loopy';setTheme(t)})();
+
+function fmt(n){if(n==null||n<0) return '-'; if(n<1024) return n+' B'; if(n<1024*1024) return (n/1024).toFixed(1)+' KB'; return (n/1024/1024).toFixed(2)+' MB';}
+function log(s,cls){const el=document.getElementById('log'); el.className='log'+(cls?' '+cls:''); el.textContent=s;}
+
+async function refresh(){
+  try{
+    const r=await fetch('/status'); const j=await r.json();
+    document.getElementById('u_sz').textContent=j.upload_bytes>=0?fmt(j.upload_bytes):'未找到';
+    document.getElementById('r_sz').textContent=j.raw_bytes>=0?fmt(j.raw_bytes):'未找到';
+    if(j.spiffs_total>0){
+      const pct=((j.spiffs_used/j.spiffs_total)*100).toFixed(1);
+      document.getElementById('sp_txt').textContent=fmt(j.spiffs_used)+' / '+fmt(j.spiffs_total)+' ('+pct+'%)';
+      const bar=document.getElementById('sp_bar');
+      bar.style.width=pct+'%';
+      bar.style.background=pct<70?'var(--ok)':pct<90?'var(--wn)':'var(--er)';
+    }
+    document.getElementById('dev_time').textContent=j.time_synced?j.time:'未同步';
+    log('状态已更新。','ok');
+  }catch(e){log('状态获取失败：'+e,'bad');}
+}
+
+async function delFiles(){
+  try{const r=await fetch('/delete',{method:'POST'}); const t=await r.text();
+    await refresh(); await loadGallery(); log('删除结果：'+t,'ok');
+  }catch(e){log('删除失败：'+e,'bad');}
+}
+
+function compressImage(file, maxW, maxH, quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width, h=img.height;
+      const s=Math.max(w/maxW, h/maxH, 1);
+      w=Math.round(w/s); h=Math.round(h/s);
+      const c=document.createElement('canvas');
+      c.width=w; c.height=h;
+      const ctx=c.getContext('2d');
+      ctx.drawImage(img,0,0,w,h);
+      c.toBlob(b=>b?resolve(b):reject('compress failed'),'image/jpeg',quality);
+    };
+    img.onerror=()=>reject('image load failed');
+    img.src=URL.createObjectURL(file);
+  });
+}
+
+async function upload(){
+  const fi=document.getElementById('f');
+  if(!fi.files.length){log('请先选择一张 JPEG 或 PNG 图片。','bad');return;}
+  const file=fi.files[0];
+  document.getElementById('up').disabled=true;
+  log('正在压缩：'+file.name+'（'+fmt(file.size)+'）…');
+  try{
+    const blob=await compressImage(file, 800, 600, 0.85);
+    log('压缩完成：'+fmt(file.size)+' → '+fmt(blob.size)+'，正在上传…');
+    log('⏳ 上传 + 图片转换 + 墨水屏刷新中，全程约 15-30 秒，请勿关闭页面…');
+    const r=await fetch('/upload',{method:'POST',headers:{'Content-Type':'image/jpeg'},body:blob});
+    const t=await r.text();
+    await refresh(); await loadGallery();
+    log(r.ok?'✅ 上传成功！墨水屏已刷新':'❌ 上传失败：'+t,(r.ok?'ok':'bad'));
+  }catch(e){log('上传失败：'+e,'bad');}
+  document.getElementById('up').disabled=false;
+}
+
+async function showImg(name){
+  log('⏳ 正在转换并显示 '+name+'，墨水屏刷新约需 15-20 秒…');
+  try{
+    const r=await fetch('/show?name='+encodeURIComponent(name),{method:'POST'});
+    const t=await r.text();
+    log(r.ok?'✅ 显示成功':'❌ '+t,(r.ok?'ok':'bad'));
+  }catch(e){log('显示失败：'+e,'bad');}
+}
+
+async function delImg(name){
+  if(!confirm('删除 '+name+'？')) return;
+  try{
+    const r=await fetch('/delete_image?name='+encodeURIComponent(name),{method:'POST'});
+    await loadGallery(); await refresh();
+    log('已删除 '+name,'ok');
+  }catch(e){log('删除失败：'+e,'bad');}
+}
+
+async function loadGallery(){
+  const g=document.getElementById('gallery');
+  try{
+    const r=await fetch('/images'); const j=await r.json();
+    if(!j.items||j.items.length===0){g.innerHTML='<div class="empty">暂无图片，上传一张试试。</div>';return;}
+    g.innerHTML=j.items.map(i=>`<div class="gcard">
+      <img src="/image?name=${encodeURIComponent(i.name)}" loading="lazy" alt="${i.name}">
+      <div class="ginfo"><span class="gname" title="${i.name}">${i.name}</span><span class="gsz">${fmt(i.bytes)}</span></div>
+      <div class="gactions">
+        <button class="btn sm" onclick="showImg('${i.name}')">显示</button>
+        <button class="btn ghost sm" onclick="delImg('${i.name}')">删除</button>
+      </div></div>`).join('');
+  }catch(e){g.innerHTML='<div class="empty bad">画廊加载失败</div>';}
+}
+
+async function loadNetInfo(){
+  try{
+    const r=await fetch('/wifi_status');const j=await r.json();
+    const p=document.getElementById('netPill');
+    const dn=document.getElementById('d_net');
+    if(j.sta_connected){p.textContent='STA: '+j.sta_ip;dn.textContent=j.sta_ssid||j.sta_ip;}
+    else{p.textContent='AP 模式 • 192.168.4.1';dn.textContent='AP 模式';}
+  }catch(e){}
+}
+async function loadDashboard(){
+  try{
+    const [sr,pr]=await Promise.all([fetch('/status'),fetch('/power_config')]);
+    const s=await sr.json(),p=await pr.json();
+    document.getElementById('d_time').textContent=s.time_synced?s.time.slice(11,16):'未同步';
+    if(s.spiffs_total>0){
+      const pct=((s.spiffs_used/s.spiffs_total)*100).toFixed(0);
+      document.getElementById('d_storage').textContent=pct+'%';
+    }
+    const mode_names=['时钟','日历','课程表','天气','轮播','待办','倒计时'];
+    document.getElementById('d_mode').textContent=s.current_mode!=null?mode_names[s.current_mode]||'轮播':'轮播';
+    document.getElementById('d_power').textContent=p.enabled?'省电开':'常亮';
+    if(s.free_heap!=null){
+      var hk=Math.round(s.free_heap/1024);
+      var mk=Math.round(s.min_free_heap/1024);
+      document.getElementById('d_heap').textContent=hk+'K';
+      document.getElementById('d_heap').title='当前 '+hk+'KB / 最低 '+mk+'KB';
+    }
+  }catch(e){}
+}
+(function(){
+  if(!localStorage.getItem('epd_onboard_done')){
+    var ov=document.createElement('div');
+    ov.className='onboard-overlay';
+    ov.innerHTML='<div class="onboard-card">'+
+      '<h2>欢迎使用墨水屏管理面板</h2>'+
+      '<p>这是你的 ESP32-S3 墨水屏设备控制台，以下是快速上手指南：</p>'+
+      '<ul class="steps">'+
+      '<li><span>1.</span> 在「设备配置」中连接 WiFi，设备将获得稳定 IP 地址</li>'+
+      '<li><span>2.</span> 上传 JPEG/PNG/BMP 图片，自动缩放并显示到墨水屏</li>'+
+      '<li><span>3.</span> 配置天气 API Key，开启天气和时钟显示</li>'+
+      '<li><span>4.</span> 设置课程表、待办事项、倒计时等功能</li>'+
+      '<li><span>5.</span> 使用物理按钮切换显示模式（左=上一个，右=下一个）</li>'+
+      '</ul>'+
+      '<p style="font-size:12px;color:var(--t2)">导航栏在每个页面顶部可快速切换功能。</p>'+
+      '<div style="text-align:right;margin-top:16px">'+
+      '<button class="btn" onclick="localStorage.setItem(\'epd_onboard_done\',\'1\');this.closest(\'.onboard-overlay\').remove()">我知道了，开始使用</button>'+
+      '</div></div>';
+    document.body.appendChild(ov);
+  }
+})();
+refresh(); loadGallery(); loadNetInfo(); loadDashboard();
+</script>
+</body>
+</html>

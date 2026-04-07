@@ -1,0 +1,37 @@
+#pragma once
+
+#include "esp_err.h"
+#include <stdbool.h>
+#include "fb_render.h"
+
+typedef enum {
+    EPD_PANEL_42_BWR   = 0,   /* 4.2" 400x300 BW+Red, SSD1619 */
+    EPD_PANEL_583_BWR  = 1,   /* 5.83" 648x480 BW+Red,UC8179 */
+} epd_panel_t;
+
+esp_err_t    epd_init(void);
+/** false 直至 epd_init() 成功返回；HTTP 等应在刷图前检查 */
+bool         epd_is_ready(void);
+esp_err_t    epd_display_from_file(const char *path);
+esp_err_t    epd_display_from_buffer(const fb_t *fb);
+/**
+ * Fast BW-only refresh using a custom short LUT (~1-2s instead of ~10s).
+ * Only the black plane is driven; red is left unchanged.
+ * May produce slight ghosting — follow with a full refresh to clean up.
+ * Currently only implemented for SSD1619 (4.2"); other panels fall back to full.
+ */
+esp_err_t    epd_display_from_buffer_fast(const fb_t *fb);
+esp_err_t    epd_clear_screen(void);
+esp_err_t    epd_display_test_pattern(void);
+
+epd_panel_t  epd_get_panel(void);
+esp_err_t    epd_set_panel(epd_panel_t panel);
+
+/** 当前 BUSY 空闲电平：0=空闲时低，1=空闲时高（与 NVS epd/busy_idle 一致） */
+int          epd_busy_idle_level(void);
+esp_err_t    epd_set_busy_idle(int level); /* 0 或 1，写入 NVS 并立即生效 */
+
+int          epd_width(void);
+int          epd_height(void);
+int          epd_plane_bytes(void);
+bool         epd_has_red(void);

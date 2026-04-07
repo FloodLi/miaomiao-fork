@@ -1,0 +1,32 @@
+# Keep logs readable during bring-up
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Use custom partition table with SPIFFS
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# Flash size (your chip is 16MB)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# Enable SPIFFS (we mount /spiffs)
+CONFIG_SPIFFS_MAX_PARTITIONS=2
+
+# HTTP server
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+CONFIG_HTTPD_MAX_URI_LEN=512
+
+# HTTPS (for weather API)
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# lwIP: STA+SoftAP + HTTPD + esp_http_client can hit pbuf ref asserts in tcp_input under load.
+CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=8192
+# TCPIP_CORE_LOCKING is off: on ESP32-S3 SMP it can destabilize the scheduler (Core 1 panic in prvSelectHighestPriorityTaskSMP).
+# CONFIG_LWIP_TCPIP_CORE_LOCKING is not set
+# CONFIG_LWIP_TCPIP_TASK_AFFINITY_NO_AFFINITY is not set
+CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
+# Simpler TCP RX path (fewer tcp_seg/pbuf edges in tcp_free_acked_segments)
+# CONFIG_LWIP_TCP_QUEUE_OOSEQ is not set
+
