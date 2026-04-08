@@ -24,8 +24,9 @@ static const char *TAG        = "scheduler";
 static const char *IMAGES_DIR = "/spiffs/images";
 static const char *NVS_NS     = "slideshow";
 
-#define BIT_CFG_CHANGED  BIT0
-#define BIT_MANUAL_SHOW  BIT1
+#define BIT_CFG_CHANGED   BIT0
+#define BIT_MANUAL_SHOW   BIT1
+#define BIT_BOOT_COMPLETE BIT2
 #define MAX_GALLERY      32
 
 static slideshow_config_t s_config = {
@@ -123,11 +124,12 @@ static void show_next_image(void)
     }
 
     char path[160];
-    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, names[idx]);
-    ESP_LOGI(TAG, "Slideshow: '%s' (%d/%d)", names[idx], idx + 1, count);
+    char picked[64];
+    strncpy(picked, names[idx], sizeof(picked) - 1);
+    picked[sizeof(picked) - 1] = '\0';
+    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, picked);
+    ESP_LOGI(TAG, "Slideshow: '%s' (%d/%d)", picked, idx + 1, count);
 
-    strncpy(s_current_image, names[idx], sizeof(s_current_image) - 1);
-    s_current_image[sizeof(s_current_image) - 1] = '\0';
     free(names);
 
     const char *raw_path = "/spiffs/image.bin";
@@ -136,6 +138,10 @@ static void show_next_image(void)
         ESP_LOGW(TAG, "Convert failed: %s", esp_err_to_name(err));
         return;
     }
+
+    /* 仅在转换成功后记录文件名，供 GET /slideshow 的 current_image 与网页一致 */
+    strncpy(s_current_image, picked, sizeof(s_current_image) - 1);
+    s_current_image[sizeof(s_current_image) - 1] = '\0';
 
     if (s_config.clock_overlay && time_sync_is_synced()) {
         fb_t *fb = fb_create();
@@ -167,10 +173,14 @@ static void slideshow_task(void *arg)
 {
     ESP_LOGI(TAG, "Slideshow task running");
 
-    if (s_config.enabled && !display_policy_manual_screen_active()) {
-        ESP_LOGI(TAG, "Slideshow was enabled, showing first image now");
-        show_next_image();
+    /* 等主流程完成欢迎屏/切到记忆模式后再判断 manual，避免首帧被跳过后又睡满 interval */
+    if (s_event) {
+        (void)xEventGroupWaitBits(s_event, BIT_BOOT_COMPLETE,
+                                  pdTRUE, pdFALSE,
+                                  pdMS_TO_TICKS(60000));
     }
+
+    bool shorten_first_interval = true;
 
     for (;;) {
         if (!s_config.enabled) {
@@ -184,11 +194,26 @@ static void slideshow_task(void *arg)
         }
 
         uint32_t wait_ms = s_config.interval_sec * 1000;
+        if (shorten_first_interval) {
+            shorten_first_interval = false;
+            if (wait_ms > 15000)
+                wait_ms = 15000;
+        }
+
         EventBits_t bits = xEventGroupWaitBits(
             s_event, BIT_CFG_CHANGED | BIT_MANUAL_SHOW,
             pdTRUE, pdFALSE, pdMS_TO_TICKS(wait_ms));
 
-        if (bits & BIT_CFG_CHANGED) continue;
+        if (bits & BIT_CFG_CHANGED) {
+            /* 保存轮播配置常在首帧 15s 等待期内触发，原先会直接 continue 并进入整 interval，
+             * 导致从未执行 show_next_image，网页「当前图片」长期为空。 */
+            if (s_config.enabled && s_current_image[0] == '\0' &&
+                !display_policy_manual_screen_active()) {
+                ESP_LOGI(TAG, "Config changed, showing first slideshow image");
+                show_next_image();
+            }
+            continue;
+        }
         if (bits & BIT_MANUAL_SHOW) continue;
 
         if (!s_config.enabled) continue;
@@ -227,6 +252,12 @@ esp_err_t scheduler_init(void)
     return ESP_OK;
 }
 
+void scheduler_boot_complete(void)
+{
+    if (s_event)
+        xEventGroupSetBits(s_event, BIT_BOOT_COMPLETE);
+}
+
 esp_err_t scheduler_get_config(slideshow_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
@@ -259,6 +290,16 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
     if (slideshow_was_on && !s_config.enabled)
         weather_notify_slideshow_stopped();
     return ESP_OK;
+}
+
+void scheduler_set_current_image_name(const char *basename)
+{
+    if (!basename || !basename[0]) {
+        s_current_image[0] = '\0';
+        return;
+    }
+    strncpy(s_current_image, basename, sizeof(s_current_image) - 1);
+    s_current_image[sizeof(s_current_image) - 1] = '\0';
 }
 
 void scheduler_notify_manual_show(void)
@@ -300,19 +341,27 @@ esp_err_t scheduler_show_next_image(void)
     }
 
     char path[160];
-    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, names[idx]);
-    ESP_LOGI(TAG, "Manual show: '%s' (%d/%d)", names[idx], idx + 1, count);
+    char picked[64];
+    strncpy(picked, names[idx], sizeof(picked) - 1);
+    picked[sizeof(picked) - 1] = '\0';
+    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, picked);
+    ESP_LOGI(TAG, "Manual show: '%s' (%d/%d)", picked, idx + 1, count);
 
-    strncpy(s_current_image, names[idx], sizeof(s_current_image) - 1);
-    s_current_image[sizeof(s_current_image) - 1] = '\0';
     free(names);
 
     const char *raw_path = "/spiffs/image.bin";
     esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
     if (err != ESP_OK) return err;
 
+    strncpy(s_current_image, picked, sizeof(s_current_image) - 1);
+    s_current_image[sizeof(s_current_image) - 1] = '\0';
+
     err = epd_display_from_file(raw_path);
-    if (err == ESP_OK)
-        display_policy_set_manual_screen_active(true);
+    if (err == ESP_OK) {
+        slideshow_config_t sc;
+        scheduler_get_config(&sc);
+        /* 轮播开启时交给定时任务切下一张；关闭时保持占屏，避免时钟等自动刷新盖住画廊 */
+        display_policy_set_manual_screen_active(!sc.enabled);
+    }
     return err;
 }

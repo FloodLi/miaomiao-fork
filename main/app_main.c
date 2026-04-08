@@ -182,6 +182,7 @@ static void quick_refresh_and_sleep(void)
 
     /* Init content modules (they load NVS config) */
     ESP_ERROR_CHECK(scheduler_init());
+    scheduler_boot_complete();
     ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
     ESP_ERROR_CHECK(timetable_init());
@@ -267,6 +268,7 @@ static void full_boot(void)
     ESP_ERROR_CHECK(http_app_start(&cfg));
 
     boot_display_route();
+    scheduler_boot_complete();
 
     ESP_ERROR_CHECK(button_init());
 

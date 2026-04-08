@@ -164,6 +164,7 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "墨水屏刷新失败");
         return ESP_OK;
     }
+    scheduler_set_current_image_name(name);
     /* 禁止时钟/天气摘要任务继续写 image.bin 抢屏，直到用户点「立即显示时钟」 */
     display_policy_set_manual_screen_active(true);
     weather_disable_if_enabled_for_image_focus();

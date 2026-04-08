@@ -17,9 +17,12 @@ typedef struct {
 } slideshow_config_t;
 
 esp_err_t   scheduler_init(void);
+void        scheduler_boot_complete(void);
 esp_err_t   scheduler_get_config(slideshow_config_t *out);
 esp_err_t   scheduler_set_config(const slideshow_config_t *cfg);
 void        scheduler_notify_manual_show(void);
+/** 仅更新 GET /slideshow 的 current_image 字符串（例如网页画廊单张预览）。 */
+void        scheduler_set_current_image_name(const char *basename);
 const char *scheduler_get_current_image(void);
 
 /** Show next gallery image on EPD (for button-triggered display). */
