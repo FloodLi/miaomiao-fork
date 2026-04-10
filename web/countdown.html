@@ -77,6 +77,10 @@ input:focus{outline:none;border-color:var(--ac)}
 .cd-del:hover{opacity:1;color:var(--er)}
 .log{margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--sf);border:1px solid var(--cb);font-size:12px;color:var(--t2);min-height:48px;white-space:pre-wrap}
 .log.ok{color:var(--ok)}.log.bad{color:var(--er)}
+.epd-credit{margin-top:20px;padding-top:14px;border-top:1px solid var(--cb);font-size:12px;color:var(--t2);text-align:center;line-height:1.6}
+.epd-credit strong{color:var(--tx);font-weight:700}
+.epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}
+.epd-credit a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -119,8 +123,23 @@ input:focus{outline:none;border-color:var(--ac)}
     <button type="button" class="btn ghost" onclick="loadConfig()">重新加载</button>
   </div>
   <div class="log" id="logBox">就绪。</div>
+  <footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">开源仓库</a></footer>
 </div>
 <script>
+function epdAuthHeaders(){
+  try{
+    var u=localStorage.getItem('epd_auth_u');
+    var p=localStorage.getItem('epd_auth_p');
+    if(u!=null&&p!=null&&u!==''&&p!=='')
+      return {'Authorization':'Basic '+btoa(unescape(encodeURIComponent(u+':'+p)))};
+  }catch(e){}
+  return {};
+}
+function epdFetchOpts(extra){
+  extra=extra||{};
+  var h=Object.assign({},epdAuthHeaders(),extra.headers||{});
+  return Object.assign({},extra,{headers:h});
+}
 const MAX=3;
 let items=[];
 
@@ -184,7 +203,7 @@ function buildPayload(){
 }
 async function loadConfig(){
   try{
-    const r=await fetch('/countdown_config');
+    const r=await fetch('/countdown_config',epdFetchOpts({}));
     const j=await r.json();
     document.getElementById('chkEnabled').checked=!!j.enabled;
     items=Array.isArray(j.items)?j.items.slice(0,MAX):[];
@@ -206,7 +225,7 @@ async function loadConfig(){
 async function saveConfig(){
   const body=JSON.stringify(buildPayload());
   try{
-    const r=await fetch('/countdown_config',{method:'POST',headers:{'Content-Type':'application/json'},body});
+    const r=await fetch('/countdown_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body}));
     const j=await r.json().catch(()=>({}));
     const ok=r.ok&&(j.ok!==false);
     log(ok?'保存成功。':('保存失败'+(j.msg?': '+j.msg:'')),ok?'ok':'bad');
@@ -215,7 +234,7 @@ async function saveConfig(){
 async function showOnEpd(){
   log('正在显示到墨水屏…');
   try{
-    const r=await fetch('/countdown_show',{method:'POST'});
+    const r=await fetch('/countdown_show',epdFetchOpts({method:'POST'}));
     const j=await r.json().catch(()=>({}));
     const ok=r.ok&&(j.ok!==false);
     log(ok?'已触发显示。':('显示失败'+(j.msg?': '+j.msg:'')),ok?'ok':'bad');

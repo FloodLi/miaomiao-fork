@@ -131,6 +131,10 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
 .nav a:hover{border-color:var(--ac);background:var(--hv);transform:translateY(-1px)}
 .nav a.active{border-color:var(--ac);color:var(--ac);background:var(--hv);box-shadow:0 2px 8px var(--ag)}
 .nav .ni{font-size:15px}
+.epd-credit{margin-top:20px;padding-top:14px;border-top:1px solid var(--cb);font-size:12px;color:var(--t2);text-align:center;line-height:1.6}
+.epd-credit strong{color:var(--tx);font-weight:700}
+.epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}
+.epd-credit a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -614,6 +618,7 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
       <div class="log" id="otaLog">选择 .bin 固件文件后点击「开始升级」。</div>
     </div>
   </div>
+  <footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">开源仓库</a></footer>
 </div>
 
 <script>
@@ -631,6 +636,22 @@ function setTheme(t){
   });
 }
 (function(){var t=localStorage.getItem('epd_theme')||'loopy';setTheme(t)})();
+
+/** 与固件 Basic Auth 一致；在「认证」里保存成功后写入 localStorage */
+function epdAuthHeaders(){
+  try{
+    var u=localStorage.getItem('epd_auth_u');
+    var p=localStorage.getItem('epd_auth_p');
+    if(u!=null&&p!=null&&u!==''&&p!=='')
+      return {'Authorization':'Basic '+btoa(unescape(encodeURIComponent(u+':'+p)))};
+  }catch(e){}
+  return {};
+}
+function epdFetchOpts(extra){
+  extra=extra||{};
+  var h=Object.assign({},epdAuthHeaders(),extra.headers||{});
+  return Object.assign({},extra,{headers:h});
+}
 
 function log(s,cls){const el=document.getElementById('log');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
@@ -706,11 +727,11 @@ async function connectWifi(){
   btn.disabled=true;
   log('正在连接 "'+ssid+'"，请稍候（约 10 秒）…');
   try{
-    const r=await fetch('/wifi_connect',{
+    const r=await fetch('/wifi_connect',epdFetchOpts({
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ssid,password:pass})
-    });
+    }));
     const j=await r.json();
     if(j.ok){
       const mh=j.mdns_host||'epd';
@@ -727,7 +748,7 @@ async function connectWifi(){
 async function forgetWifi(){
   if(!confirm('确定忘记已保存的 WiFi 凭据？设备将回到纯 AP 模式。')) return;
   try{
-    const r=await fetch('/wifi_forget',{method:'POST'});
+    const r=await fetch('/wifi_forget',epdFetchOpts({method:'POST'}));
     const j=await r.json();
     log(j.ok?'已清除保存的 WiFi，设备回到 AP 模式。':'操作失败: '+j.msg, j.ok?'ok':'bad');
     await loadStatus();
@@ -761,10 +782,10 @@ async function saveSlideshow(){
   };
   ssLog('保存中…');
   try{
-    const r=await fetch('/slideshow',{
+    const r=await fetch('/slideshow',epdFetchOpts({
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(cfg)
-    });
+    }));
     const j=await r.json();
     if(j.ok){
       ssLog('设置已保存！'+(cfg.enabled?'轮播将在 '+formatInterval(cfg.interval_sec)+' 后显示下一张。':'轮播已关闭。'),'ok');
@@ -786,7 +807,7 @@ async function fetchJsonRetry(url,options,retries,delayMs){
   let last;
   for(let i=0;i<retries;i++){
     try{
-      const r=await fetch(url,options);
+      const r=await fetch(url,epdFetchOpts(options));
       if(!r.ok) throw new Error('HTTP '+r.status);
       return await r.json();
     }catch(e){
@@ -845,8 +866,9 @@ document.addEventListener('click',function(e){
     document.getElementById('cityResults').style.display='none';
 });
 
+var weatherApiKeyConfigured=false;
 function collectWeatherCfg(){
-  return{
+  var cfg={
     enabled:document.getElementById('wEnabled').checked,
     api_key:document.getElementById('wApiKey').value.trim(),
     api_host:document.getElementById('wApiHost').value.trim().replace(/^https?:\/\//,''),
@@ -854,6 +876,8 @@ function collectWeatherCfg(){
     city_name:document.getElementById('wCity').value.trim(),
     refresh_min:parseInt(document.getElementById('wRefresh').value)
   };
+  if(!cfg.api_key&&weatherApiKeyConfigured) delete cfg.api_key;
+  return cfg;
 }
 
 function scheduleWeatherAutoSave(){
@@ -862,7 +886,7 @@ function scheduleWeatherAutoSave(){
   weatherAutoSaveTimer=setTimeout(function(){
     weatherAutoSaveTimer=null;
     var cfg=collectWeatherCfg();
-    if(cfg.enabled&&(!cfg.api_key||!cfg.api_host||!cfg.location)) return;
+    if(cfg.enabled&&(!(cfg.api_key||weatherApiKeyConfigured)||!cfg.api_host||!cfg.location)) return;
     saveWeather({silent:true});
   },2000);
 }
@@ -871,9 +895,11 @@ async function loadWeather(){
   try{
     weatherHydrating=true;
     const j=await fetchJsonRetry('/weather_config');
+    weatherApiKeyConfigured=!!j.api_key_set;
     document.getElementById('wEnabled').checked=j.enabled;
     document.getElementById('wLabel').textContent=j.enabled?'已开启':'已关闭';
     document.getElementById('wApiKey').value=j.api_key||'';
+    document.getElementById('wApiKey').placeholder=weatherApiKeyConfigured?'已保存，留空不修改':'和风天气 API Key';
     document.getElementById('wApiHost').value=j.api_host||'';
     document.getElementById('wLocation').value=j.location||'';
     document.getElementById('wCity').value=j.city_name||'';
@@ -893,7 +919,7 @@ async function saveWeather(opts){
   opts=opts||{};
   var silent=opts.silent===true;
   var cfg=collectWeatherCfg();
-  if(cfg.enabled&&(!cfg.api_key||!cfg.api_host||!cfg.location)){
+  if(cfg.enabled&&(!(cfg.api_key||weatherApiKeyConfigured)||!cfg.api_host||!cfg.location)){
     if(!silent) wLog('请填写 API Key、API Host 和城市 ID','bad');
     return;
   }
@@ -920,7 +946,7 @@ async function showWeather(){
   var ctrl=new AbortController();
   var t=setTimeout(function(){ctrl.abort();},120000);
   try{
-    const r=await fetch('/weather_show',{method:'POST',signal:ctrl.signal});
+    const r=await fetch('/weather_show',epdFetchOpts({method:'POST',signal:ctrl.signal}));
     const j=await r.json();
     if(j.ok){wLog('天气已显示在墨水屏上！','ok');await loadWeather();}
     else wLog('获取天气失败，请检查 API Key 和城市 ID 是否正确。','bad');
@@ -961,7 +987,7 @@ async function saveClock(){
   };
   ckLog('保存中…');
   try{
-    const r=await fetch('/clock_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const r=await fetch('/clock_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
     const j=await r.json();
     if(j.ok){ckLog('设置已保存。'+(cfg.enabled?'时钟将每分钟自动刷新。':'时钟已关闭。'),'ok');await loadClock();}
     else ckLog('保存失败','bad');
@@ -971,7 +997,7 @@ async function saveClock(){
 async function showClock(){
   ckLog('正在渲染时钟…请稍候（约 15 秒刷新）');
   try{
-    const r=await fetch('/clock_show',{method:'POST'});
+    const r=await fetch('/clock_show',epdFetchOpts({method:'POST'}));
     const j=await r.json();
     if(j.ok) ckLog('时钟已显示在墨水屏上！','ok');
     else ckLog('显示失败（可能时间尚未同步）','bad');
@@ -1006,7 +1032,7 @@ async function saveMsg(){
   };
   msgLog('保存中…');
   try{
-    const r=await fetch('/msg_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const r=await fetch('/msg_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
     const j=await r.json();
     if(j.ok){msgLog('设置已保存。','ok');await loadMsg();}
     else msgLog('保存失败','bad');
@@ -1019,7 +1045,7 @@ async function showMsg(){
   await saveMsg();
   msgLog('正在渲染…请稍候（约 15 秒刷新）');
   try{
-    const r=await fetch('/msg_show',{method:'POST'});
+    const r=await fetch('/msg_show',epdFetchOpts({method:'POST'}));
     const j=await r.json();
     if(j.ok) msgLog('留言已显示在墨水屏上！','ok');
     else msgLog('显示失败，请确保已输入文字内容。','bad');
@@ -1037,7 +1063,7 @@ async function showCalendar(){
     const body={};
     if(y) body.year=y;
     if(m) body.month=m;
-    const r=await fetch('/calendar_show',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('/calendar_show',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));
     const j=await r.json();
     if(j.ok) calLog('万年历已显示在墨水屏上！','ok');
     else calLog('显示失败','bad');
@@ -1087,6 +1113,8 @@ function uploadOTA(){
   const xhr=new XMLHttpRequest();
   xhr.open('POST','/ota',true);
   xhr.setRequestHeader('Content-Type','application/octet-stream');
+  var otaAh=epdAuthHeaders();
+  if(otaAh.Authorization) xhr.setRequestHeader('Authorization',otaAh.Authorization);
 
   xhr.upload.onprogress=function(e){
     if(e.lengthComputable){
@@ -1148,7 +1176,7 @@ async function savePanel(){
   if(!confirm('确定切换屏幕型号？切换后需要断电重启设备才能生效。')) return;
   pnLog('保存中…');
   try{
-    const r=await fetch('/panel_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({panel})});
+    const r=await fetch('/panel_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({panel})}));
     const j=await r.json();
     if(j.ok){
       pnLog('已保存！请断电重启设备使新屏幕配置生效。（'+panelNames[panel]+'）','ok');
@@ -1198,10 +1226,18 @@ async function saveAuth(){
   const user=document.getElementById('authUser').value.trim();
   const pass=document.getElementById('authPass').value;
   authLog('保存中…');
-  try{const r=await fetch('/auth_config',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({user,pass})});
+  try{
+    var headers={'Content-Type':'application/json'};
+    var ou=localStorage.getItem('epd_auth_u');
+    var op=localStorage.getItem('epd_auth_p');
+    if(ou&&op)
+      headers['Authorization']='Basic '+btoa(unescape(encodeURIComponent(ou+':'+op)));
+    const r=await fetch('/auth_config',{method:'POST',headers:headers,body:JSON.stringify({user,pass})});
     const j=await r.json();
-    if(j.ok){authLog(user&&pass?'认证已设置，刷新页面后生效':'认证已关闭','ok');
+    if(j.ok){
+      if(user&&pass){localStorage.setItem('epd_auth_u',user);localStorage.setItem('epd_auth_p',pass);}
+      else{localStorage.removeItem('epd_auth_u');localStorage.removeItem('epd_auth_p');}
+      authLog(user&&pass?'认证已设置（本页已将凭据保存在本机浏览器，仅限用于后续请求）':'认证已关闭','ok');
     }else authLog('保存失败','bad');
   }catch(e){authLog('请求失败: '+e,'bad');}
 }
@@ -1227,7 +1263,7 @@ async function savePower(){
   };
   pwrLog('保存中…');
   try{
-    const r=await fetch('/power_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const r=await fetch('/power_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
     const j=await r.json();
     if(j.ok){
       pwrLog(cfg.enabled?'已保存！设备将在闲置 '+cfg.idle+' 秒后进入深度睡眠。':'已保存，睡眠模式已关闭。','ok');
@@ -1252,7 +1288,7 @@ async function exportConfig(){
     var names=['weather','clock','message','slideshow','timetable','todo','countdown','power','auth'];
     var backup={_version:1,_date:new Date().toISOString()};
     for(var i=0;i<endpoints.length;i++){
-      try{var r=await fetch(endpoints[i]);backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
+      try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
     }
     var blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
     var a=document.createElement('a');
@@ -1277,7 +1313,7 @@ async function importConfig(input){
     for(var key in map){
       if(!backup[key])continue;
       try{
-        await fetch(map[key],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup[key])});
+        await fetch(map[key],epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup[key])}));
         ok++;
       }catch(e){fail++;}
     }

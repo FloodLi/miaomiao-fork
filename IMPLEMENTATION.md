@@ -1,9 +1,9 @@
 # ESP32-S3 三色墨水屏图片上传显示系统 — 实现文档
 
 > 项目代号：**epaper_uploader**
-> 硬件平台：ESP32-S3 + GDEH042Z96（4.2 寸 400×300 三色墨水屏，SSD1619 控制器）
+> 硬件平台：ESP32-S3 + SSD1619(4.2" 400×300) / UC8179(5.83" 648×480) 三色墨水屏
 > 技术栈：ESP-IDF v5.5.1 / C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
-> 文档版本：v1.0 | 2026-03-15
+> 固件版本：v2.1.0（`PROJECT_VER`） | 文档版本：v2.1 | 2026-04-10
 
 ---
 
@@ -37,7 +37,7 @@
 
 | 组件 | 型号 | 说明 |
 |------|------|------|
-| 主控 | **ESP32-S3** | 双核 Xtensa LX7，240MHz，512KB SRAM，无 PSRAM |
+| 主控 | **ESP32-S3** | 双核 Xtensa LX7，240MHz；**本仓库软件按无 PSRAM 优化**（亦可在带 PSRAM 模组上运行） |
 | 墨水屏 | **GDEH042Z96** | 4.2 寸，400×300 像素，三色（黑/白/红） |
 | 屏幕控制器 | **SSD1619** | 内置 RAM，支持全刷新，SPI 接口 |
 | Flash | 内置 16MB | factory 2MB + 双 OTA 各 2MB + SPIFFS 约 10MB |
@@ -86,30 +86,36 @@ msp/
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 + UC8179，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
-│   ├── http_app.c/h           # HTTP 服务器（42 条路由 + Basic Auth + OTA）
+│   ├── http_app.c/h           # HTTP 服务器（约 46 条路由 + Basic Auth + OTA）
+│   ├── http_gallery.c         # 画廊 HTTP 路由
+│   ├── http_features.c        # 功能模块 HTTP 路由
 │   ├── wifi_manager.c/h       # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h          # 画廊轮播调度器
 │   ├── weather.c/h            # 和风天气 HTTPS
 │   ├── clock_display.c/h      # 时钟表盘
 │   ├── calendar_display.c/h   # 万年历 + 农历
 │   ├── lunar.c/h              # 农历算法
-│   ├── timetable.c/h          # 课程表
-│   ├── todo.c/h               # 待办事项
+│   ├── timetable.c/h          # 课程表（7×12 网格 + 学期周次）
+│   ├── todo.c/h               # 待办事项（NVS 持久化 + 进度条）
+│   ├── countdown.c/h          # 倒计时
 │   ├── message_board.c/h      # 留言板
 │   ├── button.c/h             # 三键驱动
 │   ├── power_mgr.c/h          # 深度睡眠与电源管理
 │   ├── fb_render.c/h          # 帧缓冲渲染引擎
 │   ├── font_data.h            # 点阵字库（ASCII + 中文）
 │   ├── display_policy.c/h     # 显示策略协调
+│   ├── display_mode.c/h       # 显示模式注册与切换
 │   ├── device_identity.c/h    # 设备标识
 │   ├── time_sync.c/h          # SNTP 时间同步
+│   ├── nvs_utils.c/h          # NVS 工具函数
 │   ├── spiffs_mount.c/h       # SPIFFS 挂载与自动修复
 │   └── lodepng.c/h            # LodePNG 第三方 PNG 解码库
 ├── web/
 │   ├── index.html             # 主页：上传 / 画廊 / 状态
 │   ├── config.html            # 配置：WiFi / 轮播 / 天气 / OTA / 低功耗
 │   ├── timetable.html         # 课程表编辑
-│   └── todo.html              # 待办事项管理
+│   ├── todo.html              # 待办事项管理
+│   └── countdown.html         # 倒计时配置
 ├── README.md
 ├── IMPLEMENTATION.md           # 本文档
 └── ROADMAP.md                  # 开发规划
@@ -122,13 +128,13 @@ msp/
 | **应用入口** | `app_main.c` | 双启动路径：完整启动（WiFi+HTTP+全功能）/ 深睡快速刷新 |
 | **EPD 驱动** | `epd_stub.c` / `epd.h` | SSD1619 + UC8179 双屏支持，SPI DMA，BWR 三色 |
 | **图片转换** | `image_convert.c/h` | JPEG/PNG/BMP 解码、拉伸全屏、Floyd-Steinberg 抖色 |
-| **HTTP 服务器** | `http_app.c/h` | 42 条路由 + Basic Auth + OTA |
+| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` | 约 46 条路由 + Basic Auth + OTA |
 | **WiFi 管理** | `wifi_manager.c/h` | AP+STA 共存、NVS 凭据、自动重连 |
 | **轮播调度** | `scheduler.c/h` | 画廊顺序/随机自动轮播 |
 | **天气** | `weather.c/h` | 和风天气 HTTPS，实时+3 天预报 |
 | **时钟** | `clock_display.c/h` | 数字时钟，自动刷新 |
 | **万年历** | `calendar_display.c/h` + `lunar.c/h` | 月视图 + 农历/节气/节日 |
-| **课程表** | `timetable.c/h` | 周期制课程，单日议程视图 |
+| **课程表** | `timetable.c/h` | 7×12 网格 + 学期周次 + 单日/全周视图 |
 | **待办事项** | `todo.c/h` | NVS 持久化，进度条+百分比 |
 | **留言板** | `message_board.c/h` | 自定义文字/字号/对齐/颜色 |
 | **按键驱动** | `button.c/h` | 3 键轮询+去抖+模式切换 |
@@ -139,7 +145,7 @@ msp/
 | **SPIFFS 存储** | `spiffs_mount.c/h` | 挂载/自动修复/画廊目录 |
 | **设备标识** | `device_identity.c/h` | MAC → AP SSID / mDNS |
 | **PNG 解码** | `lodepng.c/h` | 第三方纯 C 库（编译时裁剪）|
-| **Web 前端** | `web/*.html` | 4 个页面 + 三套主题 |
+| **Web 前端** | `web/*.html` | `index` / `config` / `timetable` / `todo` / `countdown` + 三套主题 |
 
 ### 3.3 数据流详解
 
@@ -545,7 +551,7 @@ if (a < 255) {
 
 ### 5.1 整体架构
 
-Web 前端是一个单页面应用（SPA），HTML/CSS/JS 全部包含在 `web/index.html` 中，构建时通过 CMake 的 `EMBED_FILES` 嵌入固件二进制。运行时通过 `extern const uint8_t[]` 直接从 Flash 读取，零拷贝发送。
+Web 前端为 **多页面**：`index.html`（画廊主页）、`config.html`（综合配置）、`timetable.html` / `todo.html` / `countdown.html` 等。构建时经 `main/CMakeLists.txt` 的 `EMBED_FILES` 嵌入镜像，由 `http_app` / `http_features` 按路径返回；运行时通过 `extern const uint8_t[]` 从 Flash 读取发送。
 
 ```c
 // 编译时嵌入
@@ -610,23 +616,29 @@ SPIFFS 使用率进度条颜色自适应：<70% 绿色、70~90% 黄色、>90% �
 | GET | `/config` | 配置页（WiFi/轮播/天气/OTA/低功耗）|
 | GET | `/timetable` | 课程表编辑页 |
 | GET | `/todo` | 待办事项管理页 |
+| GET | `/countdown` | 倒计时配置页 |
 | POST | `/upload` | 图片上传 → 转换 → 显示 |
 | GET | `/status` | 设备状态 JSON |
 | GET | `/images` | 画廊列表 JSON |
 | GET | `/image?name=xxx` | 图片预览 |
 | POST | `/show?name=xxx` | 显示指定图片 |
-| POST | `/delete_image?name=xxx` | 删除图片 |
+| POST | `/delete_image?name=xxx` | 删除单张图片 |
 | POST | `/delete` | 清屏 |
 | GET/POST | `/wifi_*`, `/scan` | WiFi 配网 API |
+| GET/POST | `/panel_config` | 屏幕型号切换 |
 | GET/POST | `/weather_*` | 天气配置 API |
 | GET/POST | `/clock_*` | 时钟配置 API |
-| GET/POST | `/scheduler_*` | 轮播配置 API |
-| GET/POST | `/timetable_*` | 课程表数据 API |
-| GET/POST | `/todo_*` | 待办事项数据 API |
+| GET/POST | `/slideshow` | 轮播配置 API |
+| GET/POST | `/timetable*` | 课程表数据 API |
+| GET/POST | `/todo*` | 待办事项数据 API |
+| GET/POST | `/countdown*` | 倒计时数据 API |
+| GET/POST | `/msg_*` | 留言板配置 API |
+| POST | `/calendar_show` | 显示日历 |
 | GET/POST | `/power_config` | 电源管理配置 API |
+| GET/POST | `/auth_config` | HTTP 认证配置 |
 | POST | `/ota` | 固件升级 |
 | GET | `/version` | 固件版本 |
-| *...共 42 条路由* | | |
+| *… 共约 46 条路由，以 `http_app.c` 为准* | | |
 
 ---
 
@@ -683,7 +695,7 @@ image_convert_file_to_epd_raw(input_path, out_path);
 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 config.recv_wait_timeout  = 5;      // 接收超时 5 秒，快速释放空闲连接
 config.send_wait_timeout  = 5;      // 发送超时 5 秒
-config.max_uri_handlers   = 48;     // 支持注册 48 个路由
+config.max_uri_handlers   = 48;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前约 46）
 config.stack_size         = 16384;  // HTTP 任务栈 16KB（图片转换需要较深调用栈）
 config.lru_purge_enable   = true;   // 当连接数满时，关闭最久未使用的连接
 ```
@@ -796,11 +808,7 @@ static void epd_clear(void)
 ### 7.2 构建命令
 
 ```bash
-# 设置 IDF 环境（Windows 使用 ESP-IDF 命令行工具）
-. $HOME/esp/esp-idf/export.sh     # Linux/macOS
-# 或
-%IDF_PATH%\export.bat              # Windows
-
+#cd 到源码目录
 # 设置目标芯片
 idf.py set-target esp32s3
 
@@ -818,7 +826,7 @@ idf.py -p COMx flash
 idf.py -p COMx monitor
 
 # 一步完成编译+烧录+监控
-idf.py -p COMx flash monitor
+idf.py flash monitor
 ```
 
 > 将 `COMx` 替换为实际的串口号，如 `COM3`（Windows）或 `/dev/ttyUSB0`（Linux）。
@@ -912,7 +920,7 @@ app_main()
     │
     ├─ 内容模块初始化                天气/时钟/日历/课程表/待办/留言板/轮播
     │
-    ├─ http_app_start()              HTTP 服务器（42 条路由，Basic Auth）
+    ├─ http_app_start()              HTTP 服务器（约 46 条路由，Basic Auth）
     │
     ├─ 显示欢迎屏
     │

@@ -77,6 +77,7 @@ esp_err_t feat_todo_show_post(httpd_req_t *req)
 
 esp_err_t feat_calendar_show_post(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
@@ -203,6 +204,7 @@ esp_err_t feat_countdown_config_post(httpd_req_t *req)
 
 esp_err_t feat_countdown_show_post(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req)) return ESP_OK;
     esp_err_t err = countdown_show();
     httpd_resp_set_type(req, "application/json");

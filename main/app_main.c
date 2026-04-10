@@ -204,14 +204,22 @@ static void quick_refresh_and_sleep(void)
              mode, display_mode_name(mode));
 
     esp_err_t err = display_mode_show(mode);
+    int      ok_mode = mode;
 
-    if (err == ESP_OK)
-        ESP_LOGI(TAG, "Quick-refresh: content displayed");
-    else
+    if (err != ESP_OK) {
         ESP_LOGW(TAG, "Quick-refresh: mode %d failed, trying clock", mode);
+        err    = display_mode_show(0);
+        ok_mode = 0;
+    }
 
-    if (err != ESP_OK)
-        display_mode_show(0);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Quick-refresh: content displayed");
+        /* 月历在独立任务里刷屏；若立即深睡会在刷新完成前掉电，屏不更新或异常 */
+        if (strcmp(display_mode_name(ok_mode), "calendar") == 0)
+            calendar_display_wait_render_idle();
+    } else {
+        ESP_LOGW(TAG, "Quick-refresh: clock fallback also failed");
+    }
 
     ESP_LOGI(TAG, "Quick-refresh done, going back to sleep");
     power_mgr_enter_sleep();

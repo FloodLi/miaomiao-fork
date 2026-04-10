@@ -3,7 +3,7 @@
 > 项目代号：epaper_uploader  
 > 硬件平台：ESP32-S3 + 三色墨水屏（4.2" 400×300 SSD1619 / 5.83" 648×480 UC8179）  
 > 技术栈：ESP-IDF v5.5.1 / C / SPI / WiFi SoftAP / HTTP  
-> 文档版本：v1.0 | 2026-03-14
+> 固件版本：v2.1.0（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-04-10
 
 ---
 
@@ -13,11 +13,23 @@
 
 ### 2026-04（最新完成）
 
+- **文档与工程对齐**：
+  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由约 46 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
+  - 工程技术文档补充 **§4.4 低功耗与功能**、**§4.5 HTTP Basic Auth**（含前端 `localStorage` 凭据与天气 Key 脱敏说明）。
+- **HTTP 安全加固（固件 + Web）**（与审计一致时）：
+  - 敏感推屏/配置类 **POST** 走 `http_check_basic_auth`；`GET /weather_config` 不透传明文 API Key。
+  - `web/config.html`、`index.html`、`timetable.html`、`todo.html`、`countdown.html`：`epdFetchOpts` + `epd_auth_*`；配置导出/导入携带鉴权头。
 - **课程表功能重写**：
-  - 周期制课程模型（最多 12 节/天，周位掩码，教室/教师信息）。
-  - 单日议程视图渲染（卡片式 + 红色强调 + 自适应缩放）。
-  - Web UI 课程编辑页面（`/timetable`）。
-  - 支持按钮切换和 HTTP API 查看指定星期。
+  - 7×12 网格课程模型（grid[day][period]），取代旧的 slots 模型。
+  - 学期周次追踪（semester_start 时间戳 + 周次位掩码 weeks bitmask）。
+  - 自定义节次时间定义（period_count + periods[]），内置标准 10 节模板。
+  - 双屏自适应渲染：5.83" 全周网格视图，4.2" 单日议程视图，当前节次红色高亮。
+  - Web UI 课程编辑页面（`/timetable`），支持导出/导入 JSON。
+  - 支持按钮切换和 HTTP API 查看指定星期（`POST /timetable_show`，可选 JSON body `{"day":0..6}`）。
+- **倒计时模块**：
+  - NVS 持久化（最多 3 条，含标题/目标日期/启用开关）。
+  - EPD 渲染：单项大字/多项目卡片，分页显示。
+  - Web UI 管理页面（`/countdown`），操作后自动保存。
 - **待办事项模块**：
   - NVS 持久化（最多 16 条，含优先级与完成状态）。
   - EPD 渲染：进度条 + 百分比 + 勾选样式 + 紧急/重要标签。
@@ -25,7 +37,7 @@
 - **物理按键驱动**：
   - 3 键（SW3/SW4/SW5 → GPIO 3/46/9）轮询 + 去抖。
   - 生产者-消费者架构（轮询 2.5KB + 显示工作者 10KB）。
-  - 模式切换：时钟 → 日历 → 课程表 → 天气 → 轮播 → 待办。
+  - 模式切换：时钟 → 日历 → 课程表 → 天气 → 轮播 → 待办 → 倒计时（`display_mode` 注册顺序；留言板以 Web `msg_show` 为主）。
   - 未配置功能自动显示友好提示屏。
 - **图片显示优化**：
   - Floyd-Steinberg 误差扩散抖色（替代 Bayer，所有格式支持，内存不足自动降级）。
@@ -333,7 +345,7 @@ msp/
 │   ├── app_main.c                 # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h        # EPD 驱动（SSD1619 4.2" + UC8179 5.83"，SPI DMA）
 │   ├── image_convert.c/h         # JPEG/PNG/BMP → EPD 帧缓冲（Floyd-Steinberg 抖色）
-│   ├── http_app.c/h              # HTTP 服务 + 42 条 API 路由 + Basic Auth + OTA
+│   ├── http_app.c/h              # HTTP 服务 + 约 46 条 API 路由 + Basic Auth + OTA
 │   ├── wifi_manager.c/h          # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h             # 画廊轮播调度器
 │   ├── weather.c/h               # 和风天气 HTTPS 拉取与渲染

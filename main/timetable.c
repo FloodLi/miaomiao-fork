@@ -998,6 +998,7 @@ esp_err_t timetable_http_post_handler(httpd_req_t *req)
 
 esp_err_t timetable_show_http_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!epd_is_ready()) {
         httpd_resp_set_status(req, "503 Service Unavailable");
         httpd_resp_set_type(req, "application/json");

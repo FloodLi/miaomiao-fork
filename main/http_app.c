@@ -119,11 +119,22 @@ bool http_check_basic_auth(httpd_req_t *req)
 
 static esp_err_t auth_config_get_handler(httpd_req_t *req)
 {
-    char json[96];
-    snprintf(json, sizeof(json), "{\"enabled\":%s,\"user\":\"%s\"}",
-             http_auth_is_enabled() ? "true" : "false", s_auth_user);
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
+    cJSON_AddBoolToObject(root, "enabled", http_auth_is_enabled());
+    cJSON_AddStringToObject(root, "user", s_auth_user[0] ? s_auth_user : "");
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, str, HTTPD_RESP_USE_STRLEN);
+    free(str);
     return ESP_OK;
 }
 
@@ -634,7 +645,9 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
-    cJSON_AddStringToObject(root, "api_key", cfg.api_key);
+    /* 不在 GET 中下发明文 Key，避免局域网嗅探；前端用 api_key_set + 留空保存保留原密钥 */
+    cJSON_AddStringToObject(root, "api_key", "");
+    cJSON_AddBoolToObject(root, "api_key_set", cfg.api_key[0] != '\0');
     cJSON_AddStringToObject(root, "api_host", cfg.api_host);
     cJSON_AddStringToObject(root, "location", cfg.location);
     cJSON_AddStringToObject(root, "city_name", cfg.city_name);
@@ -687,8 +700,12 @@ static esp_err_t weather_config_post_handler(httpd_req_t *req)
     if ((j = cJSON_GetObjectItem(root, "enabled")) && cJSON_IsBool(j))
         cfg.enabled = cJSON_IsTrue(j);
     const char *s;
-    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "api_key"))))
-        snprintf(cfg.api_key, sizeof(cfg.api_key), "%s", s);
+    cJSON *jk = cJSON_GetObjectItem(root, "api_key");
+    if (jk && cJSON_IsString(jk) && jk->valuestring && jk->valuestring[0] != '\0')
+        snprintf(cfg.api_key, sizeof(cfg.api_key), "%s", jk->valuestring);
+    j = cJSON_GetObjectItem(root, "api_key_clear");
+    if (j && cJSON_IsTrue(j))
+        cfg.api_key[0] = '\0';
     if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "api_host"))))
         snprintf(cfg.api_host, sizeof(cfg.api_host), "%s", s);
     if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "location"))))
@@ -709,6 +726,7 @@ static esp_err_t weather_config_post_handler(httpd_req_t *req)
 
 static esp_err_t weather_show_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
@@ -798,6 +816,7 @@ static esp_err_t clock_config_post_handler(httpd_req_t *req)
 
 static esp_err_t clock_show_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
@@ -908,6 +927,7 @@ static esp_err_t msg_config_post_handler(httpd_req_t *req)
 
 static esp_err_t msg_show_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
 

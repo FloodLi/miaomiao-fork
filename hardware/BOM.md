@@ -1,12 +1,18 @@
 # 元器件清单（BOM）
 
+> **与 epaper_uploader / `msp` 固件对齐**  
+> - 默认 `partitions.csv`：**约 16MB Flash**（2MB factory + 2MB×2 OTA + ~10MB SPIFFS）。**仅 8MB Flash 的模组无法直接烧录本仓库默认分区**，需缩小 SPIFFS/OTA 后重新分区或使用 16MB 模组。  
+> - **PSRAM 非必需**：固件按 **无 PSRAM** 做内存优化；可选 `N16R8` 等带 PSRAM 料号。  
+> - 墨水屏需与驱动一致：**4.2" SSD1619（BWR）** 或 **5.83" UC8179（BWR）** 等（见根目录 `README.md` 引脚表）。  
+> - 班级/立创 **实采清单** 见同目录 [BOM_ACTUAL.md](BOM_ACTUAL.md)（**首段兼容性说明必读**）。
+
 ## 主板元器件清单
 
 ### 核心芯片
 
 | 序号 | 名称 | 型号 | 封装 | 数量 | 参考价格 | 备注 |
 |------|------|------|------|------|---------|------|
-| 1 | WiFi 模组 | ESP32-S3-WROOM-1-N8 | 模组 | 1 | ¥25 | 8MB Flash |
+| 1 | WiFi 模组 | ESP32-S3-WROOM-1U-**N16**（或 N16R8） | 模组 | 1 | ¥25~40 | **16MB Flash**；与本仓库默认分区匹配 |
 | 2 | USB 转 TTL | CH340N | SOP-8 | 1 | ¥2 | 或 CP2102 |
 
 ### 电源管理

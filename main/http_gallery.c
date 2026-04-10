@@ -132,6 +132,7 @@ esp_err_t gallery_image_get_handler(httpd_req_t *req)
 
 esp_err_t gallery_show_post_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
 

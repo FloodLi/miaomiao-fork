@@ -1,84 +1,144 @@
 # epaper_uploader — ESP32-S3 智能墨水屏终端
 
-> **硬件**：ESP32-S3 + 三色墨水屏（4.2" SSD1619 / 5.83" UC8179）  
-> **框架**：ESP-IDF v5.5.1  
-> **版本**：2.0.0
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)]()
 
-## 功能概览
+> 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。  
+> **发布版本：v2.1.0**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 
-| 模块 | 说明 |
+## ✨ 项目亮点
+
+- 🖼️ **三色墨水屏** — 支持黑白红三色显示，Floyd-Steinberg 抖色算法
+- 📡 **WiFi 配网** — 手机热点一键配网，mDNS 局域网发现
+- 🌐 **Web 管理** — 响应式 UI，三套主题，手机/电脑均可操作
+- 🔋 **超低功耗** — 闲置可进深度睡眠（μA 级），定时器/按键唤醒；双启动路径（完整服务 ↔ 快速刷屏）
+- 🔄 **OTA 升级** — 双分区设计，Web 端一键升级固件
+- 🎓 **课程表** — 学期周次管理，自动高亮当前课程
+- 🌤️ **天气日历** — 和风天气 API + 农历 + 节气 + 节日
+- 📋 **待办/倒计时** — 优先级管理 + 进度条 + 目标日期倒数
+
+## 📷 功能展示
+
+| 功能 | 说明 |
 |------|------|
-| 图片展示 | JPEG / PNG / BMP 上传、Floyd-Steinberg 抖色、拉伸全屏显示 |
+| 图片展示 | JPEG / PNG / BMP 上传，Floyd-Steinberg 抖色，拉伸全屏显示 |
 | 画廊轮播 | 自动顺序 / 随机轮播，间隔可配置 |
-| 时钟表盘 | 自动刷新，数字时钟样式 |
+| 时钟表盘 | 自动刷新，数字时钟样式，可叠加天气摘要 |
 | 万年历 | 月视图 + 农历 + 节气 + 节日 + 今日红圈 |
 | 天气 | 和风天气 API，实时 + 3 天预报 |
-| 课程表 | 周课程管理，按天显示 |
-| 待办事项 | 优先级 + 完成状态 + 进度条 |
-| 倒计时 | 目标日期倒数，支持 Web 配置 |
+| 课程表 | 学期周次 + 7×12 网格 + 当前/下节课高亮 |
+| 待办事项 | 优先级(普通/重要/紧急) + 完成状态 + 进度条 |
+| 倒计时 | 最多 3 个目标日期倒数 |
 | 留言板 | 自定义文字 / 字号 / 对齐 / 颜色 |
 | 物理按键 | 3 键切换模式（上一个 / 刷新 / 下一个） |
-| 深度睡眠 | 闲置自动入睡 + 定时器/按键唤醒，电池续航 80+ 天 |
+| 深度睡眠 | 闲置自动入睡 + 定时器/按键唤醒 |
 
-## 网络与配置
+## 🔧 硬件要求
 
-- **WiFi**：SoftAP + STA 共存（APSTA），NVS 持久化凭据，断线自动重连
-- **mDNS**：`http://epd<mac>.local/` 局域网发现
-- **SNTP**：自动时间同步（NTP 阿里云 + pool.ntp.org）
-- **OTA**：双分区固件升级，Web 上传 + 进度条 + 回滚保护
-- **HTTP Basic Auth**：敏感操作需认证，用户名/密码 NVS 持久化
-- **Web UI**：三套主题（Loopy / Hello Kitty / 草莓熊），响应式设计
+### 核心元器件
 
-## 硬件连接
+| 元器件 | 型号 | 说明 |
+|--------|------|------|
+| 主控 | **ESP32-S3**（常见 `N16` 无 PSRAM；亦可选 `N16R8`） | 16MB Flash；**软件按无 PSRAM 场景优化内存** |
+| 墨水屏 A | 4.2" SSD1619 (400×300 BWR) | 黑白红三色 |
+| 墨水屏 B | 5.83" UC8179 (648×480 BWR) | 黑白红三色 |
+| 稳压 | AMS1117-3.3 | 5V → 3.3V |
+| USB 转串口 | CH340 | 烧录 + 供电 |
 
-| 功能 | GPIO |
-|------|------|
-| EPD SPI | SCK=4, MOSI=5, DC=7, CS=15, RST=6, BUSY=16 |
-| 按键 SW3 | GPIO 3（上一个模式） |
-| 按键 SW4 | GPIO 46（刷新当前） |
-| 按键 SW5 | GPIO 9（下一个模式） |
+> 💡 两种屏幕二选一，软件支持运行时切换。复刻请读 [hardware/BOM.md](hardware/BOM.md)（**16MB Flash / 分区表**）；班级实采见 [hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)（**首段屏型与固件对应说明**）。
 
-## 编译 & 烧录
+### 引脚连接
+
+| 功能 | GPIO | 连接到 |
+|------|------|--------|
+| EPD SCK | **4** | 墨水屏 SCL |
+| EPD MOSI | **5** | 墨水屏 SDI |
+| EPD DC | **7** | 墨水屏 D/C |
+| EPD CS | **15** | 墨水屏 CS |
+| EPD RST | **6** | 墨水屏 RES |
+| EPD BUSY | **16** | 墨水屏 BUSY |
+| 按键 SW3 | **3** | 上一个模式 |
+| 按键 SW4 | **46** | 刷新当前 |
+| 按键 SW5 | **9** | 下一个模式 |
+
+> ⚠️ BUSY 引脚需上拉，不同屏幕 BUSY 极性可能不同，固件支持 NVS 配置。
+
+## 🚀 快速开始
+
+### 1. 环境准备
+
+安装 [ESP-IDF v5.5.1](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32s3/get-started/)：
 
 ```powershell
-cd c:\Users\43060\Desktop\msp
-idf.py set-target esp32s3
-idf.py build
-idf.py -p COMXX flash monitor
+# Windows: 下载 ESP-IDF Tools Installer
+# https://dl.espressif.com/dl/esp-idf/?id=Windows
 ```
 
-## 首次使用
+### 2. 克隆项目
 
-1. 手机连接 WiFi 热点 `ESP32_EPD_xxxx`（密码 `12345678`）
-2. 浏览器打开 `http://192.168.4.1/`
-3. 进入「配置」页面连接家庭 WiFi
-4. 连接后通过 `http://epd<mac>.local/` 或 STA IP 访问
+```bash
+git clone https://gitee.com/gxp666111/miaomiao.git
+cd miaomiao   # 或你本地的 msp 目录名
+```
 
-## 项目结构
+### 3. 编译固件
+
+```powershell
+# 设置目标芯片
+idf.py set-target esp32s3
+
+# 编译（首次编译约 3-5 分钟）
+idf.py build
+```
+
+### 4. 烧录固件
+
+```powershell
+# 首次烧录需先擦除 Flash
+idf.py -p COM3 erase-flash
+
+# 烧录固件
+idf.py -p COM3 flash
+
+# 查看串口日志
+idf.py -p COM3 monitor
+```
+
+> 💡 将 `COM3` 替换为你电脑上的实际串口号。
+
+### 5. 首次使用
+
+1. 设备上电后自动创建 WiFi 热点 `ESP32_EPD_xxxx`（密码 `12345678`）
+2. 手机连接该热点，浏览器打开 `http://192.168.4.1/`
+3. 进入「设备配置」→ 连接家庭 WiFi
+4. 连接后通过 `http://epdxxxx.local/` 或 STA IP 访问
+
+## 📁 项目结构
 
 ```
 msp/
-├── main/                        # 固件源码（25 个模块）
-│   ├── app_main.c               # 启动流程编排（双启动路径）
+├── main/                        # 固件源码（C 模块，含 HTTP / EPD / 业务）
+│   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
 │   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
-│   ├── http_app.c/h             # HTTP 服务主框架 + Basic Auth + OTA
-│   ├── http_gallery.c           # 画廊相关 HTTP 路由
-│   ├── http_features.c          # 功能模块 HTTP 路由
+│   ├── http_app.c/h             # HTTP 服务（约 46 条 URI + Basic Auth + OTA）
+│   ├── http_gallery.c           # 画廊相关路由
+│   ├── http_features.c          # 功能模块路由
 │   ├── wifi_manager.c/h         # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h            # 画廊轮播调度
 │   ├── weather.c/h              # 和风天气 HTTPS
 │   ├── clock_display.c/h        # 时钟表盘
 │   ├── calendar_display.c/h     # 万年历 + 农历
 │   ├── lunar.c/h                # 农历算法（1900-2100）
-│   ├── timetable.c/h            # 课程表（周期制 + 单日视图）
-│   ├── todo.c/h                 # 待办事项（NVS + 进度条）
+│   ├── timetable.c/h            # 课程表（7×12 网格 + 学期周次）
+│   ├── todo.c/h                 # 待办事项（优先级 + 进度条）
 │   ├── countdown.c/h            # 倒计时
-│   ├── message_board.c/h        # 留言板（自定义文字/对齐/字号）
-│   ├── button.c/h               # 三键驱动（GPIO 轮询 + 去抖）
-│   ├── fb_render.c/h            # 帧缓冲渲染引擎（像素/线/矩形/UTF-8）
+│   ├── message_board.c/h        # 留言板
+│   ├── button.c/h               # 三键驱动（轮询 + 去抖）
+│   ├── fb_render.c/h            # 帧缓冲渲染引擎
 │   ├── font_data.h              # 点阵字库（ASCII + 中文）
-│   ├── display_policy.c/h       # 显示策略协调（互斥 + 手动屏标记）
+│   ├── display_policy.c/h       # 显示策略协调
 │   ├── display_mode.c/h         # 显示模式注册与切换
 │   ├── power_mgr.c/h            # 深度睡眠与电源管理
 │   ├── time_sync.c/h            # SNTP 时间同步
@@ -95,22 +155,80 @@ msp/
 ├── tools/                       # 辅助脚本
 │   ├── gen_font.py              # 点阵字库生成工具
 │   └── gen_city_excel.py        # 和风天气城市码导出
-├── docs/                        # 文档
 ├── hardware/                    # 硬件 BOM
-├── partitions.csv               # 分区表（factory + 双 OTA + 10MB SPIFFS）
+│   ├── BOM_ACTUAL.md            # 实际采购清单（立创商城）
+│   └── BOM.md                   # BOM 说明
+├── partitions.csv               # 分区表（factory + 双 OTA + ~10MB SPIFFS）
 ├── sdkconfig.defaults           # 项目默认配置
-└── ROADMAP.md                   # 开发规划与进度
+└── CMakeLists.txt               # 顶层构建脚本
 ```
 
-## 分区表
+## 🔌 分区表
 
-| 分区 | 类型 | 大小 |
+| 分区 | 类型 | 大小 | 说明 |
+|------|------|------|------|
+| nvs | data | 24 KB | 非易失性配置存储 |
+| otadata | data | 8 KB | OTA 状态 |
+| factory | app | 2 MB | 出厂固件（回滚保护） |
+| ota_0 / ota_1 | app | 各 2 MB | OTA 双分区 |
+| spiffs | data | ~10 MB | 图片/文件存储 |
+
+## 🌐 Web API 概览
+
+设备提供 **约 46 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
+
+| 分类 | 路径 | 说明 |
 |------|------|------|
-| nvs | data | 24 KB |
-| factory | app | 2 MB |
-| ota_0 / ota_1 | app | 各 2 MB |
-| spiffs | data | ~10 MB |
+| 页面 | `/`, `/config`, `/timetable`, `/todo`, `/countdown` | Web UI 页面 |
+| 图片 | `/upload`, `/images`, `/image`, `/show`, `/delete` | 画廊管理 |
+| WiFi | `/wifi_status`, `/scan`, `/wifi_connect`, `/wifi_forget` | 网络配置 |
+| 屏幕 | `/panel_config` | 屏幕型号切换 |
+| 天气 | `/weather_config`, `/weather_show` | 天气配置与显示 |
+| 课程表 | `/timetable.json`, `/timetable`, `/timetable_show` | 课程表管理 |
+| 待办 | `/todo.json`, `/todo`, `/todo_show` | 待办事项管理 |
+| 倒计时 | `/countdown_config`, `/countdown_show` | 倒计时管理 |
+| 系统 | `/status`, `/version`, `/ota`, `/auth_config`, `/power_config` | 系统管理 |
 
-## 许可证
+> 📖 完整 API 文档见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md#六-api-接口文档)
 
-MIT
+## ⚡ 低功耗模式
+
+| 模式 | 电流 | 唤醒源 | 说明 |
+|------|------|--------|------|
+| 活跃 | 150-300mA | 按键/HTTP | 正常工作 |
+| 深度睡眠 | <10μA | RTC 定时器 / GPIO | 电池续航 80+ 天 |
+
+**双启动路径设计**（深度睡眠开启且本次为 **RTC 定时器** 唤醒时）：
+- **完整启动**（上电 / 复位 / **按键 GPIO3·9 唤醒** 等）：AP+STA、mDNS、`http_app`、按键任务、欢迎屏流程；**可通过网页访问**。
+- **定时器唤醒**：仅 STA、刷新 `NVS` 中记忆的模式画面后回睡；**不启动 HTTP / 不配 SoftAP**，无法在此阶段打开网页。
+
+**HTTP Basic Auth**：可在配置页启用。启用后敏感操作需带 `Authorization`；各 `web/*.html` 在配置页保存认证后使用 `localStorage`（`epd_auth_u` / `epd_auth_p`）自动附带请求头。详见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第七章。
+
+## 📚 文档导航
+
+| 文档 | 说明 | 适用人群 |
+|------|------|---------|
+| [文档索引.md](文档索引.md) | 全部文档导航与按角色检索 | 所有人 |
+| [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) | 工程技术文档（架构/API/模块）⭐ | 开发者 |
+| [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
+| [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |
+| [hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md) | 元器件采购清单 | 复刻者 |
+| [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
+
+> **说明**：双屏切换、排障步骤等亦写在 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 与 [hardware/BOM.md](hardware/BOM.md) 中；若你本地另有 `docs/` 子目录教辅材料，以实际仓库文件为准。
+
+## 🤝 参与贡献
+
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/xxx`)
+3. 提交更改 (`git commit -m 'Add xxx'`)
+4. 推送到分支 (`git push origin feature/xxx`)
+5. 提交 Pull Request
+
+## 📄 许可证
+
+MIT License — 可自由用于个人和商业项目。
+
+---
+
+> 💡 **复刻提示**：PCB 和外壳文件将在后续单独发布，请关注仓库更新。

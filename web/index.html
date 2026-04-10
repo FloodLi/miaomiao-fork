@@ -135,6 +135,10 @@ input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);co
 .sd:nth-child(even){animation-direction:alternate-reverse;animation-duration:11s}
 @keyframes sdd{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-12px) rotate(4deg)}}
 @media(max-width:1000px){.side-deco{display:none}}
+.epd-credit{margin-top:20px;padding-top:14px;border-top:1px solid var(--cb);font-size:12px;color:var(--t2);text-align:center;line-height:1.6}
+.epd-credit strong{color:var(--tx);font-weight:700}
+.epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}
+.epd-credit a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -271,6 +275,7 @@ input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);co
       <div id="gallery" class="gallery"><div class="empty">加载中…</div></div>
     </div>
   </div>
+  <footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">开源仓库</a></footer>
 </div>
 
 <script>
@@ -288,6 +293,21 @@ function setTheme(t){
   });
 }
 (function(){var t=localStorage.getItem('epd_theme')||'loopy';setTheme(t)})();
+
+function epdAuthHeaders(){
+  try{
+    var u=localStorage.getItem('epd_auth_u');
+    var p=localStorage.getItem('epd_auth_p');
+    if(u!=null&&p!=null&&u!==''&&p!=='')
+      return {'Authorization':'Basic '+btoa(unescape(encodeURIComponent(u+':'+p)))};
+  }catch(e){}
+  return {};
+}
+function epdFetchOpts(extra){
+  extra=extra||{};
+  var h=Object.assign({},epdAuthHeaders(),extra.headers||{});
+  return Object.assign({},extra,{headers:h});
+}
 
 function fmt(n){if(n==null||n<0) return '-'; if(n<1024) return n+' B'; if(n<1024*1024) return (n/1024).toFixed(1)+' KB'; return (n/1024/1024).toFixed(2)+' MB';}
 function log(s,cls){const el=document.getElementById('log'); el.className='log'+(cls?' '+cls:''); el.textContent=s;}
@@ -310,7 +330,7 @@ async function refresh(){
 }
 
 async function delFiles(){
-  try{const r=await fetch('/delete',{method:'POST'}); const t=await r.text();
+  try{const r=await fetch('/delete',epdFetchOpts({method:'POST'})); const t=await r.text();
     await refresh(); await loadGallery(); log('删除结果：'+t,'ok');
   }catch(e){log('删除失败：'+e,'bad');}
 }
@@ -343,7 +363,7 @@ async function upload(){
     const blob=await compressImage(file, 800, 600, 0.85);
     log('压缩完成：'+fmt(file.size)+' → '+fmt(blob.size)+'，正在上传…');
     log('⏳ 上传 + 图片转换 + 墨水屏刷新中，全程约 15-30 秒，请勿关闭页面…');
-    const r=await fetch('/upload',{method:'POST',headers:{'Content-Type':'image/jpeg'},body:blob});
+    const r=await fetch('/upload',epdFetchOpts({method:'POST',headers:{'Content-Type':'image/jpeg'},body:blob}));
     const t=await r.text();
     await refresh(); await loadGallery();
     log(r.ok?'✅ 上传成功！墨水屏已刷新':'❌ 上传失败：'+t,(r.ok?'ok':'bad'));
@@ -354,7 +374,7 @@ async function upload(){
 async function showImg(name){
   log('⏳ 正在转换并显示 '+name+'，墨水屏刷新约需 15-20 秒…');
   try{
-    const r=await fetch('/show?name='+encodeURIComponent(name),{method:'POST'});
+    const r=await fetch('/show?name='+encodeURIComponent(name),epdFetchOpts({method:'POST'}));
     const t=await r.text();
     log(r.ok?'✅ 显示成功':'❌ '+t,(r.ok?'ok':'bad'));
   }catch(e){log('显示失败：'+e,'bad');}
@@ -363,7 +383,7 @@ async function showImg(name){
 async function delImg(name){
   if(!confirm('删除 '+name+'？')) return;
   try{
-    const r=await fetch('/delete_image?name='+encodeURIComponent(name),{method:'POST'});
+    const r=await fetch('/delete_image?name='+encodeURIComponent(name),epdFetchOpts({method:'POST'}));
     await loadGallery(); await refresh();
     log('已删除 '+name,'ok');
   }catch(e){log('删除失败：'+e,'bad');}

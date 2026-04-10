@@ -457,3 +457,11 @@ esp_err_t calendar_display_show_current(void)
         return ESP_ERR_INVALID_STATE;
     return calendar_display_show(tm.tm_year + 1900, tm.tm_mon + 1);
 }
+
+void calendar_display_wait_render_idle(void)
+{
+    if (!s_mutex)
+        return;
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    xSemaphoreGive(s_mutex);
+}
