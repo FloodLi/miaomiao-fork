@@ -34,19 +34,39 @@
 | 物理按键 | 3 键切换模式（上一个 / 刷新 / 下一个） |
 | 深度睡眠 | 闲置自动入睡 + 定时器/按键唤醒 |
 
+下图与仓库目录中**文件名一一对应**（`网页效果展示图片/`、`水墨屏实物展示/`、`复刻所需物料图/`）。
+
+### Web 界面截图
+
+| `上传面板.png` | `设备配置.png` |
+| :---: | :---: |
+| ![上传面板](网页效果展示图片/上传面板.png) | ![设备配置](网页效果展示图片/设备配置.png) |
+
+| `课程表管理.png` | `待办事项.png` |
+| :---: | :---: |
+| ![课程表](网页效果展示图片/课程表管理.png) | ![待办事项](网页效果展示图片/待办事项.png) |
+
+### 墨水屏实物
+
+| `双屏-时钟与立绘.jpg` | `双屏-待办与课程表.jpg` |
+| :---: | :---: |
+| ![双屏时钟与立绘](水墨屏实物展示/双屏-时钟与立绘.jpg) | ![双屏待办与课程表](水墨屏实物展示/双屏-待办与课程表.jpg) |
+
+`双屏-万年历与倒计时.jpg` — 左侧月历、右侧倒计时：
+
+![双屏万年历与倒计时](水墨屏实物展示/双屏-万年历与倒计时.jpg)
+
+### 硬件原型（复刻参考图）
+
+| `磁吸PCB与S3飞线原型.jpg` |
+| :---: |
+| ![磁吸PCB与飞线原型](复刻所需物料图/磁吸PCB与S3飞线原型.jpg) |
+
 ## 🔧 硬件要求
 
-### 核心元器件
+主控为 **ESP32-S3**（建议 **16MB Flash**，常见 `N16` 无 PSRAM 或 `N16R8`）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源 **AMS1117-3.3**、烧录 **CH340** 等。两种屏幕二选一，软件支持运行时切换。
 
-| 元器件 | 型号 | 说明 |
-|--------|------|------|
-| 主控 | **ESP32-S3**（常见 `N16` 无 PSRAM；亦可选 `N16R8`） | 16MB Flash；**软件按无 PSRAM 场景优化内存** |
-| 墨水屏 A | 4.2" SSD1619 (400×300 BWR) | 黑白红三色 |
-| 墨水屏 B | 5.83" UC8179 (648×480 BWR) | 黑白红三色 |
-| 稳压 | AMS1117-3.3 | 5V → 3.3V |
-| USB 转串口 | CH340 | 烧录 + 供电 |
-
-> 💡 两种屏幕二选一，软件支持运行时切换。复刻请读 [hardware/BOM.md](hardware/BOM.md)（**16MB Flash / 分区表**）；班级实采见 [hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)（**首段屏型与固件对应说明**）。
+> **元器件采购级 BOM（料号/价格表）暂不公开**；与固件对齐的 Flash/屏型提要见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)（仅占位说明，非清单）。详细硬件章节见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md)。
 
 ### 引脚连接
 
@@ -155,9 +175,9 @@ msp/
 ├── tools/                       # 辅助脚本
 │   ├── gen_font.py              # 点阵字库生成工具
 │   └── gen_city_excel.py        # 和风天气城市码导出
-├── hardware/                    # 硬件 BOM
-│   ├── BOM_ACTUAL.md            # 实际采购清单（立创商城）
-│   └── BOM.md                   # BOM 说明
+├── hardware/                    # 硬件提要（采购清单暂不公开）
+│   ├── BOM_ACTUAL.md            # 与固件兼容性提要
+│   └── BOM.md                   # 与固件兼容性提要
 ├── partitions.csv               # 分区表（factory + 双 OTA + ~10MB SPIFFS）
 ├── sdkconfig.defaults           # 项目默认配置
 └── CMakeLists.txt               # 顶层构建脚本
@@ -212,10 +232,10 @@ msp/
 | [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) | 工程技术文档（架构/API/模块）⭐ | 开发者 |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
 | [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |
-| [hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md) | 元器件采购清单 | 复刻者 |
+| [hardware/BOM.md](hardware/BOM.md) | 硬件与固件对齐提要（无采购表） | 复刻者 |
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
 
-> **说明**：双屏切换、排障步骤等亦写在 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 与 [hardware/BOM.md](hardware/BOM.md) 中；若你本地另有 `docs/` 子目录教辅材料，以实际仓库文件为准。
+> **说明**：双屏切换、排障步骤等见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md)；若你本地另有 `docs/` 子目录教辅材料，以实际仓库文件为准。
 
 ## 🤝 参与贡献
 

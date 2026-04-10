@@ -894,7 +894,7 @@ idf.py -p COM3 monitor
 - `IMPLEMENTATION.md` - 实现说明
 - `ROADMAP.md` - 开发规划
 - `COURSE_TABLE_README.md` - 课程表专题
-- `hardware/BOM_ACTUAL.md` / `hardware/BOM.md` - 硬件清单与说明
+- `hardware/BOM_ACTUAL.md` / `hardware/BOM.md` - 硬件与固件对齐提要（采购级 BOM 不公开）
 
 ### B. 术语表
 
