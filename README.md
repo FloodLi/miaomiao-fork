@@ -56,17 +56,35 @@
 
 ![双屏万年历与倒计时](水墨屏实物展示/双屏-万年历与倒计时.jpg)
 
-### 硬件原型（复刻参考图）
+## 🔧 硬件要求
+
+主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源 **AMS1117-3.3**、烧录可用 **CH340** 或开发板自带 **USB** 等。两种屏幕二选一，软件支持运行时切换。
+
+以下为复刻时常用器件的**示意配图**（文件名与下图一致）；**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
+
+### 模组（乐鑫原装）
+
+适用于贴片/SMT 或自制载板：**ESP32-S3-WROOM-1U-N16R8**（**1U** = IPEX 外接天线；**N16R8** = 16MB Flash + 8MB PSRAM）。固件**不依赖 PSRAM**，同系列 **N16**（无 R8）亦可，但须满足默认分区对 **16MB Flash** 的要求。
+
+| `模组-ESP32-S3-WROOM-1U-N16R8.png` |
+| :---: |
+| ![模组 ESP32-S3-WROOM-1U-N16R8](复刻所需物料图/模组-ESP32-S3-WROOM-1U-N16R8.png) |
+
+### 开发板（核心板）
+
+飞线原型、对照 GPIO 丝印时，可使用市售 **ESP32-S3-N16R8 核心板**（示意图见下；具体品牌以实物为准，**请对照本页引脚表**接线）。
+
+| `开发板-ESP32-S3-N16R8核心板.png` |
+| :---: |
+| ![ESP32-S3-N16R8 核心板](复刻所需物料图/开发板-ESP32-S3-N16R8核心板.png) |
+
+### 内部构造（整机 / 自定义 PCB）
+
+磁吸一体板与 DevKit 飞线等**整机内部布置**示意：
 
 | `内部构造图.jpg` |
 | :---: |
 | ![内部构造图](复刻所需物料图/内部构造图.jpg) |
-
-## 🔧 硬件要求
-
-主控为 **ESP32-S3**（建议 **16MB Flash**，常见 `N16` 无 PSRAM 或 `N16R8`）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源 **AMS1117-3.3**、烧录 **CH340** 等。两种屏幕二选一，软件支持运行时切换。
-
-> **元器件采购级 BOM（料号/价格表）暂不公开**；与固件对齐的 Flash/屏型提要见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)（仅占位说明，非清单）。详细硬件章节见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md)。
 
 ### 引脚连接
 
