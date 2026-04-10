@@ -88,6 +88,12 @@
 
 > **5.83&quot; 面板**若使用另一组 GPIO，请以 `main/epd_stub.c` 中当前面板配置为准；下表为 **4.2&quot; 默认**。
 
+### 开发板接线图
+
+整机示意：**3.7V 电池 → 充放电模块 → 开关 → 开发板 5V 输入**；**水墨屏驱动板**经 SCL/SDI/RES、D/C、CS、BUSY 与 **3V3/GND** 接至开发板对应 IO；**SW3/SW4/SW5** 与 **IO3/IO46/IO9**、**4.7k 上拉**及 **GND** 与下图一致（与下表核对）。
+
+![开发板接线图](hardware/开发板接线图.png)
+
 ### 引脚连接
 
 | 功能 | GPIO | 连接到 |
@@ -196,6 +202,7 @@ msp/
 │   ├── gen_font.py              # 点阵字库生成工具
 │   └── gen_city_excel.py        # 和风天气城市码导出
 ├── hardware/                    # 硬件提要（采购清单暂不公开）
+│   ├── 开发板接线图.png           # 开发板 / 屏 / 按键 / 电源接线示意
 │   ├── BOM_ACTUAL.md            # 与固件兼容性提要
 │   └── BOM.md                   # 与固件兼容性提要
 ├── partitions.csv               # 分区表（factory + 双 OTA + ~10MB SPIFFS）
