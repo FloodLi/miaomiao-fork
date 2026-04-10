@@ -86,61 +86,7 @@
 | :---: |
 | ![内部构造图](复刻所需物料图/内部构造图.jpg) |
 
-### 系统结构图（4.2&quot; 默认）
-
-下方为**逻辑方框图**（非实物照片）。**5.83&quot;** 若使用另一组 GPIO，以 `main/epd_stub.c` 中当前面板配置为准。
-
-```mermaid
-flowchart TB
-  subgraph power["电源"]
-    U[USB 5V 输入]
-    L[AMS1117-3.3V]
-    U --> L
-  end
-  subgraph mcu["ESP32-S3"]
-    C[内核 / WiFi / 固件]
-    SPI[SPI 主机]
-    G[GPIO 数字 IO]
-  end
-  subgraph epd["三色墨水屏模块"]
-    F[驱动 IC / FPC]
-  end
-  GG[GND 共地]
-  L -->|3.3V| C
-  L -->|VCC 3.3V| F
-  SPI -->|SCK=GPIO4| F
-  SPI -->|MOSI=GPIO5| F
-  G -->|DC=7 CS=15 RST=6| F
-  F -->|BUSY=GPIO16| G
-  L --- GG
-  F --- GG
-  C --- GG
-  K3[SW3 GPIO3] --- G
-  K4[SW4 GPIO46] --- G
-  K5[SW5 GPIO9] --- G
-  K3 --- GG
-  K4 --- GG
-  K5 --- GG
-```
-
-若你的 Markdown 渲染不支持 Mermaid，可看**纯文本结构**：
-
-```text
-  USB 5V ──► AMS1117-3.3V ──┬──► ESP32-S3 (VDD)
-                            ├──► 墨水屏 VCC (3.3V)
-                            └──► 共地 GND
-
-  ESP32-S3                     墨水屏 (FPC)
-  ─────────                    ────────────
-  GPIO4  SCK (SPI) ──────────► SCL / SCK
-  GPIO5  MOSI      ──────────► SDI / MOSI
-  GPIO7  数据/命令 ──────────► D/C
-  GPIO15 片选     ──────────► CS
-  GPIO6  复位     ──────────► RES / RST
-  GPIO16 状态输入 ◄────────── BUSY（建议上拉，极性见屏规 / NVS）
-
-  SW3─GPIO3、SW4─GPIO46、SW5─GPIO9：按键一端接对应 GPIO，一端接 GND（与屏/M CU 共地）。
-```
+> **5.83&quot; 面板**若使用另一组 GPIO，请以 `main/epd_stub.c` 中当前面板配置为准；下表为 **4.2&quot; 默认**。
 
 ### 引脚连接
 
