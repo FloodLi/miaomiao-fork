@@ -172,7 +172,7 @@ EPD 驱动刷新
 - Bluetooth: 5.0 LE（视模组是否裁切）
 - 封装：SMD 模组
 
-**应用引脚分配（4.2" 默认接法，见 `README.md`）:**
+**应用引脚分配（4.2" 默认接法，见 `README.md`；接线矢量图见 `hardware/wiring-epd-42-default.svg`）:**
 ```
 SPI (EPD):
   SCK  = GPIO4

@@ -88,6 +88,12 @@
 
 ### 引脚连接
 
+**接线图**（4.2&quot; 默认，与下表一致；可右键另存 `hardware/wiring-epd-42-default.svg` 查看矢量原图）：
+
+![ESP32-S3 与墨水屏接线图](hardware/wiring-epd-42-default.svg)
+
+> **5.83&quot; 面板**若使用另一组 GPIO（SCK=16 等），请以 `main/epd_stub.c` 中当前面板配置为准，本图为 **4.2&quot; 默认**。
+
 | 功能 | GPIO | 连接到 |
 |------|------|--------|
 | EPD SCK | **4** | 墨水屏 SCL |
@@ -194,6 +200,7 @@ msp/
 │   ├── gen_font.py              # 点阵字库生成工具
 │   └── gen_city_excel.py        # 和风天气城市码导出
 ├── hardware/                    # 硬件提要（采购清单暂不公开）
+│   ├── wiring-epd-42-default.svg # ESP32-S3 ↔ 4.2&quot; 墨水屏接线图
 │   ├── BOM_ACTUAL.md            # 与固件兼容性提要
 │   └── BOM.md                   # 与固件兼容性提要
 ├── partitions.csv               # 分区表（factory + 双 OTA + ~10MB SPIFFS）
