@@ -1,7 +1,7 @@
 # epaper_uploader — ESP32-S3 智能墨水屏终端
 
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)]()
 
 > 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。  
@@ -227,7 +227,13 @@ msp/
 
 ## 📄 许可证
 
-MIT License — 可自由用于个人和商业项目。
+本仓库采用 **[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)**（全文见根目录 [`LICENSE`](LICENSE)）。
+
+- **允许**：个人学习、研究、修改与非商业性使用、分发（须附带许可证全文）。
+- **商业使用**：默认**不在** PolyForm 非商业许可范围内；若你希望将本项目用于营利（如量产销售、商用 SaaS 等），须事先联系著作权人并取得**书面同意**，双方可另签商业许可协议。**经作者同意后**方可商用。
+- PolyForm 对「非营利机构、学校、部分公共机构」等有单独说明，请以英文正文为准。**商用 / 授权洽谈**：`430601574@qq.com`，微信 `GXPmiaomiao`，或 Gitee 仓库 Issue / 私信（详见 [`LICENSE`](LICENSE) 文末）。
+
+**非法律建议**：若涉及商用或纠纷，请咨询律师；你可把 `LICENSE` 顶部的 `Required Notice` 改为真实姓名或法人名称。
 
 ---
 
