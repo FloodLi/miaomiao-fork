@@ -19,6 +19,9 @@
 #include "image_convert.h"
 #include "scheduler.h"
 #include "weather.h"
+#include "button.h"
+#include "display_mode.h"
+#include "power_mgr.h"
 
 static const char *TAG = "http_gal";
 
@@ -170,6 +173,8 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     display_policy_set_manual_screen_active(true);
     weather_disable_if_enabled_for_image_focus();
     scheduler_notify_manual_show();
+    button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
+    power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
 }
@@ -353,6 +358,8 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
     display_policy_set_manual_screen_active(true);
     weather_disable_if_enabled_for_image_focus();
     scheduler_notify_manual_show();
+    button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
+    power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
     httpd_resp_sendstr(req, "OK — 已转换并触发墨水屏刷新。");
     return ESP_OK;
 }

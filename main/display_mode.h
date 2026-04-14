@@ -4,6 +4,17 @@
 
 #define DISPLAY_MODE_MAX 12
 
+/* Keep in sync with app_main.c registration order. */
+typedef enum {
+    DISPLAY_MODE_CLOCK = 0,
+    DISPLAY_MODE_CALENDAR,
+    DISPLAY_MODE_TIMETABLE,
+    DISPLAY_MODE_WEATHER,
+    DISPLAY_MODE_SLIDESHOW,
+    DISPLAY_MODE_TODO,
+    DISPLAY_MODE_COUNTDOWN,
+} display_mode_index_t;
+
 typedef esp_err_t (*display_mode_show_fn)(void);
 
 typedef struct {

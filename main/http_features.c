@@ -12,6 +12,9 @@
 #include "todo.h"
 #include "countdown.h"
 #include "calendar_display.h"
+#include "button.h"
+#include "display_mode.h"
+#include "power_mgr.h"
 
 __attribute__((unused)) static const char *TAG = "http_feat";
 
@@ -99,6 +102,10 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
     }
 
     esp_err_t err = calendar_display_show(year, month);
+    if (err == ESP_OK) {
+        button_set_current_mode(DISPLAY_MODE_CALENDAR);
+        power_mgr_save_mode(DISPLAY_MODE_CALENDAR);
+    }
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
@@ -207,6 +214,10 @@ esp_err_t feat_countdown_show_post(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req)) return ESP_OK;
     esp_err_t err = countdown_show();
+    if (err == ESP_OK) {
+        button_set_current_mode(DISPLAY_MODE_COUNTDOWN);
+        power_mgr_save_mode(DISPLAY_MODE_COUNTDOWN);
+    }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, err == ESP_OK ? "{\"ok\":true}" : "{\"ok\":false}");
     return ESP_OK;

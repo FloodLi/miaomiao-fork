@@ -138,6 +138,7 @@ static void boot_display_route(void)
              mode, display_mode_name(mode));
     display_mode_show(mode);
     button_set_current_mode(mode);
+    power_mgr_save_mode(mode);
 
     ESP_LOGI(TAG, "boot_display_route: done, mode %d active", mode);
 }
@@ -213,6 +214,8 @@ static void quick_refresh_and_sleep(void)
     }
 
     if (err == ESP_OK) {
+        button_set_current_mode(ok_mode);
+        power_mgr_save_mode(ok_mode);
         ESP_LOGI(TAG, "Quick-refresh: content displayed");
         /* 月历在独立任务里刷屏；若立即深睡会在刷新完成前掉电，屏不更新或异常 */
         if (strcmp(display_mode_name(ok_mode), "calendar") == 0)

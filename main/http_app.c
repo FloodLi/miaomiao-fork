@@ -35,6 +35,7 @@
 #include "todo.h"
 #include "power_mgr.h"
 #include "button.h"
+#include "display_mode.h"
 #include "countdown.h"
 #include "cJSON.h"
 
@@ -739,6 +740,10 @@ static esp_err_t weather_show_post_handler(httpd_req_t *req)
     }
 
     esp_err_t err = weather_fetch_and_display(true);
+    if (err == ESP_OK) {
+        button_set_current_mode(DISPLAY_MODE_WEATHER);
+        power_mgr_save_mode(DISPLAY_MODE_WEATHER);
+    }
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
@@ -827,6 +832,10 @@ static esp_err_t clock_show_post_handler(httpd_req_t *req)
     }
 
     esp_err_t err = clock_display_show();
+    if (err == ESP_OK) {
+        button_set_current_mode(DISPLAY_MODE_CLOCK);
+        power_mgr_save_mode(DISPLAY_MODE_CLOCK);
+    }
     char json[96];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
