@@ -358,16 +358,22 @@ static void render_weather(void)
     fb_rect(fb, 4, 4, W - 8, H - 8, COLOR_BLACK);
 
     struct tm tm;
-    time_sync_get_local(&tm);
+    bool time_ok = time_sync_get_local(&tm);
     char date_str[32];
-    snprintf(date_str, sizeof(date_str), "%04d/%02d/%02d",
-             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+    if (time_ok) {
+        snprintf(date_str, sizeof(date_str), "%04d/%02d/%02d",
+                 tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+    } else {
+        snprintf(date_str, sizeof(date_str), "--/--/--");
+    }
     fb_utf8_scaled(fb, MX, H * 16 / 480, date_str, COLOR_BLACK, sc);
 
     char weekday_str[32];
-    snprintf(weekday_str, sizeof(weekday_str), "\xe6\x98\x9f\xe6\x9c\x9f%s",
-             weekday_zh[tm.tm_wday]);
-    fb_utf8_scaled(fb, W * 260 / 648, H * 16 / 480, weekday_str, COLOR_BLACK, sc);
+    if (time_ok) {
+        snprintf(weekday_str, sizeof(weekday_str), "\xe6\x98\x9f\xe6\x9c\x9f%s",
+                 weekday_zh[tm.tm_wday]);
+        fb_utf8_scaled(fb, W * 260 / 648, H * 16 / 480, weekday_str, COLOR_BLACK, sc);
+    }
 
     if (s_cfg.city_name[0])
         fb_utf8_scaled(fb, W * 480 / 648, H * 16 / 480, s_cfg.city_name, COLOR_BLACK, sc);

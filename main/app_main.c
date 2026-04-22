@@ -19,6 +19,7 @@
 #include "weather.h"
 #include "clock_display.h"
 #include "message_board.h"
+#include "canvas_board.h"
 #include "calendar_display.h"
 #include "timetable.h"
 #include "todo.h"
@@ -214,7 +215,6 @@ static void quick_refresh_and_sleep(void)
     }
 
     if (err == ESP_OK) {
-        button_set_current_mode(ok_mode);
         power_mgr_save_mode(ok_mode);
         ESP_LOGI(TAG, "Quick-refresh: content displayed");
         /* 月历在独立任务里刷屏；若立即深睡会在刷新完成前掉电，屏不更新或异常 */
@@ -259,6 +259,7 @@ static void full_boot(void)
     ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
     ESP_ERROR_CHECK(message_board_init());
+    ESP_ERROR_CHECK(canvas_board_init());
     ESP_ERROR_CHECK(calendar_display_init());
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());

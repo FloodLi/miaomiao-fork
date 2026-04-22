@@ -1,5 +1,6 @@
 #include "time_sync.h"
 
+#include <stdatomic.h>
 #include <string.h>
 #include <sys/time.h>
 
@@ -11,7 +12,7 @@
 #include "clock_display.h"
 
 static const char *TAG = "time_sync";
-static volatile bool s_synced = false;
+static atomic_bool s_synced;
 
 /** 周期性校时：默认 15 分钟，减小两次 SNTP 之间的晶振漂移（原 1 小时易累计偏差） */
 #define SNTP_RESYNC_INTERVAL_MS (15 * 60 * 1000)

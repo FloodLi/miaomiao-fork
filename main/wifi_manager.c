@@ -36,6 +36,7 @@ static esp_netif_t       *s_ap_netif;
 static esp_netif_t       *s_sta_netif;
 static char               s_ap_ssid[33];
 static char               s_ap_pass[65];
+static portMUX_TYPE       s_sta_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static TimerHandle_t      s_reconnect_timer;
 static int                s_reconnect_backoff_s = 10;
@@ -132,8 +133,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
             xEventGroupSetBits(s_event_group, BIT_STA_STARTED);
             break;
         case WIFI_EVENT_STA_DISCONNECTED:
+            portENTER_CRITICAL(&s_sta_mux);
             s_sta_connected = false;
             s_sta_ip[0] = '\0';
+            portEXIT_CRITICAL(&s_sta_mux);
             if (!s_sta_connecting) {
                 start_reconnect_timer();
                 break;
@@ -161,9 +164,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = data;
+        portENTER_CRITICAL(&s_sta_mux);
         snprintf(s_sta_ip, sizeof(s_sta_ip), IPSTR, IP2STR(&e->ip_info.ip));
-        ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
         s_sta_connected = true;
+        portEXIT_CRITICAL(&s_sta_mux);
+        ESP_LOGI(TAG, "STA got IP: %s", s_sta_ip);
         s_retry_count = 0;
         s_sta_connecting = false;
         stop_reconnect_timer();
@@ -191,9 +196,11 @@ static void configure_ap(void)
 static bool try_sta_connect(const char *ssid, const char *pass)
 {
     s_retry_count = 0;
+    portENTER_CRITICAL(&s_sta_mux);
     s_sta_connected = false;
     s_sta_ip[0] = '\0';
     strlcpy(s_sta_ssid, ssid, sizeof(s_sta_ssid));
+    portEXIT_CRITICAL(&s_sta_mux);
     xEventGroupClearBits(s_event_group, BIT_CONNECTED | BIT_FAIL);
 
     /* WiFi is always running in APSTA mode at this point. */
@@ -315,12 +322,15 @@ wifi_mgr_mode_t wifi_manager_get_mode(void)
 
 bool wifi_manager_sta_connected(void)
 {
-    return s_sta_connected;
+    portENTER_CRITICAL(&s_sta_mux);
+    bool v = s_sta_connected;
+    portEXIT_CRITICAL(&s_sta_mux);
+    return v;
 }
 
 const char *wifi_manager_get_sta_ip(void)
 {
-    return s_sta_ip;
+    return s_sta_ip;  /* 字符串由调用方在短暂的原子窗口内使用，snprintf 到局部 buf 即可 */
 }
 
 const char *wifi_manager_get_sta_ssid(void)

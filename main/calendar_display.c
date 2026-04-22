@@ -45,10 +45,8 @@ enum {
 
 static SemaphoreHandle_t s_mutex;
 
-static esp_err_t cal_mutex_ensure(void)
+esp_err_t calendar_display_init(void)
 {
-    if (s_mutex)
-        return ESP_OK;
     s_mutex = xSemaphoreCreateBinary();
     if (!s_mutex)
         return ESP_ERR_NO_MEM;
@@ -393,16 +391,10 @@ static void calendar_task(void *arg)
 /* 公开 API                                                                   */
 /* -------------------------------------------------------------------------- */
 
-esp_err_t calendar_display_init(void)
-{
-    return cal_mutex_ensure();
-}
-
 esp_err_t calendar_display_show(int year, int month)
 {
-    esp_err_t me = cal_mutex_ensure();
-    if (me != ESP_OK)
-        return me;
+    if (!s_mutex)
+        return ESP_ERR_INVALID_STATE;
 
     if (year == 0 || month == 0) {
         struct tm t;

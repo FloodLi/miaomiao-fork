@@ -10,13 +10,15 @@
 ## ✨ 项目亮点
 
 - 🖼️ **三色墨水屏** — 支持黑白红三色显示，Floyd-Steinberg 抖色算法
-- 📡 **WiFi 配网** — 手机热点一键配网，mDNS 局域网发现
+- 📡 **WiFi 配网** — 手机热点一键配网，mDNS 局域网发现，支持 WPA2/WPA3 自适应认证
 - 🌐 **Web 管理** — 响应式 UI，三套主题，手机/电脑均可操作
-- 🔋 **超低功耗** — 闲置可进深度睡眠（μA 级），定时器/按键唤醒；双启动路径（完整服务 ↔ 快速刷屏）
+- 🔋 **超低功耗** — 闲置可进深度睡眠（μA 级），定时器/按键唤醒；双启动路径（完整服务 ↔ 快速刷屏），支持跨深睡的显示模式一致性记忆
 - 🔄 **OTA 升级** — 双分区设计，Web 端一键升级固件
+- 🔒 **安全与稳定** — 所有敏感 POST 接口全量 Basic Auth 鉴权保护，多核并发自旋锁加固，杜绝数据撕裂与内存泄漏
 - 🎓 **课程表** — 学期周次管理，自动高亮当前课程
 - 🌤️ **天气日历** — 和风天气 API + 农历 + 节气 + 节日
 - 📋 **待办/倒计时** — 优先级管理 + 进度条 + 目标日期倒数
+- 🎨 **画布留言板** — WYSIWYG Web 可视化编辑器，支持文本、形状、图标混合排版
 
 ## 📷 功能展示
 
@@ -31,6 +33,7 @@
 | 待办事项 | 优先级(普通/重要/紧急) + 完成状态 + 进度条 |
 | 倒计时 | 最多 3 个目标日期倒数 |
 | 留言板 | 自定义文字 / 字号 / 对齐 / 颜色 |
+| 画布留言板 | 可视化 Web 编辑器，支持任意拖拽排版文本、直线、矩形、椭圆与内置/自定义图标 |
 | 物理按键 | 3 键切换模式（上一个 / 刷新 / 下一个） |
 | 深度睡眠 | 闲置自动入睡 + 定时器/按键唤醒 |
 
@@ -58,7 +61,7 @@
 
 ## 🔧 硬件要求
 
-主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源 **AMS1117-3.3**、烧录可用 **CH340** 或开发板自带 **USB** 等。两种屏幕二选一，软件支持运行时切换。
+主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。两种屏幕二选一，软件支持运行时切换。
 
 以下为复刻时常用器件的**示意配图**（文件名与下图一致）；**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
 
@@ -88,9 +91,18 @@
 
 > **5.83&quot; 面板**若使用另一组 GPIO，请以 `main/epd_stub.c` 中当前面板配置为准；下表为 **4.2&quot; 默认**。
 
-### 开发板接线图
+### 硬件架构与自定义 PCB
 
-整机示意：**3.7V 电池 → 充放电模块 → 开关 → 开发板 5V 输入**；**水墨屏驱动板**经 SCL/SDI/RES、D/C、CS、BUSY 与 **3V3/GND** 接至开发板对应 IO；**SW3/SW4/SW5** 与 **IO3/IO46/IO9**、**4.7k 上拉**及 **GND** 与下图一致（与下表核对）。
+本项目已包含完整的自制 PCB 原理图（参考 `水墨屏原理图/SCH_Schematic2_2026-04-20.pdf`）。**自定义 PCB** 采用针对 Deep Sleep 优化的电源路径：
+1. **锂电池直驱**：使用 **TP4054** 线性充电 IC 进行锂电池充放电管理。
+2. **极低待机能耗**：摒弃传统开发板常见的高静态电流稳压器（如 AMS1117），改用 **HE9073A33M5R** 微安级 LDO 提供 3.3V 系统电源，整机深睡电流可低至 15μA。
+3. **电量监控**：硬件带有 1:2 分压电阻网络，通过 ADC 接口（BAT_DET）采样电池电量。
+
+如果你没有打样 PCB，也可以使用普通的 ESP32-S3 开发板进行面包板跳线测试。
+
+#### 开发板基础接线图 (面包板测试用)
+
+基础整机示意：**3.7V 电池 → 充放电模块 → 开关 → 开发板 5V 输入**；**水墨屏驱动板**经 SCL/SDI/RES、D/C、CS、BUSY 与 **3V3/GND** 接至开发板对应 IO；**SW3/SW4/SW5** 与 **IO3/IO46/IO9**、及 **GND** 与下图一致（与下表核对）。
 
 ![开发板接线图](hardware/开发板接线图.png)
 
@@ -168,7 +180,7 @@ msp/
 │   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
 │   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
-│   ├── http_app.c/h             # HTTP 服务（约 46 条 URI + Basic Auth + OTA）
+│   ├── http_app.c/h             # HTTP 服务（约 57 条 URI + Basic Auth + OTA）
 │   ├── http_gallery.c           # 画廊相关路由
 │   ├── http_features.c          # 功能模块路由
 │   ├── wifi_manager.c/h         # WiFi AP/STA + 配网 + 自动重连
@@ -181,6 +193,9 @@ msp/
 │   ├── todo.c/h                 # 待办事项（优先级 + 进度条）
 │   ├── countdown.c/h            # 倒计时
 │   ├── message_board.c/h        # 留言板
+│   ├── canvas_board.c/h         # WYSIWYG 画布留言板
+│   ├── http_canvas.c            # 画布 Web 编辑器路由与图标管理
+│   ├── canvas_icons.h           # 内置 1-bit 画布图标库
 │   ├── button.c/h               # 三键驱动（轮询 + 去抖）
 │   ├── fb_render.c/h            # 帧缓冲渲染引擎
 │   ├── font_data.h              # 点阵字库（ASCII + 中文）
@@ -197,7 +212,8 @@ msp/
 │   ├── config.html              # 配置：WiFi / 轮播 / 天气 / OTA / 低功耗
 │   ├── timetable.html           # 课程表编辑
 │   ├── todo.html                # 待办事项管理
-│   └── countdown.html           # 倒计时配置
+│   ├── countdown.html           # 倒计时配置
+│   └── board.html               # 画布留言板可视化编辑器
 ├── tools/                       # 辅助脚本
 │   ├── gen_font.py              # 点阵字库生成工具
 │   └── gen_city_excel.py        # 和风天气城市码导出
@@ -205,6 +221,8 @@ msp/
 │   ├── 开发板接线图.png           # 开发板 / 屏 / 按键 / 电源接线示意
 │   ├── BOM_ACTUAL.md            # 与固件兼容性提要
 │   └── BOM.md                   # 与固件兼容性提要
+├── 水墨屏原理图/                  # 自制 PCB 原理图
+│   └── SCH_Schematic2_*.pdf     # 包含完整充放电与低功耗 LDO 设计
 ├── partitions.csv               # 分区表（factory + 双 OTA + ~10MB SPIFFS）
 ├── sdkconfig.defaults           # 项目默认配置
 └── CMakeLists.txt               # 顶层构建脚本
@@ -222,7 +240,7 @@ msp/
 
 ## 🌐 Web API 概览
 
-设备提供 **约 46 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
+设备提供 **约 57 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
 
 | 分类 | 路径 | 说明 |
 |------|------|------|
@@ -234,6 +252,7 @@ msp/
 | 课程表 | `/timetable.json`, `/timetable`, `/timetable_show` | 课程表管理 |
 | 待办 | `/todo.json`, `/todo`, `/todo_show` | 待办事项管理 |
 | 倒计时 | `/countdown_config`, `/countdown_show` | 倒计时管理 |
+| 画布留言板 | `/board`, `/canvas_layout`, `/canvas_show`, `/canvas_icon_upload` | WYSIWYG 画板与素材管理 |
 | 系统 | `/status`, `/version`, `/ota`, `/auth_config`, `/power_config` | 系统管理 |
 
 > 📖 完整 API 文档见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md#六-api-接口文档)

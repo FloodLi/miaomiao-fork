@@ -30,6 +30,7 @@
 #include "clock_display.h"
 #include "display_policy.h"
 #include "message_board.h"
+#include "canvas_board.h"
 #include "calendar_display.h"
 #include "timetable.h"
 #include "todo.h"
@@ -528,10 +529,13 @@ static void reboot_task(void *arg)
 
 static esp_err_t ota_post_handler(httpd_req_t *req)
 {
-    if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_auth_is_enabled()) {
-        ESP_LOGW(TAG, "OTA performed without authentication! Set credentials in config.");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"OTA requires authentication. Set credentials in /auth_config first.\"}");
+        return ESP_OK;
     }
+    if (!http_check_basic_auth(req)) return ESP_OK;
     const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
     if (!update) {
         httpd_resp_set_type(req, "application/json");
@@ -1085,7 +1089,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.uri_match_fn      = httpd_uri_match_wildcard;
     config.recv_wait_timeout  = 5;
     config.send_wait_timeout  = 5;
-    config.max_uri_handlers   = 48;
+    config.max_uri_handlers   = 60;
     config.stack_size         = 16384;
     config.lru_purge_enable   = true;
     config.open_fn            = http_session_open_hook;
@@ -1127,6 +1131,18 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/msg_config",     HTTP_GET,  msg_config_get_handler,     NULL },
         { "/msg_config",     HTTP_POST, msg_config_post_handler,    NULL },
         { "/msg_show",       HTTP_POST, msg_show_post_handler,      NULL },
+        /* canvas board (http_canvas.c) */
+        { "/board",              HTTP_GET,  canvas_board_ui_get,      NULL },
+        { "/canvas_layout",      HTTP_GET,  canvas_layout_get,        NULL },
+        { "/canvas_layout",      HTTP_POST, canvas_layout_post,       NULL },
+        { "/canvas_show",        HTTP_POST, canvas_show_post,         NULL },
+        { "/canvas_icons",       HTTP_GET,  canvas_icons_get,         NULL },
+        { "/canvas_icon_upload", HTTP_POST, canvas_icon_upload_post,  NULL },
+        { "/canvas_icon_delete", HTTP_POST, canvas_icon_delete_post,  NULL },
+        { "/canvas_image_list",   HTTP_GET,  canvas_image_list_get,    NULL },
+        { "/canvas_image",        HTTP_GET,  canvas_image_get,         NULL },
+        { "/canvas_image_upload", HTTP_POST, canvas_image_upload_post, NULL },
+        { "/canvas_image_delete", HTTP_POST, canvas_image_delete_post, NULL },
         /* features (http_features.c) */
         { "/calendar_show",  HTTP_POST, feat_calendar_show_post,     NULL },
         { "/timetable",      HTTP_GET,  feat_timetable_ui_get,       NULL },

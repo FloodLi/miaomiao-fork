@@ -26,12 +26,15 @@
 #include "display_mode.h"
 #include "power_mgr.h"
 
+#include "freertos/semphr.h"
+
 static const char *TAG    = "timetable";
 static const char *NVS_NS = "timetable";
 static const char *NVS_KEY = "tt_cfg";
 
 static timetable_config_t s_cfg;
 static bool s_inited;
+static SemaphoreHandle_t s_cfg_mutex;
 
 
 /* ── NVS ─────────────────────────────────────────────────────────── */
@@ -179,6 +182,9 @@ esp_err_t timetable_init(void)
 {
     if (s_inited)
         return ESP_OK;
+    s_cfg_mutex = xSemaphoreCreateMutex();
+    if (!s_cfg_mutex)
+        return ESP_ERR_NO_MEM;
     tt_nvs_load();
     s_inited = true;
     ESP_LOGI(TAG, "init ok (enabled=%d, periods=%d)", s_cfg.enabled, s_cfg.period_count);
@@ -189,7 +195,9 @@ esp_err_t timetable_get_config(timetable_config_t *out)
 {
     if (!out)
         return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     *out = s_cfg;
+    xSemaphoreGive(s_cfg_mutex);
     return ESP_OK;
 }
 
@@ -197,11 +205,13 @@ esp_err_t timetable_set_config(const timetable_config_t *cfg)
 {
     if (!cfg)
         return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     s_cfg = *cfg;
     if (s_cfg.period_count > TT_MAX_PERIODS)
         s_cfg.period_count = TT_MAX_PERIODS;
     if (s_cfg.show_days != 7)
         s_cfg.show_days = 5;
+    xSemaphoreGive(s_cfg_mutex);
     return tt_nvs_save();
 }
 
@@ -388,7 +398,7 @@ static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
         char label[16];
         snprintf(label, sizeof(label), "\xe5\x91\xa8%s", DAY_SHORT[d]);
         int lw = tt_text_px(label, 1);
-        fb_color_t lc = (d == today) ? COLOR_WHITE : COLOR_WHITE;
+        fb_color_t lc = (d == today) ? COLOR_WHITE : COLOR_BLACK;
         fb_utf8_scaled(fb, cx + (cell_w - lw) / 2, y_start + 7, label, lc, 1);
     }
 

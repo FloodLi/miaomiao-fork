@@ -25,6 +25,8 @@ idf_component_register(
         "nvs_utils.c"
         "http_gallery.c"
         "http_features.c"
+        "http_canvas.c"
+        "canvas_board.c"
         "display_mode.c"
     INCLUDE_DIRS "."
     EMBED_FILES
@@ -33,6 +35,7 @@ idf_component_register(
         "${PROJECT_DIR}/web/timetable.html"
         "${PROJECT_DIR}/web/todo.html"
         "${PROJECT_DIR}/web/countdown.html"
+        "${PROJECT_DIR}/web/board.html"
     PRIV_REQUIRES
         nvs_flash
         esp_wifi

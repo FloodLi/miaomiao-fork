@@ -25,6 +25,19 @@
 
 static const char *TAG = "http_gal";
 
+/* 白名单验证文件名：只允许字母、数字、点、下划线、连字符 */
+static bool is_safe_filename(const char *name)
+{
+    if (!name || name[0] == '\0') return false;
+    for (const char *p = name; *p; p++) {
+        char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-'))
+            return false;
+    }
+    return true;
+}
+
 /** 以图片为主页时关闭全页天气定时拉取；若时钟已开且要天气摘要，则保留 API 供嵌入式拉取 */
 static void weather_disable_if_enabled_for_image_focus(void)
 {
@@ -99,7 +112,7 @@ esp_err_t gallery_image_get_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少文件名");
         return ESP_OK;
     }
-    if (strchr(name, '/') || strstr(name, "..")) {
+    if (!is_safe_filename(name)) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "文件名无效");
         return ESP_OK;
     }
@@ -144,7 +157,7 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少文件名");
         return ESP_OK;
     }
-    if (strchr(name, '/') || strstr(name, "..")) {
+    if (!is_safe_filename(name)) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "文件名无效");
         return ESP_OK;
     }
@@ -187,7 +200,7 @@ esp_err_t gallery_delete_image_post_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少文件名");
         return ESP_OK;
     }
-    if (strchr(name, '/') || strstr(name, "..")) {
+    if (!is_safe_filename(name)) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "文件名无效");
         return ESP_OK;
     }
@@ -312,7 +325,7 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         if (hdr[0] == 0x42 && hdr[1] == 0x4D) ext = "bmp";
         snprintf(name, sizeof(name), "img_%d.%s", (int)esp_random(), ext);
     }
-    if (strchr(name, '/') || strstr(name, "..")) {
+    if (!is_safe_filename(name)) {
         snprintf(name, sizeof(name), "img_%d.jpg", (int)esp_random());
     }
     char final_path[160];

@@ -42,6 +42,23 @@ esp_err_t gallery_delete_post_handler(httpd_req_t *req);
 esp_err_t gallery_images_get_handler(httpd_req_t *req);
 esp_err_t gallery_image_get_handler(httpd_req_t *req);
 
+/* ── canvas board HTML blob ── */
+extern const uint8_t board_html_start[] asm("_binary_board_html_start");
+extern const uint8_t board_html_end[]   asm("_binary_board_html_end");
+
+/* ── canvas board handlers (http_canvas.c) ── */
+esp_err_t canvas_board_ui_get(httpd_req_t *req);
+esp_err_t canvas_layout_get(httpd_req_t *req);
+esp_err_t canvas_layout_post(httpd_req_t *req);
+esp_err_t canvas_show_post(httpd_req_t *req);
+esp_err_t canvas_icons_get(httpd_req_t *req);
+esp_err_t canvas_icon_upload_post(httpd_req_t *req);
+esp_err_t canvas_icon_delete_post(httpd_req_t *req);
+esp_err_t canvas_image_list_get(httpd_req_t *req);
+esp_err_t canvas_image_get(httpd_req_t *req);
+esp_err_t canvas_image_upload_post(httpd_req_t *req);
+esp_err_t canvas_image_delete_post(httpd_req_t *req);
+
 /* ── feature handlers (http_features.c) ── */
 esp_err_t feat_timetable_ui_get(httpd_req_t *req);
 esp_err_t feat_timetable_json_get(httpd_req_t *req);

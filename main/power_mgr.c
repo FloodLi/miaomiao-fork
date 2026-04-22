@@ -2,8 +2,10 @@
 
 #include <string.h>
 
+#include "epd.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_utils.h"
@@ -138,13 +140,14 @@ esp_err_t power_mgr_get_config(power_config_t *out)
 esp_err_t power_mgr_set_config(const power_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    power_config_t validated = *cfg;
+    if (validated.interval_min < 1)    validated.interval_min = 1;
+    if (validated.interval_min > 1440) validated.interval_min = 1440;
+    if (validated.idle_timeout_s < 30)  validated.idle_timeout_s = 30;
+    if (validated.idle_timeout_s > 600) validated.idle_timeout_s = 600;
     portENTER_CRITICAL(&s_activity_mux);
-    s_cfg = *cfg;
+    s_cfg = validated;
     portEXIT_CRITICAL(&s_activity_mux);
-    if (s_cfg.interval_min < 1) s_cfg.interval_min = 1;
-    if (s_cfg.interval_min > 1440) s_cfg.interval_min = 1440;
-    if (s_cfg.idle_timeout_s < 30) s_cfg.idle_timeout_s = 30;
-    if (s_cfg.idle_timeout_s > 600) s_cfg.idle_timeout_s = 600;
     save_config();
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%d min, idle=%d s",
              s_cfg.enabled, s_cfg.interval_min, s_cfg.idle_timeout_s);
@@ -188,7 +191,6 @@ void power_mgr_enter_sleep(void)
              s_cfg.interval_min);
 
     /* Wait for any in-progress EPD refresh before sleeping */
-    extern bool epd_is_ready(void);
     int wait_count = 0;
     while (!epd_is_ready() && wait_count < 100) {
         vTaskDelay(pdMS_TO_TICKS(200));
@@ -196,6 +198,7 @@ void power_mgr_enter_sleep(void)
     }
 
     nvs_flush_all();
+    usb_serial_jtag_ll_phy_enable_pad(false);  // 关闭 USB PHY，避免深睡眠漏电
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_deep_sleep_start();
 }

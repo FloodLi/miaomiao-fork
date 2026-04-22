@@ -14,11 +14,11 @@
 ### 2026-04（最新完成）
 
 - **文档与工程对齐**：
-  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由约 46 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
+  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由约 57 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
   - 工程技术文档补充 **§4.4 低功耗与功能**、**§4.5 HTTP Basic Auth**（含前端 `localStorage` 凭据与天气 Key 脱敏说明）。
 - **HTTP 安全加固（固件 + Web）**（与审计一致时）：
   - 敏感推屏/配置类 **POST** 走 `http_check_basic_auth`；`GET /weather_config` 不透传明文 API Key。
-  - `web/config.html`、`index.html`、`timetable.html`、`todo.html`、`countdown.html`：`epdFetchOpts` + `epd_auth_*`；配置导出/导入携带鉴权头。
+  - `web/config.html`、`index.html`、`timetable.html`、`todo.html`、`countdown.html`、`board.html`：`epdFetchOpts` + `epd_auth_*`；配置导出/导入携带鉴权头。
 - **课程表功能重写**：
   - 7×12 网格课程模型（grid[day][period]），取代旧的 slots 模型。
   - 学期周次追踪（semester_start 时间戳 + 周次位掩码 weeks bitmask）。
@@ -30,6 +30,10 @@
   - NVS 持久化（最多 3 条，含标题/目标日期/启用开关）。
   - EPD 渲染：单项大字/多项目卡片，分页显示。
   - Web UI 管理页面（`/countdown`），操作后自动保存。
+- **WYSIWYG 画布留言板**：
+  - Web 端提供基于 HTML Canvas 的可视化编辑器（`/board`），支持拖拽排版并生成 JSON 布局。
+  - 固件端解析 JSON 数组，利用 `fb_render` 引擎直接绘制文本、矩形、椭圆、直线以及 1-bit 图标（支持内置与用户上传图标）。
+  - 解耦固定布局，使得设备具备完全的用户自定义画面与信息展示灵活性。
 - **待办事项模块**：
   - NVS 持久化（最多 16 条，含优先级与完成状态）。
   - EPD 渲染：进度条 + 百分比 + 勾选样式 + 紧急/重要标签。
@@ -43,8 +47,30 @@
   - Floyd-Steinberg 误差扩散抖色（替代 Bayer，所有格式支持，内存不足自动降级）。
   - 拉伸全屏显示（独立 X/Y 缩放，消除黑边/白边）。
   - JPEG 解码缩放优化（偏好解码尺寸 ≥ 屏幕尺寸，减少上采样失真）。
-- **稳定性改进**：
-  - HTTP 路由注册：增加返回值检查 + 错误日志，`max_uri_handlers` 扩大至 48。
+- **并发安全与内存加固（v2.1.0 核心补丁）**：
+  - 修复 `clock_display` 互斥锁泄漏问题，消除长期运行后的 LoadProhibited 崩溃。
+  - 对 `scheduler`、`weather`、`clock`、`power_mgr` 等模块的全局共享配置加入 `portMUX_TYPE` 自旋锁保护。
+  - `power_mgr` 的 64 位时间戳 `s_last_activity_us` 实现自旋锁原子读写，防止双核架构下撕裂。
+  - `weather` 模块引入 `weather_get_data_copy()` 提供数据副本，替代原有的裸指针访问，消除数据竞争。
+  - `epd_set_panel` 增加 mutex 保护，防止 HTTP 请求与按键切换并发导致面板重新初始化冲突。
+  - `epd_display_from_file` 在 SPI DMA 传输后立即释放帧缓冲与文件句柄，不等 EPD 18.8s 刷新结束，将峰值内存占用时间压缩到最低。
+  - 图片转换 `fread` 增加返回值检查，防止不完整解码导致的越界。
+  - Deep Sleep 前执行优雅关闭：等待当前 EPD 刷新完成并调用 `nvs_flush_all()`，防止配置丢失。
+- **低功耗唤醒模式一致性修复**：
+  - 问题：原先 Web 端推屏不记录模式，导致深睡定时唤醒后回退到"上次按键模式"发生显示错位。
+  - 修复：在所有 Web 手动推屏路由（如 `/timetable_show`, `/weather_show` 等）及快速唤醒恢复路径上，强制补齐 `button_set_current_mode()` 与 `power_mgr_save_mode()`。
+  - 新增 `display_mode_index_t` 枚举，解耦硬编码的模式 ID。
+- **协议与开源规范对齐**：
+  - 全局更换为 PolyForm Noncommercial License 1.0.0。
+  - Web UI（`/index`, `/timetable` 等）底部加入统一页脚版权声明（`<div class="epd-credit">Made with ❤️ by 喵喵</div>`）。
+  - HTTP 路由注册：增加返回值检查 + 错误日志，`max_uri_handlers` 扩大至 60。
+  - `timetable` 与 `todo` 模块新增 `SemaphoreHandle_t s_cfg_mutex` 保护配置读写。
+  - `time_sync` / `message_board` / `display_policy` 使用 C11 `atomic_bool` 替代 `volatile bool`。
+  - WiFi STA 认证支持 WPA3 SAE（`sae_pwe_h2e = WPA3_SAE_PWE_BOTH`）。
+  - OTA 端点强制要求先设置 Basic Auth 凭据，未配置时返回 `403 Forbidden`。
+  - 深睡前调用 `usb_serial_jtag_ll_phy_enable_pad(false)` 关闭 USB PHY 降低漏电。
+  - `weather` 渲染增加 `time_sync_get_local` 返回值检查，时间未同步时显示占位符。
+  - 课程表周表头颜色修复（非当日从误写的 `COLOR_WHITE` 改为 `COLOR_BLACK`）。
   - 画廊 JSON 列表：改为动态分配，消除固定 1KB 缓冲截断。
   - WiFi 断线自动重连：指数退避定时器（10s→300s），长期无人值守不丢连。
   - favicon.ico 处理：204 空响应，消除浏览器 404 日志垃圾。
@@ -345,7 +371,7 @@ msp/
 │   ├── app_main.c                 # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h        # EPD 驱动（SSD1619 4.2" + UC8179 5.83"，SPI DMA）
 │   ├── image_convert.c/h         # JPEG/PNG/BMP → EPD 帧缓冲（Floyd-Steinberg 抖色）
-│   ├── http_app.c/h              # HTTP 服务 + 约 46 条 API 路由 + Basic Auth + OTA
+│   ├── http_app.c/h              # HTTP 服务 + 约 57 条 API 路由 + Basic Auth + OTA
 │   ├── wifi_manager.c/h          # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h             # 画廊轮播调度器
 │   ├── weather.c/h               # 和风天气 HTTPS 拉取与渲染
@@ -354,7 +380,11 @@ msp/
 │   ├── lunar.c/h                 # 农历算法（1900-2100）
 │   ├── timetable.c/h             # 课程表（周期制 + 单日视图）
 │   ├── todo.c/h                  # 待办事项（NVS 持久化 + 进度条）
+│   ├── countdown.c/h             # 倒计时
 │   ├── message_board.c/h         # 留言板（自定义文字/对齐/字号）
+│   ├── canvas_board.c/h          # WYSIWYG 画布留言板解析与渲染
+│   ├── http_canvas.c             # 画布 Web 编辑器路由与素材管理
+│   ├── canvas_icons.h            # 内置 1-bit 画布图标字库
 │   ├── button.c/h                # 三键驱动（GPIO 轮询 + 去抖 + 模式切换）
 │   ├── power_mgr.c/h             # 深度睡眠与电源管理
 │   ├── fb_render.c/h             # 帧缓冲渲染引擎（像素/线/矩形/UTF-8）
@@ -369,7 +399,9 @@ msp/
 │   ├── index.html                 # 主页：上传 / 画廊 / 状态
 │   ├── config.html                # 配置：WiFi / 轮播 / 天气 / OTA / 低功耗
 │   ├── timetable.html             # 课程表编辑
-│   └── todo.html                  # 待办事项管理
+│   ├── todo.html                  # 待办事项管理
+│   ├── countdown.html             # 倒计时配置
+│   └── board.html                 # 画布留言板可视化编辑器
 ├── .gitignore
 ├── partitions.csv                 # 分区表（factory + 双 OTA + 10MB SPIFFS）
 ├── sdkconfig.defaults
@@ -498,6 +530,7 @@ spiffs,      data, spiffs,   0x620000,  0x9E0000    # ~10MB — 图片存储
 - [x] P3-2 天气 + 日历信息源已完成
 - [x] 万年历（月视图 + 农历/节气/节日 + 今日红圈）已完成
 - [x] 留言板（自定义文字/字号/对齐/黑红/偏移/NVS）已完成
+- [x] WYSIWYG 画布留言板（JSON 解析/文字/线条/图形/自定义图标编辑器）已完成
 - [x] 双屏支持（4.2"/5.83" 可切换，BWR）已完成
 - [x] Web UI 三主题（Loopy/Kitty/草莓熊）已完成
 - [x] 课程表功能（周期制 + 单日视图 + Web 编辑）已完成

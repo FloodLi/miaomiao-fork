@@ -36,7 +36,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
 - ✅ **WiFi 连接**: STA/AP 模式，mDNS 发现，自动重连
 - ✅ **图片显示**: JPEG/PNG/BMP 格式，Floyd-Steinberg 抖动算法
 - ✅ **Web 管理**: 响应式 UI，三套主题，OTA 升级
-- ✅ **内容丰富**: 天气、时钟、日历、课程表、待办、倒计时、留言板
+- ✅ **内容丰富**: 天气、时钟、日历、课程表、待办、倒计时、留言板、WYSIWYG 画布
 - ✅ **低功耗**: 深度睡眠，定时器/按键唤醒，80+ 天续航
 - ✅ **物理交互**: 三按键设计，模式切换，便捷操作
 
@@ -108,7 +108,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
        │          │          │            │
 ┌──────▼──────────▼──────────▼────────────▼───────────┐
 │              HTTP Server (http_app.c)                │
-│         ~46 Routes + Basic Auth + OTA                │
+│         ~57 Routes + Basic Auth + OTA                │
 └────┬──────────┬──────────┬──────────┬──────────────┘
      │          │          │          │
 ┌────▼───┐ ┌───▼────┐ ┌───▼─────┐ ┌─▼────────────┐
@@ -214,28 +214,39 @@ USB (CH340):
 - 刷新：~20 秒
 - 功耗：~200mA (刷新)
 
-### 3.2 电源设计
+### 3.2 电源设计与充电路径
 
+根据最新原理图（`SCH_Schematic2_2026-04-20.pdf`），本项目采用针对低功耗优化的单节锂电池充放电架构：
+
+```text
+       USB 5V (Type-C)
+             │
+             ▼
+      [ TP4054 充电 IC ] ──(CHRG)──> LED1 (红灯)
+             │
+             ▼ (VBAT, 锂电池)
+             │
+      [ MSK12C02 拨动开关 ]
+             │
+             ▼ (VIN)
+    [ HE9073A33M5R LDO ] ──> 3.3V (低静态系统电源)
+             │
+             ├─> ESP32-S3
+             ├─> EPD 面板
+             └─> 其它外设
 ```
-USB 5V
-   │
-   ▼
-┌─────────────┐
-│ AMS1117-3.3 │─── 3.3V (系统电源)
-└─────────────┘
-   │
-   ├─ ESP32-S3 (最大 500mA)
-   ├─ EPD (最大 300mA)
-   └─ 外设 (50mA)
-```
 
-**电源监控:**
-- 输入电压：5V ±5%
-- 输出电压：3.3V ±3%
-- 最大电流：1A
-- 效率：>85%
+**关键器件特性:**
+- **锂电池管理**：使用 **TP4054-42-SOT25R** 线性充电芯片。配置 1kΩ (R8) 限制最大充电电流约 500mA，经 R6(2k) 驱动 LED1 作为充电指示。
+- **稳压降压**：弃用漏电高的 AMS1117，改用 **HE9073A33M5R** (微安级静态电流)，这是支撑 Deep Sleep 数月续航的核心基础。
+- **电量检测**：通过 100kΩ (R7) 和 100kΩ (R10) 对 VBAT 进行 1:2 分压（`BAT_DET`），由 ESP32-S3 内部 ADC 读取电压。
 
-### 3.3 PCB 设计
+### 3.3 接口与物理器件
+
+- **按键交互**：使用 3 颗侧按轻触开关（TS35CA），分别对应 GPIO3、GPIO46、GPIO9。常态拉高，按下接地（GND）。
+- **物理接口**：使用 16-pin USB Type-C 母座（20009-UCAF001-X），CC1/CC2 连接下拉电阻以诱骗 5V 供电；屏幕连接采用 8-pin 墨水屏 FPC 接口。
+
+### 3.4 PCB 物理参数
 
 **板层:** 2 层
 **尺寸:** 80×60mm
@@ -307,8 +318,17 @@ USB 5V
 ### 4.5 HTTP 安全（Basic Auth）
 
 - **策略**：在 NVS 中写入用户名/密码后即视为启用鉴权；`http_check_basic_auth()` 对配置的敏感 **POST**（及个别「推屏」类接口）校验 `Authorization: Basic …`。**未配置凭据时通常不拦截**（便于首次配网）。
+- **OTA 强制鉴权**：`POST /ota` 现在要求必须先在 `/auth_config` 设置凭据，未设凭据时直接返回 `403 Forbidden`，防止内网扫描到设备即可刷写固件。
 - **天气**：`GET /weather_config` 不返回明文 API Key；`POST` 可通过空字符串跳过改 key、`api_key_clear` 等策略与固件版本一致。
-- **前端**：`config.html` / `index.html` / `timetable.html` / `todo.html` / `countdown.html` 使用 `localStorage`（`epd_auth_u`、`epd_auth_p`）构造 Basic 头；**需先在配置页保存认证**，子页面才能匿名以外的方式通过鉴权。
+- **前端**：`config.html` / `index.html` / `timetable.html` / `todo.html` / `countdown.html` / `board.html` 使用 `localStorage`（`epd_auth_u`、`epd_auth_p`）构造 Basic 头；**需先在配置页保存认证**，子页面才能匿名以外的方式通过鉴权。
+
+### 4.6 并发与同步机制（v2.1.0 补丁）
+
+为了保证多任务并发现场的系统稳定性，设计了多层数据保护机制：
+- **`portMUX_TYPE` 自旋锁**：保护极短的临界区数据，例如 `power_mgr` 中的 64 位时间戳 `s_last_activity_us`（防止双核读取撕裂），以及 `scheduler`、`weather`、`clock`、`wifi_manager` 等全局配置项（读多写少且无需阻塞）。
+- **`SemaphoreHandle_t` 互斥锁**：用于耗时较长的临界区保护，如 `s_epd_mutex` 保护面板硬件接口（`epd_set_panel` 与刷新），防止 HTTP 推屏与按键切屏发生冲突；`timetable` 和 `todo` 模块的 `s_cfg_mutex` 保护配置读写。
+- **C11 `atomic_bool`**：`time_sync` 的 `s_synced`、`message_board` 的 `s_pending`、`display_policy` 的 `s_manual_screen` 使用 `<stdatomic.h>` 原子布尔，避免自旋锁开销。
+- **数据副本解耦**：`weather` 模块引入 `weather_get_data_copy()` 提供数据副本，替代原有的全局裸指针访问，消除 `clock_display` 混合渲染天气摘要时可能遇到的读写数据竞争。
 
 ---
 
@@ -378,9 +398,10 @@ Black/Red Plane 输出
 ### 5.3 WiFi 管理模块 (`wifi_manager.c`)
 
 **功能:**
-- AP/STA 共存
-- 配网管理
-- 自动重连
+- AP/STA 共存（APSTA 模式，无需在连接 STA 时断开 AP 客户端）
+- 配网管理（NVS 凭据持久化）
+- WPA2/WPA3 (SAE) 自适应认证
+- 指数退避自动重连（10s→300s）
 - mDNS 服务
 
 **状态机:**
@@ -395,13 +416,13 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 - 最大重试：10 次
 - 失败回退：AP 模式
 
-### 5.4 HTTP 服务器模块 (`http_app.c` + `http_gallery.c` + `http_features.c`)
+### 5.4 HTTP 服务器模块 (`http_app.c` + `http_gallery.c` + `http_features.c` + `http_canvas.c`)
 
-**路由数量:** 46 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
+**路由数量:** 57 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
 **认证方式:** HTTP Basic Auth
 **最大连接:** 5 个并发
 
-**路由分组（共 46 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
+**路由分组（共 57 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
 
 | 分组 | 路径示例 |
 |------|-----------|
@@ -409,6 +430,7 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 | 画廊 | `POST /upload` · `GET /images` `/image` · `POST /show` `/delete_image` `/delete` |
 | 网络与面板 | `GET /wifi_status` `/scan` · `POST /wifi_connect` `/wifi_forget` · `GET|POST /panel_config` |
 | 轮播 / 认证 / 电源 | `GET|POST /slideshow` · `GET|POST /auth_config` · `GET|POST /power_config` |
+| 画布留言板 | `GET /board` · `GET|POST /canvas_layout` · `POST /canvas_show` · 图标图片资源管理 |
 | 天气 / 时钟 / 留言 | `GET|POST /weather_config` · `POST /weather_show` · `GET|POST /clock_config` · `POST /clock_show` · `GET|POST /msg_config` · `POST /msg_show` |
 | 日历 / 课程表 / 待办 / 倒计时 | `POST /calendar_show` · `GET /timetable` `/timetable.json` · `POST /timetable` `/timetable_show` · `GET /todo` `/todo.json` · `POST /todo` `/todo_show` · `GET /countdown` · `GET|POST /countdown_config` · `POST /countdown_show` |
 | 系统 | `GET /version` · `POST /ota` |
@@ -451,10 +473,36 @@ fb_bitmap(fb, x, y, black, red, w, h);
 | 闲置 | 50mA | 按键/定时器 |
 | 深睡 | <10μA | EXT1/RTC |
 
+**深睡优化**：进入深度睡眠前，固件依次执行以下步骤以确保最低漏电流：
+1. 等待当前 EPD 刷新完成（最多 20 秒轮询 BUSY）
+2. `nvs_flush_all()` 刷写所有 NVS 命名空间，防止配置丢失
+3. `usb_serial_jtag_ll_phy_enable_pad(false)` 关闭 USB PHY 模拟前端，消除 USB 端口的额外漏电
+4. `esp_deep_sleep_start()` 进入深睡
+
 **唤醒后的软件路径**（与 `power_mgr_is_timer_wake()` 一致：仅 **定时器 + 深睡启用** 才走 quick）：
 
 - **RTC 定时器唤醒** → `quick_refresh_and_sleep()` → 无 HTTP。
 - **EXT1 按键（GPIO3/9）/ 上电复位** → `full_boot()` → 有 HTTP。
+
+**模式记忆与状态一致性 (v2.1.0 关键修复)**：
+为防止“定时唤醒时显示页面与实际推屏功能不符”（即旧版仅通过物理按键更新 `last_mode` 导致的状态错位），所有 HTTP 触发的具体功能显示（如 `timetable_show`、`weather_show` 等）成功后均会调用 `power_mgr_save_mode()`。定时器唤醒的 quick 路径将精确还原最后一次由 Web 或按键下发的模式。
+
+### 5.7 画布留言板 (`canvas_board.c` & `http_canvas.c`)
+
+**功能:**
+- WYSIWYG 可视化布局编辑与渲染
+- 文本、矩形、椭圆、直线、自由路径
+- 内置 1-bit 图标库及用户自定义图标上传
+- 画廊图片任意位置、任意比例缩放混合渲染
+
+**渲染流:**
+```
+[Web UI 布局] -> JSON 数组 -> [HTTP POST /canvas_layout] 
+  -> canvas_board.c 解析 JSON 
+  -> 按 Z-Index(数组顺序) 调用 fb_render 原语
+  -> (包含实时按比例缩小解析 spiffs/cimg/ 下的 1-bit 图片缓冲)
+  -> EPD 刷新
+```
 
 ---
 
@@ -624,6 +672,42 @@ POST /show?name=img_20260101.jpg
 {"ok": true}
 ```
 
+### 6.4 画布留言板 API
+
+#### GET /canvas_layout
+**功能:** 获取画布元素的 JSON 布局数组
+**响应:**
+```json
+[
+  {"type":"text","x":10,"y":20,"text":"Hello","scale":2,"color":0},
+  {"type":"rect","x":50,"y":50,"w":100,"h":50,"fill":1,"sw":2,"color":1}
+]
+```
+
+#### POST /canvas_layout
+**功能:** 覆盖保存画布元素的 JSON 布局数组（需 Basic Auth）
+**请求:** 接收数组结构，大小受 `CANVAS_LAYOUT_MAX_BYTES` (通常4KB) 限制
+
+#### POST /canvas_show
+**功能:** 根据当前布局生成帧缓冲并触发 EPD 刷新（需 Basic Auth）
+
+#### GET /canvas_icons
+**功能:** 获取可用图标清单
+**响应:**
+```json
+{
+  "builtin": ["wifi", "battery"],
+  "user": ["myicon1", "myicon2"]
+}
+```
+
+#### POST /canvas_icon_upload?name=xxx
+**功能:** 上传自定义图标（需 Basic Auth）
+**请求:** Raw Body 必须精确为 32 字节（对应 16×16 1-bit 位图）
+
+#### POST /canvas_icon_delete?name=xxx
+**功能:** 删除用户上传的自定义图标（需 Basic Auth）
+
 ---
 
 ## 七、Web 前端文档
@@ -686,6 +770,25 @@ POST /show?name=img_20260101.jpg
 1. 倒计时条目管理（最多 3 条）
 2. 目标日期设置
 3. 推送到屏幕
+
+#### board.html - 画布留言板编辑器
+
+**功能:**
+1. 基于 HTML Canvas 的 WYSIWYG 可视化编辑器
+2. 双层 Canvas 架构（主画布 + 选中框叠加层）
+3. 支持文本、矩形（含圆角）、椭圆、直线、自由路径、图标、图片共 7 种元素
+4. 拖拽定位、控制点缩放、Z-Index 图层排序
+5. 三色选择（黑/红/白）、填充/描边切换
+6. 内置图标库 + 用户自定义图标上传
+7. 1-bit 图片上传（Floyd-Steinberg 抖动转换）、任意位置/比例混合渲染
+8. 从 `/panel_config` 动态读取屏幕分辨率，自适应 4.2"/5.83" 双屏
+9. 布局 JSON 持久化保存与推送到墨水屏
+
+**技术栈:**
+- HTML5 Canvas API（2D 绘图）
+- 原生 JavaScript（无框架，单文件内嵌）
+- Fetch API + Typed Array（流式二进制传输）
+- Floyd-Steinberg 抖动算法（浏览器端 JS 实现）
 
 ### 7.2 主题系统
 
@@ -804,7 +907,7 @@ idf.py -p COM3 ota_flash
 1. 检查 USB 线
 2. 测 USB 5V 输入
 3. 测 3.3V 输出
-4. 检查 AMS1117
+4. 检查 LDO (HE9073A) 工作状态
 
 #### 问题 2: 无法识别串口
 
@@ -869,6 +972,8 @@ idf.py -p COM3 monitor
 - `main/todo.c` - 待办事项
 - `main/countdown.c` - 倒计时
 - `main/message_board.c` - 留言板
+- `main/canvas_board.c` - WYSIWYG 画布留言板渲染器
+- `main/http_canvas.c` - 画布 HTTP 路由与图标管理
 - `main/button.c` - 按键驱动
 - `main/power_mgr.c` - 电源管理
 - `main/scheduler.c` - 任务调度
@@ -880,12 +985,22 @@ idf.py -p COM3 monitor
 - `main/spiffs_mount.c` - SPIFFS 挂载
 - `main/lodepng.c` - LodePNG 第三方库
 
+**第三方库与 ESP-IDF 组件:**
+- `lodepng` — PNG 解码（仅解码器，已裁剪编码器/磁盘/辅助块/C++ 支持）
+- `cJSON` — JSON 解析与生成（ESP-IDF 内置 `json` 组件，用于天气/课程表/待办/画布等模块）
+- `esp_http_server` — HTTP 服务器
+- `esp_http_client` + `esp-tls` — HTTPS 客户端（天气 API 请求）
+- `app_update` — OTA 双分区升级
+- `esp_driver_spi` — SPI DMA 驱动（EPD 通信）
+- `spiffs` — 平铺文件系统（图片/图标/布局存储）
+
 **Web 前端:**
 - `web/index.html` - 主页
 - `web/config.html` - 配置页
 - `web/timetable.html` - 课程表
 - `web/todo.html` - 待办事项
 - `web/countdown.html` - 倒计时
+- `web/board.html` - 画布留言板编辑器
 
 **文档:**
 - `README.md` - 项目介绍

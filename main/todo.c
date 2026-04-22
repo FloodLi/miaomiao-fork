@@ -15,10 +15,13 @@
 #include "display_mode.h"
 #include "power_mgr.h"
 
+#include "freertos/semphr.h"
+
 static const char *TAG    = "todo";
 static const char *NVS_NS = "todo";
 
 static todo_config_t s_cfg;
+static SemaphoreHandle_t s_cfg_mutex;
 
 /* ── NVS ─────────────────────────────────────────────────────────── */
 
@@ -197,6 +200,9 @@ static void render_todo(void)
 
 esp_err_t todo_init(void)
 {
+    s_cfg_mutex = xSemaphoreCreateMutex();
+    if (!s_cfg_mutex)
+        return ESP_ERR_NO_MEM;
     memset(&s_cfg, 0, sizeof(s_cfg));
     nvs_load();
     ESP_LOGI(TAG, "init ok (enabled=%d, items=%d)", s_cfg.enabled, s_cfg.count);
@@ -206,16 +212,20 @@ esp_err_t todo_init(void)
 esp_err_t todo_get_config(todo_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     *out = s_cfg;
+    xSemaphoreGive(s_cfg_mutex);
     return ESP_OK;
 }
 
 esp_err_t todo_set_config(const todo_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     s_cfg = *cfg;
     if (s_cfg.count > TODO_MAX_ITEMS)
         s_cfg.count = TODO_MAX_ITEMS;
+    xSemaphoreGive(s_cfg_mutex);
     nvs_save();
     return ESP_OK;
 }

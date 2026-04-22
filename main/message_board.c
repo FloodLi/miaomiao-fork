@@ -1,5 +1,6 @@
 #include "message_board.h"
 
+#include <stdatomic.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -221,15 +222,6 @@ static void render_message(void)
 
 /* ── public API ───────────────────────────────────────────────────── */
 
-esp_err_t message_board_init(void)
-{
-    nvs_load();
-    ESP_LOGI(TAG, "Message board init (text_len=%d, font=%d, align=%d, color=%d, xy=%d,%d)",
-             (int)strlen(s_cfg.text), s_cfg.font_size, (int)s_cfg.align, s_cfg.color,
-             s_cfg.x_offset, s_cfg.y_offset);
-    return ESP_OK;
-}
-
 esp_err_t message_board_get_config(msg_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
@@ -246,8 +238,21 @@ esp_err_t message_board_set_config(const msg_config_t *cfg)
     return ESP_OK;
 }
 
-static SemaphoreHandle_t s_render_mutex = NULL;
-static volatile bool     s_pending = false;
+static SemaphoreHandle_t s_render_mutex;
+static atomic_bool       s_pending;
+
+esp_err_t message_board_init(void)
+{
+    s_render_mutex = xSemaphoreCreateBinary();
+    if (!s_render_mutex)
+        return ESP_ERR_NO_MEM;
+    xSemaphoreGive(s_render_mutex);
+    nvs_load();
+    ESP_LOGI(TAG, "Message board init (text_len=%d, font=%d, align=%d, color=%d, xy=%d,%d)",
+             (int)strlen(s_cfg.text), s_cfg.font_size, (int)s_cfg.align, s_cfg.color,
+             s_cfg.x_offset, s_cfg.y_offset);
+    return ESP_OK;
+}
 
 static void render_task(void *arg)
 {
@@ -270,10 +275,8 @@ esp_err_t message_board_show(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (!s_render_mutex) {
-        s_render_mutex = xSemaphoreCreateBinary();
-        xSemaphoreGive(s_render_mutex);
-    }
+    if (!s_render_mutex)
+        return ESP_ERR_INVALID_STATE;
 
     if (xSemaphoreTake(s_render_mutex, 0) != pdTRUE) {
         s_pending = true;

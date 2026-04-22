@@ -288,11 +288,14 @@ esp_err_t fb_export(const fb_t *fb, const char *path)
         ESP_LOGE(TAG, "Cannot create %s", path);
         return ESP_FAIL;
     }
-    fwrite(fb->black, 1, fb->plane_bytes, f);
-    if (epd_has_red()) {
-        fwrite(fb->red, 1, fb->plane_bytes, f);
-    }
+    bool ok = (fwrite(fb->black, 1, fb->plane_bytes, f) == fb->plane_bytes);
+    if (ok && epd_has_red())
+        ok = (fwrite(fb->red, 1, fb->plane_bytes, f) == fb->plane_bytes);
     fclose(f);
+    if (!ok) {
+        ESP_LOGE(TAG, "fb_export write failed (disk full?)");
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -303,10 +306,13 @@ esp_err_t fb_import(fb_t *fb, const char *path)
         ESP_LOGE(TAG, "Cannot open %s", path);
         return ESP_FAIL;
     }
-    fread(fb->black, 1, fb->plane_bytes, f);
-    if (epd_has_red()) {
-        fread(fb->red, 1, fb->plane_bytes, f);
-    }
+    bool ok = (fread(fb->black, 1, fb->plane_bytes, f) == fb->plane_bytes);
+    if (ok && epd_has_red())
+        ok = (fread(fb->red, 1, fb->plane_bytes, f) == fb->plane_bytes);
     fclose(f);
+    if (!ok) {
+        ESP_LOGE(TAG, "fb_import read failed (file truncated?)");
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }

@@ -86,9 +86,11 @@ msp/
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 + UC8179，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
-│   ├── http_app.c/h           # HTTP 服务器（约 46 条路由 + Basic Auth + OTA）
+│   ├── http_app.c/h           # HTTP 服务器（约 57 条路由 + Basic Auth + OTA）
 │   ├── http_gallery.c         # 画廊 HTTP 路由
 │   ├── http_features.c        # 功能模块 HTTP 路由
+│   ├── http_canvas.c          # 画布留言板 HTTP 路由与素材管理
+│   ├── http_internal.h        # HTTP 子系统内部共享声明
 │   ├── wifi_manager.c/h       # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h          # 画廊轮播调度器
 │   ├── weather.c/h            # 和风天气 HTTPS
@@ -99,6 +101,8 @@ msp/
 │   ├── todo.c/h               # 待办事项（NVS 持久化 + 进度条）
 │   ├── countdown.c/h          # 倒计时
 │   ├── message_board.c/h      # 留言板
+│   ├── canvas_board.c/h       # WYSIWYG 画布留言板（JSON→fb_t 渲染）
+│   ├── canvas_icons.h         # 内置 1-bit 画布图标库
 │   ├── button.c/h             # 三键驱动
 │   ├── power_mgr.c/h          # 深度睡眠与电源管理
 │   ├── fb_render.c/h          # 帧缓冲渲染引擎
@@ -128,7 +132,7 @@ msp/
 | **应用入口** | `app_main.c` | 双启动路径：完整启动（WiFi+HTTP+全功能）/ 深睡快速刷新 |
 | **EPD 驱动** | `epd_stub.c` / `epd.h` | SSD1619 + UC8179 双屏支持，SPI DMA，BWR 三色 |
 | **图片转换** | `image_convert.c/h` | JPEG/PNG/BMP 解码、拉伸全屏、Floyd-Steinberg 抖色 |
-| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` | 约 46 条路由 + Basic Auth + OTA |
+| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 约 57 条路由 + Basic Auth + OTA |
 | **WiFi 管理** | `wifi_manager.c/h` | AP+STA 共存、NVS 凭据、自动重连 |
 | **轮播调度** | `scheduler.c/h` | 画廊顺序/随机自动轮播 |
 | **天气** | `weather.c/h` | 和风天气 HTTPS，实时+3 天预报 |
@@ -137,6 +141,7 @@ msp/
 | **课程表** | `timetable.c/h` | 7×12 网格 + 学期周次 + 单日/全周视图 |
 | **待办事项** | `todo.c/h` | NVS 持久化，进度条+百分比 |
 | **留言板** | `message_board.c/h` | 自定义文字/字号/对齐/颜色 |
+| **画布留言板** | `canvas_board.c/h` + `canvas_icons.h` | WYSIWYG Web 编辑器→JSON→帧缓冲渲染（文本/形状/图标/图片） |
 | **按键驱动** | `button.c/h` | 3 键轮询+去抖+模式切换 |
 | **电源管理** | `power_mgr.c/h` | 深度睡眠、闲置检测、唤醒、模式记忆 |
 | **帧缓冲渲染** | `fb_render.c/h` | 像素/线/矩形/UTF-8 文字 |
@@ -551,7 +556,7 @@ if (a < 255) {
 
 ### 5.1 整体架构
 
-Web 前端为 **多页面**：`index.html`（画廊主页）、`config.html`（综合配置）、`timetable.html` / `todo.html` / `countdown.html` 等。构建时经 `main/CMakeLists.txt` 的 `EMBED_FILES` 嵌入镜像，由 `http_app` / `http_features` 按路径返回；运行时通过 `extern const uint8_t[]` 从 Flash 读取发送。
+Web 前端为 **多页面**：`index.html`（画廊主页）、`config.html`（综合配置）、`timetable.html` / `todo.html` / `countdown.html` / `board.html`（画布编辑器）等。构建时经 `main/CMakeLists.txt` 的 `EMBED_FILES` 嵌入镜像，由 `http_app` / `http_features` / `http_canvas` 按路径返回；运行时通过 `extern const uint8_t[]` 从 Flash 读取发送。
 
 ```c
 // 编译时嵌入
@@ -633,12 +638,13 @@ SPIFFS 使用率进度条颜色自适应：<70% 绿色、70~90% 黄色、>90% �
 | GET/POST | `/todo*` | 待办事项数据 API |
 | GET/POST | `/countdown*` | 倒计时数据 API |
 | GET/POST | `/msg_*` | 留言板配置 API |
+| GET/POST | `/board`, `/canvas_*` | 画布留言板可视化编辑与 API |
 | POST | `/calendar_show` | 显示日历 |
 | GET/POST | `/power_config` | 电源管理配置 API |
 | GET/POST | `/auth_config` | HTTP 认证配置 |
 | POST | `/ota` | 固件升级 |
 | GET | `/version` | 固件版本 |
-| *… 共约 46 条路由，以 `http_app.c` 为准* | | |
+| *… 共约 57 条路由，以 `http_app.c` 为准* | | |
 
 ---
 
@@ -695,7 +701,7 @@ image_convert_file_to_epd_raw(input_path, out_path);
 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 config.recv_wait_timeout  = 5;      // 接收超时 5 秒，快速释放空闲连接
 config.send_wait_timeout  = 5;      // 发送超时 5 秒
-config.max_uri_handlers   = 48;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前约 46）
+config.max_uri_handlers   = 60;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前约 57）
 config.stack_size         = 16384;  // HTTP 任务栈 16KB（图片转换需要较深调用栈）
 config.lru_purge_enable   = true;   // 当连接数满时，关闭最久未使用的连接
 ```
@@ -918,9 +924,9 @@ app_main()
     │
     ├─ mDNS + SNTP                   局域网发现 + 时间同步
     │
-    ├─ 内容模块初始化                天气/时钟/日历/课程表/待办/留言板/轮播
+    ├─ 内容模块初始化                天气/时钟/日历/课程表/待办/留言板/画布/轮播
     │
-    ├─ http_app_start()              HTTP 服务器（约 46 条路由，Basic Auth）
+    ├─ http_app_start()              HTTP 服务器（约 57 条路由，Basic Auth）
     │
     ├─ 显示欢迎屏
     │
