@@ -155,6 +155,12 @@ esp_err_t power_mgr_set_config(const power_config_t *cfg)
     save_config();  /* NVS write outside critical section */
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%d min, idle=%d s",
              s_cfg.enabled, s_cfg.interval_min, s_cfg.idle_timeout_s);
+
+    /* 开机时若低功耗为关，app_main 里的 power_mgr_arm() 会直接返回且不会创建
+     * pwr_idle；之后仅在网页里打开低功耗时，必须在此再次 arm，否则永远不会进深睡。 */
+    if (s_cfg.enabled)
+        power_mgr_arm();
+
     return ESP_OK;
 }
 
