@@ -13,6 +13,7 @@
 #include "button.h"
 
 #include <stdbool.h>
+#include <stdatomic.h>
 
 #include "display_mode.h"
 #include "display_policy.h"
@@ -44,7 +45,7 @@ typedef enum {
 } btn_cmd_t;
 
 static int            s_mode_idx;
-static volatile bool  s_busy;
+static atomic_bool    s_busy;
 static QueueHandle_t  s_cmd_queue;
 
 int  button_get_current_mode(void) { return s_mode_idx; }

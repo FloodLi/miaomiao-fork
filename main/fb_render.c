@@ -91,7 +91,55 @@ void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
 
 void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
 {
-    for (int i = 0; i < w; i++) fb_pixel(fb, x + i, y, c);
+    if (y < 0 || y >= fb->height || w <= 0) return;
+    int x0 = x, x1 = x + w - 1;
+    if (x0 < 0) x0 = 0;
+    if (x1 >= fb->width) x1 = fb->width - 1;
+    if (x0 > x1) return;
+
+    int row_off = y * fb->row_bytes;
+    int sb = x0 / 8, eb = x1 / 8;
+
+    bool has_red = epd_has_red();
+    bool is_red = (c == COLOR_RED && has_red);
+    bool is_black = (c == COLOR_BLACK) || (c == COLOR_RED && !has_red);
+
+    if (sb == eb) {
+        uint8_t mask = (uint8_t)((0xFF >> (x0 % 8)) & (0xFF << (7 - x1 % 8)));
+        if (is_black) {
+            fb->black[row_off + sb] &= ~mask;
+        } else if (is_red) {
+            fb->red[row_off + sb] |= mask;
+            fb->black[row_off + sb] &= ~mask;
+        } else {
+            fb->black[row_off + sb] |= mask;
+            fb->red[row_off + sb] &= ~mask;
+        }
+        return;
+    }
+
+    uint8_t lm = 0xFF >> (x0 % 8);
+    uint8_t rm = 0xFF << (7 - x1 % 8);
+
+    if (is_black) {
+        fb->black[row_off + sb] &= ~lm;
+        if (eb - sb > 1) memset(&fb->black[row_off + sb + 1], 0x00, (size_t)(eb - sb - 1));
+        fb->black[row_off + eb] &= ~rm;
+    } else if (is_red) {
+        fb->red[row_off + sb] |= lm;   fb->black[row_off + sb] &= ~lm;
+        if (eb - sb > 1) {
+            memset(&fb->red[row_off + sb + 1],   0xFF, (size_t)(eb - sb - 1));
+            memset(&fb->black[row_off + sb + 1], 0x00, (size_t)(eb - sb - 1));
+        }
+        fb->red[row_off + eb] |= rm;   fb->black[row_off + eb] &= ~rm;
+    } else {
+        fb->black[row_off + sb] |= lm; fb->red[row_off + sb] &= ~lm;
+        if (eb - sb > 1) {
+            memset(&fb->black[row_off + sb + 1], 0xFF, (size_t)(eb - sb - 1));
+            memset(&fb->red[row_off + sb + 1],   0x00, (size_t)(eb - sb - 1));
+        }
+        fb->black[row_off + eb] |= rm; fb->red[row_off + eb] &= ~rm;
+    }
 }
 
 void fb_vline(fb_t *fb, int x, int y, int h, fb_color_t c)
@@ -148,8 +196,12 @@ int fb_string(fb_t *fb, int x, int y, const char *s, fb_color_t c)
 
 static const uint8_t *find_zh_glyph(uint32_t cp)
 {
-    for (int i = 0; i < FONT_ZH_COUNT; i++) {
-        if (font_zh[i].cp == cp) return font_zh[i].bmp;
+    int lo = 0, hi = FONT_ZH_COUNT - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (font_zh[mid].cp == cp) return font_zh[mid].bmp;
+        if (font_zh[mid].cp < cp) lo = mid + 1;
+        else hi = mid - 1;
     }
     return NULL;
 }

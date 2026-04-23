@@ -427,6 +427,8 @@ static esp_err_t slideshow_get_handler(httpd_req_t *req)
     slideshow_config_t cfg;
     scheduler_get_config(&cfg);
     const char *current = scheduler_get_current_image();
+    char esc_img[80];
+    json_escape(esc_img, sizeof(esc_img), current ? current : "");
 
     char json[320];
     snprintf(json, sizeof(json),
@@ -435,7 +437,7 @@ static esp_err_t slideshow_get_handler(httpd_req_t *req)
              (unsigned long)cfg.interval_sec,
              (int)cfg.mode,
              cfg.clock_overlay ? "true" : "false",
-             current ? current : "");
+             esc_img);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);

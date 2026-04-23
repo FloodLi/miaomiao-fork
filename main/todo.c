@@ -171,12 +171,13 @@ static void render_todo(void)
         int tx    = cb_x + cb_sz + 8 * s;
         int pri_w = (it->priority > 0) ? (2 * 16 * s + 12 * s) : 0;
         int max_w = W - tx - pri_w - 8 * s;
-        fb_utf8_scaled_maxw(fb, tx, text_y, it->text, COLOR_BLACK, sc, max_w);
+        int drawn_w = fb_utf8_scaled_maxw(fb, tx, text_y, it->text, COLOR_BLACK, sc, max_w);
 
-        /* strikethrough for done */
+        /* strikethrough for done — use actual text width, not reserved space */
         if (it->done) {
             int ly = text_y + ch_h / 2;
-            fb_hline(fb, tx, ly, max_w, COLOR_BLACK);
+            int strike_w = (drawn_w > 0 && drawn_w < max_w) ? drawn_w : max_w;
+            fb_hline(fb, tx, ly, strike_w, COLOR_BLACK);
         }
 
         /* priority label on right */
@@ -306,6 +307,8 @@ esp_err_t todo_http_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
+
     cJSON *j;
     j = cJSON_GetObjectItem(root, "enabled");
     if (cJSON_IsBool(j))
@@ -339,6 +342,7 @@ esp_err_t todo_http_post_handler(httpd_req_t *req)
     }
 
     nvs_save();
+    xSemaphoreGive(s_cfg_mutex);
     cJSON_Delete(root);
 
     httpd_resp_set_type(req, "application/json");

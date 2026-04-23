@@ -3,7 +3,7 @@
 > 项目代号：epaper_uploader  
 > 硬件平台：ESP32-S3 + 三色墨水屏（4.2" 400×300 SSD1619 / 5.83" 648×480 UC8179）  
 > 技术栈：ESP-IDF v5.5.1 / C / SPI / WiFi SoftAP / HTTP  
-> 固件版本：v2.1.0（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-04-10
+> 固件版本：v2.3.0（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-04-15
 
 ---
 
@@ -11,7 +11,37 @@
 
 > 说明：下面是从 v1.0 规划落地后的**实际完成项/关键修复**汇总（含多次迭代的经验性修复）。
 
-### 2026-04（最新完成）
+### 2026-04-15（v2.3.0 — 全面代码审查与质量加固）
+
+- **轮播 + 低功耗联动修复**：
+  - 轮播索引 `s_current_index` 持久化到 NVS，顺序模式跨深睡唤醒正确换图。
+  - 快速唤醒路径不再放行后台 `slideshow_task`，避免与唤醒刷屏冲突。
+- **并发安全加固（6 处）**：
+  - `todo.c` HTTP POST 加 `s_cfg_mutex` 保护，消除与渲染线程的数据竞争。
+  - `message_board.c` 新增 `portMUX_TYPE s_cfg_mux` 自旋锁，`render_message` 快照配置。
+  - `power_mgr.c` idle_monitor 配置读取纳入 `s_activity_mux`。
+  - `scheduler.c` slideshow_task 循环中快照配置。
+  - `button.c` `s_busy` 从 `volatile bool` 改为 C11 `atomic_bool`。
+  - `wifi_manager.c` `wifi_manager_forget` 状态修改纳入 `s_sta_mux`。
+- **显示问题修复（10 处）**：
+  - 时钟 18 点后"下午"→"晚上"。
+  - 天气：底部更新时间自适应屏宽、城市名/描述/预报文字加 `max_w` 防溢出、图标位置 clamp。
+  - 日历：今日红圈半径 clamp 防侵入相邻格、竖线高度对齐横线。
+  - 待办：删除线宽度改用实际文字绘制宽度。
+  - 倒计时：未启用时返回 `ESP_ERR_INVALID_STATE`。
+  - 留言板：超 32 行截断显示 "..." 提示。
+  - 画布：所有元素坐标/尺寸 clamp 到 ±2000，防恶意 JSON 阻塞。
+- **性能优化（3 处）**：
+  - `fb_hline` / `fb_fill_rect` 改为字节级 memset 批量填充，大矩形渲染提速 5-10 倍。
+  - 中文字库 `font_zh` 按 codepoint 排序 + 二分查找，查找从 O(6763) 降到 O(13)。
+  - PNG 文件大小限制 200KB，防止无 PSRAM 设备 OOM。
+- **安全加固**：
+  - 新增 `json_escape()` 工具函数，轮播图片名/画廊文件名嵌入 JSON 时转义引号和反斜杠。
+- **其他修复**：
+  - 倒计时 `fb_export` 返回值检查，失败时不刷旧图。
+  - BMP 解码 Floyd-Steinberg 路径：行数据越界时填白色，不再复用旧行像素。
+
+### 2026-04（v2.2.0）
 
 - **文档与工程对齐**：
   - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由约 57 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。

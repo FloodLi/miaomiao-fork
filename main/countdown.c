@@ -310,6 +310,11 @@ static void draw_cards(fb_t *fb, int W, int H, int active_count)
 
 esp_err_t countdown_show(void)
 {
+    if (!s_cfg.enabled) {
+        ESP_LOGW(TAG, "Countdown disabled");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     fb_t *fb = fb_create();
     if (!fb) return ESP_ERR_NO_MEM;
     fb_clear(fb);
@@ -345,8 +350,12 @@ esp_err_t countdown_show(void)
         }
     }
 
-    fb_export(fb, "/spiffs/image.bin");
+    esp_err_t exp_err = fb_export(fb, "/spiffs/image.bin");
     fb_destroy(fb);
+    if (exp_err != ESP_OK) {
+        ESP_LOGE(TAG, "fb_export failed: %s", esp_err_to_name(exp_err));
+        return exp_err;
+    }
     epd_display_from_file("/spiffs/image.bin");
 
     display_policy_set_manual_screen_active(true);

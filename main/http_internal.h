@@ -7,8 +7,25 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include "esp_http_server.h"
 #include "http_app.h"
+
+/** Escape a string for safe embedding in a JSON value.
+ *  Writes at most dst_len-1 chars + NUL.  Returns dst. */
+static inline char *json_escape(char *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) return dst;
+    size_t o = 0;
+    for (const char *s = src; *s && o + 2 < dst_len; s++) {
+        if (*s == '"' || *s == '\\') {
+            dst[o++] = '\\';
+        }
+        dst[o++] = *s;
+    }
+    dst[o] = '\0';
+    return dst;
+}
 
 extern httpd_handle_t    http_server_handle;
 extern http_app_config_t http_app_cfg;

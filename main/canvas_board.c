@@ -248,6 +248,21 @@ static bool load_user_icon(const char *name, uint8_t bmp[32])
 
 /* ── 元素渲染 ───────────────────────────────────────────────────────── */
 
+#define CANVAS_COORD_MIN  (-2000)
+#define CANVAS_COORD_MAX  (2000)
+#define CANVAS_DIM_MAX    (2000)
+
+static inline int clamp_coord(int v) {
+    if (v < CANVAS_COORD_MIN) return CANVAS_COORD_MIN;
+    if (v > CANVAS_COORD_MAX) return CANVAS_COORD_MAX;
+    return v;
+}
+static inline int clamp_dim(int v) {
+    if (v < 0) return 0;
+    if (v > CANVAS_DIM_MAX) return CANVAS_DIM_MAX;
+    return v;
+}
+
 static void render_element(fb_t *fb, cJSON *el)
 {
     const char *type_str = cJSON_GetStringValue(cJSON_GetObjectItem(el, "type"));
@@ -263,8 +278,8 @@ static void render_element(fb_t *fb, cJSON *el)
         cJSON *jx = cJSON_GetObjectItem(el, "x");
         cJSON *jy = cJSON_GetObjectItem(el, "y");
         cJSON *js = cJSON_GetObjectItem(el, "scale");
-        int x = jx && cJSON_IsNumber(jx) ? jx->valueint : 0;
-        int y = jy && cJSON_IsNumber(jy) ? jy->valueint : 0;
+        int x = clamp_coord(jx && cJSON_IsNumber(jx) ? jx->valueint : 0);
+        int y = clamp_coord(jy && cJSON_IsNumber(jy) ? jy->valueint : 0);
         int scale = js && cJSON_IsNumber(js) ? js->valueint : 1;
         if (scale < 1) scale = 1;
         if (scale > 6) scale = 6;
@@ -281,10 +296,10 @@ static void render_element(fb_t *fb, cJSON *el)
         cJSON *jf  = cJSON_GetObjectItem(el, "fill");
         cJSON *jsw = cJSON_GetObjectItem(el, "sw");
         cJSON *jr  = cJSON_GetObjectItem(el, "radius");
-        int x  = jx  && cJSON_IsNumber(jx)  ? jx->valueint  : 0;
-        int y  = jy  && cJSON_IsNumber(jy)  ? jy->valueint  : 0;
-        int w  = jw  && cJSON_IsNumber(jw)  ? jw->valueint  : 0;
-        int h  = jh  && cJSON_IsNumber(jh)  ? jh->valueint  : 0;
+        int x  = clamp_coord(jx  && cJSON_IsNumber(jx)  ? jx->valueint  : 0);
+        int y  = clamp_coord(jy  && cJSON_IsNumber(jy)  ? jy->valueint  : 0);
+        int w  = clamp_dim(jw  && cJSON_IsNumber(jw)  ? jw->valueint  : 0);
+        int h  = clamp_dim(jh  && cJSON_IsNumber(jh)  ? jh->valueint  : 0);
         int sw = jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1;
         int r  = jr  && cJSON_IsNumber(jr)  ? jr->valueint  : 0;
         bool fill = jf && cJSON_IsTrue(jf);
@@ -301,10 +316,10 @@ static void render_element(fb_t *fb, cJSON *el)
         cJSON *jry = cJSON_GetObjectItem(el, "ry");
         cJSON *jf  = cJSON_GetObjectItem(el, "fill");
         cJSON *jsw = cJSON_GetObjectItem(el, "sw");
-        int cx = jx  && cJSON_IsNumber(jx)  ? jx->valueint  : 0;
-        int cy = jy  && cJSON_IsNumber(jy)  ? jy->valueint  : 0;
-        int rx = jrx && cJSON_IsNumber(jrx) ? jrx->valueint : 0;
-        int ry = jry && cJSON_IsNumber(jry) ? jry->valueint : 0;
+        int cx = clamp_coord(jx  && cJSON_IsNumber(jx)  ? jx->valueint  : 0);
+        int cy = clamp_coord(jy  && cJSON_IsNumber(jy)  ? jy->valueint  : 0);
+        int rx = clamp_dim(jrx && cJSON_IsNumber(jrx) ? jrx->valueint : 0);
+        int ry = clamp_dim(jry && cJSON_IsNumber(jry) ? jry->valueint : 0);
         int sw = jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1;
         bool fill = jf && cJSON_IsTrue(jf);
         draw_ellipse(fb, cx, cy, rx, ry, color, fill, sw);
@@ -318,10 +333,10 @@ static void render_element(fb_t *fb, cJSON *el)
         cJSON *jx2 = cJSON_GetObjectItem(el, "x2");
         cJSON *jy2 = cJSON_GetObjectItem(el, "y2");
         cJSON *jsw = cJSON_GetObjectItem(el, "sw");
-        int x1 = jx1 && cJSON_IsNumber(jx1) ? jx1->valueint : 0;
-        int y1 = jy1 && cJSON_IsNumber(jy1) ? jy1->valueint : 0;
-        int x2 = jx2 && cJSON_IsNumber(jx2) ? jx2->valueint : 0;
-        int y2 = jy2 && cJSON_IsNumber(jy2) ? jy2->valueint : 0;
+        int x1 = clamp_coord(jx1 && cJSON_IsNumber(jx1) ? jx1->valueint : 0);
+        int y1 = clamp_coord(jy1 && cJSON_IsNumber(jy1) ? jy1->valueint : 0);
+        int x2 = clamp_coord(jx2 && cJSON_IsNumber(jx2) ? jx2->valueint : 0);
+        int y2 = clamp_coord(jy2 && cJSON_IsNumber(jy2) ? jy2->valueint : 0);
         int sw = jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1;
         draw_line(fb, x1, y1, x2, y2, color, sw);
         return;

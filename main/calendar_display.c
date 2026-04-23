@@ -246,9 +246,10 @@ static void cal_draw_grid_lines(fb_t *fb, const cal_layout_t *L)
         if (y < H)
             fb_hline(fb, 0, y, W, COLOR_BLACK);
     }
+    int actual_gh = CAL_GRID_ROWS * L->row_h;
     for (int c = 1; c < CAL_GRID_COLS; c++) {
         int x = c * L->col_w;
-        fb_vline(fb, x, top, gh, COLOR_BLACK);
+        fb_vline(fb, x, top, actual_gh, COLOR_BLACK);
     }
 }
 
@@ -266,7 +267,10 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
     if (is_today) {
         int ccx = cell_x + cw / 2;
         int ccy = cell_y + 8 * s + 8 * s;
-        cal_fill_circle(fb, ccx, ccy, 9 * s, COLOR_RED);
+        int radius = 9 * s;
+        if (radius > cw / 2 - 1) radius = cw / 2 - 1;
+        if (radius < 4) radius = 4;
+        cal_fill_circle(fb, ccx, ccy, radius, COLOR_RED);
     }
 
     char ds[12];
@@ -445,8 +449,13 @@ esp_err_t calendar_display_show(int year, int month)
 esp_err_t calendar_display_show_current(void)
 {
     struct tm tm;
-    if (!time_sync_get_local(&tm))
-        return ESP_ERR_INVALID_STATE;
+    if (!time_sync_get_local(&tm)) {
+        /* SNTP not yet synced — fall back to system localtime
+         * (may be epoch 1970 on first boot, but better than refusing to render) */
+        time_t now = time(NULL);
+        localtime_r(&now, &tm);
+        ESP_LOGW(TAG, "SNTP not synced, using system time for calendar");
+    }
     return calendar_display_show(tm.tm_year + 1900, tm.tm_mon + 1);
 }
 

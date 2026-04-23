@@ -93,8 +93,10 @@ esp_err_t gallery_images_get_handler(httpd_req_t *req)
 
         if (!first) buf[len++] = ',';
         first = false;
+        char esc_name[80];
+        json_escape(esc_name, sizeof(esc_name), ent->d_name);
         len += snprintf(buf + len, cap - len,
-                        "{\"name\":\"%s\",\"bytes\":%d}", ent->d_name, sz);
+                        "{\"name\":\"%s\",\"bytes\":%d}", esc_name, sz);
     }
     closedir(dir);
 

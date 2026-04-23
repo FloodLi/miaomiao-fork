@@ -79,18 +79,22 @@ static void idle_monitor_task(void *arg)
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(CHECK_PERIOD_MS));
 
-        if (!s_cfg.enabled) continue;
-
-        int64_t last;
+        bool enabled;
+        int timeout_s;
         portENTER_CRITICAL(&s_activity_mux);
-        last = s_last_activity_us;
+        enabled   = s_cfg.enabled;
+        timeout_s = s_cfg.idle_timeout_s;
+        int64_t last = s_last_activity_us;
         portEXIT_CRITICAL(&s_activity_mux);
+
+        if (!enabled) continue;
+
         int64_t idle_us = esp_timer_get_time() - last;
-        int64_t threshold_us = (int64_t)s_cfg.idle_timeout_s * 1000000LL;
+        int64_t threshold_us = (int64_t)timeout_s * 1000000LL;
 
         if (idle_us >= threshold_us) {
             ESP_LOGI(TAG, "Idle %d s >= %d s, entering deep sleep",
-                     (int)(idle_us / 1000000LL), s_cfg.idle_timeout_s);
+                     (int)(idle_us / 1000000LL), timeout_s);
             power_mgr_enter_sleep();
         }
     }
@@ -148,7 +152,7 @@ esp_err_t power_mgr_set_config(const power_config_t *cfg)
     portENTER_CRITICAL(&s_activity_mux);
     s_cfg = validated;
     portEXIT_CRITICAL(&s_activity_mux);
-    save_config();
+    save_config();  /* NVS write outside critical section */
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%d min, idle=%d s",
              s_cfg.enabled, s_cfg.interval_min, s_cfg.idle_timeout_s);
     return ESP_OK;

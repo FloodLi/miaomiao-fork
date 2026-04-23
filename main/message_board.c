@@ -28,6 +28,8 @@ static msg_config_t s_cfg = {
     .y_offset  = 0,
 };
 
+static portMUX_TYPE s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
+
 /* ── NVS ──────────────────────────────────────────────────────────── */
 
 static void nvs_load(void)
@@ -113,23 +115,28 @@ static void render_message(void)
         return;
     }
 
-    if (s_cfg.text[0] == '\0') {
+    msg_config_t cfg;
+    portENTER_CRITICAL(&s_cfg_mux);
+    cfg = s_cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
+
+    if (cfg.text[0] == '\0') {
         fb_destroy(fb);
         ESP_LOGW(TAG, "No message to display");
         return;
     }
 
-    int scale = s_cfg.font_size + 1;
+    int scale = cfg.font_size + 1;
     if (scale < 1) scale = 1;
     if (scale > 6) scale = 6;
     int char_h = 16 * scale;
     int line_h = char_h + 2 * scale;
     int max_w  = fb->width - 2 * MARGIN_X;
-    fb_color_t color = (s_cfg.color == 1) ? COLOR_RED : COLOR_BLACK;
+    fb_color_t color = (cfg.color == 1) ? COLOR_RED : COLOR_BLACK;
 
     ESP_LOGI(TAG, "Rendering: scale=%d, color=%d, align=%d, offset=(%d,%d), text_len=%d",
-             scale, s_cfg.color, (int)s_cfg.align, s_cfg.x_offset, s_cfg.y_offset,
-             (int)strlen(s_cfg.text));
+             scale, cfg.color, (int)cfg.align, cfg.x_offset, cfg.y_offset,
+             (int)strlen(cfg.text));
 
     fb_rect(fb, 6, 6, fb->width - 12, fb->height - 12, COLOR_BLACK);
 
@@ -138,7 +145,7 @@ static void render_message(void)
     line_t lines[32];
     int line_count = 0;
 
-    const char *p = s_cfg.text;
+    const char *p = cfg.text;
     const char *line_start = p;
     int cur_w = 0;
 
@@ -180,8 +187,10 @@ static void render_message(void)
         line_count++;
     }
 
+    bool truncated = (*p != '\0' && line_count >= 32);
+
     int total_h = line_count * line_h;
-    int start_y = (fb->height - total_h) / 2 + s_cfg.y_offset;
+    int start_y = (fb->height - total_h) / 2 + cfg.y_offset;
     if (start_y < 0) start_y = 0;
 
     for (int i = 0; i < line_count; i++) {
@@ -189,10 +198,10 @@ static void render_message(void)
         if (y + char_h > fb->height) break;
 
         int x;
-        if (s_cfg.align == MSG_ALIGN_CENTER) {
-            x = (fb->width - lines[i].px_w) / 2 + s_cfg.x_offset;
+        if (cfg.align == MSG_ALIGN_CENTER) {
+            x = (fb->width - lines[i].px_w) / 2 + cfg.x_offset;
         } else {
-            x = MARGIN_X + s_cfg.x_offset;
+            x = MARGIN_X + cfg.x_offset;
         }
 
         char buf[MSG_MAX_LEN + 1];
@@ -202,6 +211,12 @@ static void render_message(void)
         buf[copy_len] = '\0';
 
         fb_utf8_scaled(fb, x, y, buf, color, scale);
+    }
+
+    if (truncated) {
+        int hint_y = start_y + line_count * line_h;
+        if (hint_y + 16 <= fb->height)
+            fb_utf8(fb, (fb->width - 3 * 8) / 2, hint_y, "...", COLOR_BLACK);
     }
 
     /* export and display */
@@ -225,16 +240,20 @@ static void render_message(void)
 esp_err_t message_board_get_config(msg_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cfg_mux);
     *out = s_cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
     return ESP_OK;
 }
 
 esp_err_t message_board_set_config(const msg_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cfg_mux);
     s_cfg = *cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
     nvs_save();
-    ESP_LOGI(TAG, "Config saved (text_len=%d)", (int)strlen(s_cfg.text));
+    ESP_LOGI(TAG, "Config saved (text_len=%d)", (int)strlen(cfg->text));
     return ESP_OK;
 }
 
@@ -257,12 +276,17 @@ esp_err_t message_board_init(void)
 static void render_task(void *arg)
 {
     (void)arg;
-    do {
+    for (;;) {
         s_pending = false;
         ESP_LOGI(TAG, "Render task started");
         render_message();
         ESP_LOGI(TAG, "Render task done");
-    } while (s_pending && s_cfg.text[0]);
+
+        portENTER_CRITICAL(&s_cfg_mux);
+        bool has_text = (s_cfg.text[0] != '\0');
+        portEXIT_CRITICAL(&s_cfg_mux);
+        if (!s_pending || !has_text) break;
+    }
 
     xSemaphoreGive(s_render_mutex);
     vTaskDelete(NULL);

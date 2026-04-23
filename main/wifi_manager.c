@@ -410,9 +410,12 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 esp_err_t wifi_manager_forget(void)
 {
     nvs_erase_credentials();
+
+    portENTER_CRITICAL(&s_sta_mux);
     s_sta_ssid[0] = '\0';
     s_sta_ip[0] = '\0';
     s_sta_connected = false;
+    portEXIT_CRITICAL(&s_sta_mux);
 
     if (s_mode == WIFI_MGR_MODE_APSTA) {
         esp_wifi_disconnect();

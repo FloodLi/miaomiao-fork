@@ -33,7 +33,7 @@ static const char *NVS_NS = "clock";
 
 static clock_config_t s_cfg = {
     .enabled      = false,
-    .style        = 0,
+    .style        = 0,   /* TODO: style > 0 not yet implemented in render_clock() */
     .show_weather = true,
 };
 
@@ -173,11 +173,9 @@ static void render_clock(void)
 
     struct tm tm;
     if (!time_sync_get_local(&tm)) {
-        ESP_LOGW(TAG, "Time not synced yet");
-        fb_destroy(fb);
-        if (s_render_mutex)
-            xSemaphoreGive(s_render_mutex);
-        return;
+        time_t now = time(NULL);
+        localtime_r(&now, &tm);
+        ESP_LOGW(TAG, "SNTP not synced, using system time");
     }
 
     int hour = tm.tm_hour;
@@ -330,7 +328,7 @@ static void render_clock(void)
         if (hour < 6)       snprintf(ampm, sizeof(ampm), "\xe5\x87\x8c\xe6\x99\xa8");
         else if (hour < 12) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8a\xe5\x8d\x88");
         else if (hour < 18) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8b\xe5\x8d\x88");
-        else                snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8b\xe5\x8d\x88");
+        else                snprintf(ampm, sizeof(ampm), "\xe6\x99\x9a\xe4\xb8\x8a");
         fb_utf8_scaled(fb, W / 2 - 16 * sc, bot_y + 50, ampm, COLOR_BLACK, sc);
 
         fb_fill_rect(fb, 16, 16, 16, 4, COLOR_BLACK);
@@ -446,8 +444,7 @@ esp_err_t clock_display_set_config(const clock_config_t *cfg)
 esp_err_t clock_display_show(void)
 {
     if (!time_sync_is_synced()) {
-        ESP_LOGW(TAG, "Time not synced, cannot show clock");
-        return ESP_ERR_INVALID_STATE;
+        ESP_LOGW(TAG, "Time not synced, using system time for clock");
     }
     display_policy_set_manual_screen_active(false);
     if (s_cfg.show_weather)

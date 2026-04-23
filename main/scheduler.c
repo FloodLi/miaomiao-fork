@@ -40,6 +40,8 @@ static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 static char  s_current_image[64];
 static int   s_current_index;
 
+#define NVS_KEY_INDEX  "cur_idx"
+
 /* ── NVS helpers ──────────────────────────────────────────────────── */
 
 static void nvs_load(void)
@@ -58,6 +60,10 @@ static void nvs_load(void)
     if (nvs_get_u8(h, "clk_ovl", &v8) == ESP_OK)
         s_config.clock_overlay = (v8 != 0);
 
+    int32_t idx32;
+    if (nvs_get_i32(h, NVS_KEY_INDEX, &idx32) == ESP_OK && idx32 >= 0)
+        s_current_index = (int)idx32;
+
     nvs_close(h);
     ESP_LOGI(TAG, "NVS loaded: enabled=%d, interval=%lus, mode=%d",
              s_config.enabled, (unsigned long)s_config.interval_sec, s_config.mode);
@@ -72,11 +78,21 @@ static void nvs_save(void)
     nvs_set_u32(h, "interval", s_config.interval_sec);
     nvs_set_u8(h,  "mode",     (uint8_t)s_config.mode);
     nvs_set_u8(h,  "clk_ovl", s_config.clock_overlay ? 1 : 0);
+    nvs_set_i32(h, NVS_KEY_INDEX, (int32_t)s_current_index);
     nvs_commit(h);
     nvs_close(h);
 }
 
 /* ── gallery listing ──────────────────────────────────────────────── */
+
+static void nvs_save_index(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_i32(h, NVS_KEY_INDEX, (int32_t)s_current_index);
+    nvs_commit(h);
+    nvs_close(h);
+}
 
 static int list_images(char out[][64], int max)
 {
@@ -122,6 +138,7 @@ static void show_next_image(void)
         idx = s_current_index % count;
         s_current_index = (idx + 1) % count;
     }
+    nvs_save_index();
 
     char path[160];
     char picked[64];
@@ -183,17 +200,25 @@ static void slideshow_task(void *arg)
     bool shorten_first_interval = true;
 
     for (;;) {
-        if (!s_config.enabled) {
+        slideshow_config_t snap;
+        portENTER_CRITICAL(&s_cfg_mux);
+        snap = s_config;
+        portEXIT_CRITICAL(&s_cfg_mux);
+
+        if (!snap.enabled) {
             xEventGroupWaitBits(s_event, BIT_CFG_CHANGED,
                                 pdTRUE, pdFALSE, portMAX_DELAY);
-            if (s_config.enabled && !display_policy_manual_screen_active()) {
+            portENTER_CRITICAL(&s_cfg_mux);
+            snap = s_config;
+            portEXIT_CRITICAL(&s_cfg_mux);
+            if (snap.enabled && !display_policy_manual_screen_active()) {
                 ESP_LOGI(TAG, "Slideshow enabled, showing first image now");
                 show_next_image();
             }
             continue;
         }
 
-        uint32_t wait_ms = s_config.interval_sec * 1000;
+        uint32_t wait_ms = snap.interval_sec * 1000;
         if (shorten_first_interval) {
             shorten_first_interval = false;
             if (wait_ms > 15000)
@@ -205,9 +230,10 @@ static void slideshow_task(void *arg)
             pdTRUE, pdFALSE, pdMS_TO_TICKS(wait_ms));
 
         if (bits & BIT_CFG_CHANGED) {
-            /* 保存轮播配置常在首帧 15s 等待期内触发，原先会直接 continue 并进入整 interval，
-             * 导致从未执行 show_next_image，网页「当前图片」长期为空。 */
-            if (s_config.enabled && s_current_image[0] == '\0' &&
+            portENTER_CRITICAL(&s_cfg_mux);
+            snap = s_config;
+            portEXIT_CRITICAL(&s_cfg_mux);
+            if (snap.enabled && s_current_image[0] == '\0' &&
                 !display_policy_manual_screen_active()) {
                 ESP_LOGI(TAG, "Config changed, showing first slideshow image");
                 show_next_image();
@@ -216,7 +242,7 @@ static void slideshow_task(void *arg)
         }
         if (bits & BIT_MANUAL_SHOW) continue;
 
-        if (!s_config.enabled) continue;
+        if (!snap.enabled) continue;
 
         /* 全页天气/日历等占屏时暂停切下一张，避免与 HTTPS 刷新同一时段抢网络与刷屏 */
         if (display_policy_manual_screen_active()) {
@@ -339,6 +365,7 @@ esp_err_t scheduler_show_next_image(void)
         idx = s_current_index % count;
         s_current_index = (idx + 1) % count;
     }
+    nvs_save_index();
 
     char path[160];
     char picked[64];

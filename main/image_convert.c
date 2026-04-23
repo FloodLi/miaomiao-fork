@@ -646,9 +646,12 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                 long off = (long)pixel_off + (long)br * (long)row_stride;
                 if (fp) {
                     fseek(fp, off, SEEK_SET);
-                    fread(row, 1, (size_t)row_stride, fp);
+                    if (fread(row, 1, (size_t)row_stride, fp) != (size_t)row_stride)
+                        memset(row, 0xFF, (size_t)row_stride);
                 } else if ((size_t)off + (size_t)row_stride <= mem_len) {
                     memcpy(row, mem + off, (size_t)row_stride);
+                } else {
+                    memset(row, 0xFF, (size_t)row_stride);
                 }
                 last_br = br;
             }
@@ -757,6 +760,11 @@ esp_err_t image_convert_file_to_epd_raw(const char *input_path, const char *out_
     if (magic[0] == 0x89 && magic[1] == 0x50) {
         struct stat st;
         if (stat(input_path, &st) != 0 || st.st_size <= 0) return ESP_FAIL;
+        if (st.st_size > 200 * 1024) {
+            ESP_LOGE(TAG, "PNG too large (%ld bytes, max 200KB) — use JPEG instead",
+                     (long)st.st_size);
+            return ESP_ERR_NO_MEM;
+        }
         uint8_t *buf = (uint8_t *)malloc((size_t)st.st_size);
         if (!buf) { ESP_LOGE(TAG, "PNG file malloc(%ld) failed", (long)st.st_size); return ESP_ERR_NO_MEM; }
         FILE *pf = fopen(input_path, "rb");

@@ -375,8 +375,12 @@ static void render_weather(void)
         fb_utf8_scaled(fb, W * 260 / 648, H * 16 / 480, weekday_str, COLOR_BLACK, sc);
     }
 
-    if (s_cfg.city_name[0])
-        fb_utf8_scaled(fb, W * 480 / 648, H * 16 / 480, s_cfg.city_name, COLOR_BLACK, sc);
+    if (s_cfg.city_name[0]) {
+        int city_x = W * 480 / 648;
+        int city_max = W - city_x - MX;
+        if (city_max < 16) city_max = 16;
+        fb_utf8_scaled_maxw(fb, city_x, H * 16 / 480, s_cfg.city_name, COLOR_BLACK, sc, city_max);
+    }
 
     int hdr_y = H * 54 / 480;
     fb_hline(fb, MX, hdr_y, W - 2 * MX, COLOR_BLACK);
@@ -389,7 +393,12 @@ static void render_weather(void)
     snprintf(temp_str, sizeof(temp_str), "%d'C", s_data.now.temp);
     fb_utf8_scaled(fb, MX + 60, H * 68 / 480, temp_str, COLOR_BLACK, big ? 4 : 2);
 
-    fb_utf8_scaled(fb, MX + 60, H * 140 / 480, s_data.now.text, COLOR_BLACK, sc);
+    {
+        int txt_x = MX + 60;
+        int txt_max = rx - txt_x - 8;
+        if (txt_max < 16) txt_max = 16;
+        fb_utf8_scaled_maxw(fb, txt_x, H * 140 / 480, s_data.now.text, COLOR_BLACK, sc, txt_max);
+    }
 
     int rx = W * 360 / 648;
 
@@ -425,17 +434,21 @@ static void render_weather(void)
             snprintf(md, sizeof(md), "%s", d + 5);
         else
             snprintf(md, sizeof(md), "%s", d);
-        fb_utf8_scaled(fb, bx + 8, by, md, COLOR_BLACK, sc);
+        int col_max = col_w - 16;
+        if (col_max < 16) col_max = 16;
+        fb_utf8_scaled_maxw(fb, bx + 8, by, md, COLOR_BLACK, sc, col_max);
 
         const uint8_t *di = get_icon(s_data.daily[i].icon_day);
-        fb_bitmap(fb, bx + col_w - 30, by + 4, 24, 24, di, COLOR_BLACK);
+        int icon_x = bx + col_w - 30;
+        if (icon_x < bx + 8) icon_x = bx + 8;
+        fb_bitmap(fb, icon_x, by + 4, 24, 24, di, COLOR_BLACK);
 
         char t_str[32];
         snprintf(t_str, sizeof(t_str), "%d/%d'C",
                  s_data.daily[i].temp_max, s_data.daily[i].temp_min);
-        fb_utf8_scaled(fb, bx + 8, by + H * 40 / 480, t_str, COLOR_BLACK, sc);
+        fb_utf8_scaled_maxw(fb, bx + 8, by + H * 40 / 480, t_str, COLOR_BLACK, sc, col_max);
 
-        fb_utf8_scaled(fb, bx + 8, by + H * 76 / 480, s_data.daily[i].text_day, COLOR_BLACK, sc);
+        fb_utf8_scaled_maxw(fb, bx + 8, by + H * 76 / 480, s_data.daily[i].text_day, COLOR_BLACK, sc, col_max);
     }
 
     char press_str[48];
@@ -446,7 +459,11 @@ static void render_weather(void)
     char footer[64];
     snprintf(footer, sizeof(footer), "\xe6\x9b\xb4\xe6\x96\xb0 %s",
              s_data.update_time);
-    fb_utf8(fb, W - 200, H - 60, footer, COLOR_BLACK);
+    /* "更新"=2×16px + space=8px + "HH:MM"≈5×8px = 80px at scale 1 */
+    int footer_w = 2 * 16 + 8 + (int)strlen(s_data.update_time) * 8;
+    int footer_x = W - footer_w - MX;
+    if (footer_x < MX) footer_x = MX;
+    fb_utf8(fb, footer_x, H - 60, footer, COLOR_BLACK);
 
     /* export and display */
     const char *raw_path = "/spiffs/image.bin";

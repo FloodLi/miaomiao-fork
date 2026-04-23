@@ -184,7 +184,9 @@ static void quick_refresh_and_sleep(void)
 
     /* Init content modules (they load NVS config) */
     ESP_ERROR_CHECK(scheduler_init());
-    scheduler_boot_complete();
+    /* NOTE: do NOT call scheduler_boot_complete() here.
+     * The slideshow_task must stay blocked — we only need
+     * scheduler_show_next_image() which works without it. */
     ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
     ESP_ERROR_CHECK(timetable_init());
@@ -206,19 +208,26 @@ static void quick_refresh_and_sleep(void)
              mode, display_mode_name(mode));
 
     esp_err_t err = display_mode_show(mode);
-    int      ok_mode = mode;
+    bool used_fallback = false;
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Quick-refresh: mode %d failed, trying clock", mode);
-        err    = display_mode_show(0);
-        ok_mode = 0;
+        err = display_mode_show(0);
+        used_fallback = true;
     }
 
     if (err == ESP_OK) {
-        power_mgr_save_mode(ok_mode);
-        ESP_LOGI(TAG, "Quick-refresh: content displayed");
-        /* 月历在独立任务里刷屏；若立即深睡会在刷新完成前掉电，屏不更新或异常 */
-        if (strcmp(display_mode_name(ok_mode), "calendar") == 0)
+        if (!used_fallback) {
+            /* Original mode succeeded — no need to update NVS */
+            ESP_LOGI(TAG, "Quick-refresh: mode %d displayed", mode);
+        } else {
+            /* Fell back to clock for *this* wake-up only.
+             * Keep the user's preferred mode in NVS so next wake-up
+             * retries it (e.g. SNTP may succeed by then). */
+            ESP_LOGW(TAG, "Quick-refresh: showing clock as fallback, "
+                     "keeping saved mode %d for next wake", mode);
+        }
+        if (strcmp(display_mode_name(used_fallback ? 0 : mode), "calendar") == 0)
             calendar_display_wait_render_idle();
     } else {
         ESP_LOGW(TAG, "Quick-refresh: clock fallback also failed");
