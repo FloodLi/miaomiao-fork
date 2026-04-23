@@ -251,6 +251,14 @@ static bool load_user_icon(const char *name, uint8_t bmp[32])
 #define CANVAS_COORD_MIN  (-2000)
 #define CANVAS_COORD_MAX  (2000)
 #define CANVAS_DIM_MAX    (2000)
+#define CANVAS_STROKE_MAX 64
+
+static inline int clamp_stroke(int sw)
+{
+    if (sw < 1) return 1;
+    if (sw > CANVAS_STROKE_MAX) return CANVAS_STROKE_MAX;
+    return sw;
+}
 
 static inline int clamp_coord(int v) {
     if (v < CANVAS_COORD_MIN) return CANVAS_COORD_MIN;
@@ -320,7 +328,7 @@ static void render_element(fb_t *fb, cJSON *el)
         int cy = clamp_coord(jy  && cJSON_IsNumber(jy)  ? jy->valueint  : 0);
         int rx = clamp_dim(jrx && cJSON_IsNumber(jrx) ? jrx->valueint : 0);
         int ry = clamp_dim(jry && cJSON_IsNumber(jry) ? jry->valueint : 0);
-        int sw = jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1;
+        int sw = clamp_stroke(jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1);
         bool fill = jf && cJSON_IsTrue(jf);
         draw_ellipse(fb, cx, cy, rx, ry, color, fill, sw);
         return;
@@ -337,7 +345,7 @@ static void render_element(fb_t *fb, cJSON *el)
         int y1 = clamp_coord(jy1 && cJSON_IsNumber(jy1) ? jy1->valueint : 0);
         int x2 = clamp_coord(jx2 && cJSON_IsNumber(jx2) ? jx2->valueint : 0);
         int y2 = clamp_coord(jy2 && cJSON_IsNumber(jy2) ? jy2->valueint : 0);
-        int sw = jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1;
+        int sw = clamp_stroke(jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1);
         draw_line(fb, x1, y1, x2, y2, color, sw);
         return;
     }
@@ -349,8 +357,8 @@ static void render_element(fb_t *fb, cJSON *el)
         cJSON *jx = cJSON_GetObjectItem(el, "x");
         cJSON *jy = cJSON_GetObjectItem(el, "y");
         cJSON *js = cJSON_GetObjectItem(el, "scale");
-        int x = jx && cJSON_IsNumber(jx) ? jx->valueint : 0;
-        int y = jy && cJSON_IsNumber(jy) ? jy->valueint : 0;
+        int x = clamp_coord(jx && cJSON_IsNumber(jx) ? jx->valueint : 0);
+        int y = clamp_coord(jy && cJSON_IsNumber(jy) ? jy->valueint : 0);
         int scale = js && cJSON_IsNumber(js) ? js->valueint : 1;
         if (scale < 1) scale = 1;
         if (scale > 4) scale = 4;
@@ -358,7 +366,7 @@ static void render_element(fb_t *fb, cJSON *el)
         const uint8_t *bmp = canvas_find_builtin_icon(name);
         uint8_t user_bmp[32];
         if (!bmp) {
-            if (load_user_icon(name, user_bmp))
+            if (is_valid_name(name) && load_user_icon(name, user_bmp))
                 bmp = user_bmp;
         }
         if (!bmp) return;
@@ -391,8 +399,8 @@ static void render_element(fb_t *fb, cJSON *el)
         cJSON *jy  = cJSON_GetObjectItem(el, "y");
         cJSON *jdw = cJSON_GetObjectItem(el, "dw");
         cJSON *jdh = cJSON_GetObjectItem(el, "dh");
-        int x  = jx  && cJSON_IsNumber(jx)  ? jx->valueint  : 0;
-        int y  = jy  && cJSON_IsNumber(jy)  ? jy->valueint  : 0;
+        int x  = clamp_coord(jx  && cJSON_IsNumber(jx)  ? jx->valueint  : 0);
+        int y  = clamp_coord(jy  && cJSON_IsNumber(jy)  ? jy->valueint  : 0);
         int dw = jdw && cJSON_IsNumber(jdw) ? jdw->valueint : 0;
         int dh = jdh && cJSON_IsNumber(jdh) ? jdh->valueint : 0;
 
@@ -408,6 +416,9 @@ static void render_element(fb_t *fb, cJSON *el)
         }
         if (dw <= 0) dw = img_w;
         if (dh <= 0) dh = img_h;
+        dw = clamp_dim(dw);
+        dh = clamp_dim(dh);
+        if (dw <= 0 || dh <= 0) { fclose(f); return; }
         int stride = (img_w + 7) / 8;
         uint8_t *row_buf = malloc((size_t)stride);
         if (!row_buf) { fclose(f); return; }
@@ -416,7 +427,7 @@ static void render_element(fb_t *fb, cJSON *el)
         for (int ty = 0; ty < dh; ty++) {
             int sy = ty * img_h / dh;
             if (sy != prev_sy) {
-                fseek(f, 4 + (long)sy * stride, SEEK_SET);
+                if (fseek(f, 4 + (long)sy * stride, SEEK_SET) != 0) break;
                 if (fread(row_buf, 1, (size_t)stride, f) < (size_t)stride) break;
                 prev_sy = sy;
             }
@@ -435,7 +446,7 @@ static void render_element(fb_t *fb, cJSON *el)
         /* pts 是 [[x0,y0],[x1,y1],...] 数组 */
         cJSON *jpts = cJSON_GetObjectItem(el, "pts");
         cJSON *jsw  = cJSON_GetObjectItem(el, "sw");
-        int sw = jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1;
+        int sw = clamp_stroke(jsw && cJSON_IsNumber(jsw) ? jsw->valueint : 1);
         if (!cJSON_IsArray(jpts)) return;
         int n = cJSON_GetArraySize(jpts);
         if (n < 2) return;
@@ -446,8 +457,13 @@ static void render_element(fb_t *fb, cJSON *el)
             cJSON *x0j = cJSON_GetArrayItem(p0, 0), *y0j = cJSON_GetArrayItem(p0, 1);
             cJSON *x1j = cJSON_GetArrayItem(p1, 0), *y1j = cJSON_GetArrayItem(p1, 1);
             if (!x0j || !y0j || !x1j || !y1j) continue;
-            draw_line(fb, x0j->valueint, y0j->valueint,
-                          x1j->valueint, y1j->valueint, color, sw);
+            if (!cJSON_IsNumber(x0j) || !cJSON_IsNumber(y0j) ||
+                !cJSON_IsNumber(x1j) || !cJSON_IsNumber(y1j)) continue;
+            int xa = clamp_coord(x0j->valueint);
+            int ya = clamp_coord(y0j->valueint);
+            int xb = clamp_coord(x1j->valueint);
+            int yb = clamp_coord(y1j->valueint);
+            draw_line(fb, xa, ya, xb, yb, color, sw);
         }
         return;
     }
@@ -762,6 +778,7 @@ esp_err_t canvas_board_save_user_icon(const char *name,
 esp_err_t canvas_board_delete_user_icon(const char *name)
 {
     if (!name) return ESP_ERR_INVALID_ARG;
+    if (!is_valid_name(name)) return ESP_ERR_INVALID_ARG;
     char path[128];
     snprintf(path, sizeof(path), "%s/%s.bin", CANVAS_ICONS_DIR, name);
     return (remove(path) == 0) ? ESP_OK : ESP_FAIL;

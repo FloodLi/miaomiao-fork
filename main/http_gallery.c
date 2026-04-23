@@ -1,6 +1,7 @@
 #include "http_internal.h"
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,25 @@
 #include "power_mgr.h"
 
 static const char *TAG = "http_gal";
+
+/** 追加 JSON 片段；*len 为已用长度（不含 '\\0'），cap 为 buf 总容量 */
+static bool gallery_json_append(char *buf, size_t cap, size_t *len, const char *fmt, ...)
+{
+    if (*len >= cap) return true;
+    size_t avail = cap - *len;
+    va_list ap;
+    va_start(ap, fmt);
+    int w = vsnprintf(buf + *len, avail, fmt, ap);
+    va_end(ap);
+    if (w < 0) return false;
+    if ((size_t)w >= avail) {
+        *len = cap - 1;
+        buf[*len] = '\0';
+        return true;
+    }
+    *len += (size_t)w;
+    return true;
+}
 
 /* 白名单验证文件名：只允许字母、数字、点、下划线、连字符 */
 static bool is_safe_filename(const char *name)
@@ -68,7 +88,7 @@ esp_err_t gallery_images_get_handler(httpd_req_t *req)
     }
 
     size_t len = 0;
-    len += snprintf(buf + len, cap - len, "{\"items\":[");
+    (void)gallery_json_append(buf, cap, &len, "{\"items\":[");
 
     struct dirent *ent;
     bool first = true;
@@ -91,16 +111,21 @@ esp_err_t gallery_images_get_handler(httpd_req_t *req)
             cap = newcap;
         }
 
-        if (!first) buf[len++] = ',';
+        if (!first) {
+            if (len + 1 < cap)
+                buf[len++] = ',';
+            else
+                break;
+        }
         first = false;
         char esc_name[80];
         json_escape(esc_name, sizeof(esc_name), ent->d_name);
-        len += snprintf(buf + len, cap - len,
-                        "{\"name\":\"%s\",\"bytes\":%d}", esc_name, sz);
+        if (!gallery_json_append(buf, cap, &len, "{\"name\":\"%s\",\"bytes\":%d}", esc_name, sz))
+            break;
     }
     closedir(dir);
 
-    len += snprintf(buf + len, cap - len, "]}");
+    (void)gallery_json_append(buf, cap, &len, "]}");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, buf, (ssize_t)len);
     free(buf);

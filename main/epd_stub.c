@@ -147,6 +147,11 @@ static void nvs_load_panel(void)
     }
 }
 
+void epd_load_panel_from_nvs(void)
+{
+    nvs_load_panel();
+}
+
 static int busy_idle_effective(void)
 {
     if (s_busy_idle_level == 0 || s_busy_idle_level == 1)

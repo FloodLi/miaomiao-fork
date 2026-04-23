@@ -117,6 +117,13 @@ static void show_next_image(void)
 {
     display_policy_set_manual_screen_active(false);
 
+    slideshow_mode_t mode;
+    bool clock_ovl;
+    portENTER_CRITICAL(&s_cfg_mux);
+    mode       = s_config.mode;
+    clock_ovl  = s_config.clock_overlay;
+    portEXIT_CRITICAL(&s_cfg_mux);
+
     /* heap-allocate the gallery list to save ~2KB stack */
     char (*names)[64] = calloc(MAX_GALLERY, 64);
     if (!names) {
@@ -132,13 +139,13 @@ static void show_next_image(void)
     }
 
     int idx;
-    if (s_config.mode == SLIDESHOW_RANDOM) {
+    if (mode == SLIDESHOW_RANDOM) {
         idx = (int)(esp_random() % (uint32_t)count);
     } else {
+        portENTER_CRITICAL(&s_cfg_mux);
         idx = s_current_index % count;
-        s_current_index = (idx + 1) % count;
+        portEXIT_CRITICAL(&s_cfg_mux);
     }
-    nvs_save_index();
 
     char path[160];
     char picked[64];
@@ -156,11 +163,7 @@ static void show_next_image(void)
         return;
     }
 
-    /* 仅在转换成功后记录文件名，供 GET /slideshow 的 current_image 与网页一致 */
-    strncpy(s_current_image, picked, sizeof(s_current_image) - 1);
-    s_current_image[sizeof(s_current_image) - 1] = '\0';
-
-    if (s_config.clock_overlay && time_sync_is_synced()) {
+    if (clock_ovl && time_sync_is_synced()) {
         fb_t *fb = fb_create();
         if (fb) {
             fb_import(fb, raw_path);
@@ -181,7 +184,19 @@ static void show_next_image(void)
     err = epd_display_from_file(raw_path);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Display failed: %s", esp_err_to_name(err));
+        return;
     }
+
+    /* 顺序模式：仅在转换+刷屏均成功后再前进索引并落盘，避免失败时跳过画廊项 */
+    if (mode != SLIDESHOW_RANDOM) {
+        portENTER_CRITICAL(&s_cfg_mux);
+        s_current_index = (idx + 1) % count;
+        portEXIT_CRITICAL(&s_cfg_mux);
+        nvs_save_index();
+    }
+
+    strncpy(s_current_image, picked, sizeof(s_current_image) - 1);
+    s_current_image[sizeof(s_current_image) - 1] = '\0';
 }
 
 /* ── FreeRTOS task ────────────────────────────────────────────────── */
@@ -331,7 +346,11 @@ void scheduler_set_current_image_name(const char *basename)
 void scheduler_notify_manual_show(void)
 {
     /* 轮播未开启时无需置位；避免在无意义路径上频繁 xEventGroupSetBits（SMP 下偶发损坏等待链表） */
-    if (!s_config.enabled)
+    bool en;
+    portENTER_CRITICAL(&s_cfg_mux);
+    en = s_config.enabled;
+    portEXIT_CRITICAL(&s_cfg_mux);
+    if (!en)
         return;
     if (!s_event)
         return;
@@ -348,6 +367,11 @@ esp_err_t scheduler_show_next_image(void)
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
 
+    slideshow_mode_t mode;
+    portENTER_CRITICAL(&s_cfg_mux);
+    mode = s_config.mode;
+    portEXIT_CRITICAL(&s_cfg_mux);
+
     char (*names)[64] = calloc(MAX_GALLERY, 64);
     if (!names) return ESP_ERR_NO_MEM;
 
@@ -359,13 +383,13 @@ esp_err_t scheduler_show_next_image(void)
     }
 
     int idx;
-    if (s_config.mode == SLIDESHOW_RANDOM) {
+    if (mode == SLIDESHOW_RANDOM) {
         idx = (int)(esp_random() % (uint32_t)count);
     } else {
+        portENTER_CRITICAL(&s_cfg_mux);
         idx = s_current_index % count;
-        s_current_index = (idx + 1) % count;
+        portEXIT_CRITICAL(&s_cfg_mux);
     }
-    nvs_save_index();
 
     char path[160];
     char picked[64];
@@ -378,17 +402,27 @@ esp_err_t scheduler_show_next_image(void)
 
     const char *raw_path = "/spiffs/image.bin";
     esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK)
+        return err;
+
+    err = epd_display_from_file(raw_path);
+    if (err != ESP_OK)
+        return err;
+
+    if (mode != SLIDESHOW_RANDOM) {
+        portENTER_CRITICAL(&s_cfg_mux);
+        s_current_index = (idx + 1) % count;
+        portEXIT_CRITICAL(&s_cfg_mux);
+        nvs_save_index();
+    }
 
     strncpy(s_current_image, picked, sizeof(s_current_image) - 1);
     s_current_image[sizeof(s_current_image) - 1] = '\0';
 
-    err = epd_display_from_file(raw_path);
-    if (err == ESP_OK) {
-        slideshow_config_t sc;
-        scheduler_get_config(&sc);
-        /* 轮播开启时交给定时任务切下一张；关闭时保持占屏，避免时钟等自动刷新盖住画廊 */
-        display_policy_set_manual_screen_active(!sc.enabled);
-    }
-    return err;
+    slideshow_config_t sc;
+    scheduler_get_config(&sc);
+    /* 轮播开启时交给定时任务切下一张；关闭时保持占屏，避免时钟等自动刷新盖住画廊 */
+    display_policy_set_manual_screen_active(!sc.enabled);
+
+    return ESP_OK;
 }

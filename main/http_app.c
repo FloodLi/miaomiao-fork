@@ -161,24 +161,39 @@ static esp_err_t auth_config_post_handler(httpd_req_t *req)
     cJSON *jp = cJSON_GetObjectItem(root, "pass");
 
     nvs_handle_t h;
-    if (nvs_open(AUTH_NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
-        if (ju && cJSON_IsString(ju) && jp && cJSON_IsString(jp) &&
-            strlen(ju->valuestring) > 0 && strlen(jp->valuestring) > 0) {
-            char user_trunc[32], pass_trunc[64];
-            strncpy(user_trunc, ju->valuestring, sizeof(user_trunc) - 1);
-            user_trunc[sizeof(user_trunc) - 1] = '\0';
-            strncpy(pass_trunc, jp->valuestring, sizeof(pass_trunc) - 1);
-            pass_trunc[sizeof(pass_trunc) - 1] = '\0';
-            nvs_set_str(h, AUTH_NVS_USER, user_trunc);
-            nvs_set_str(h, AUTH_NVS_PASS, pass_trunc);
-        } else {
-            nvs_erase_key(h, AUTH_NVS_USER);
-            nvs_erase_key(h, AUTH_NVS_PASS);
-        }
-        nvs_commit(h);
-        nvs_close(h);
+    esp_err_t nerr = nvs_open(AUTH_NVS_NS, NVS_READWRITE, &h);
+    if (nerr != ESP_OK) {
+        cJSON_Delete(root);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"NVS 打开失败\"}");
+        return ESP_OK;
     }
+
+    esp_err_t op = ESP_OK;
+    if (ju && cJSON_IsString(ju) && jp && cJSON_IsString(jp) &&
+        strlen(ju->valuestring) > 0 && strlen(jp->valuestring) > 0) {
+        char user_trunc[32], pass_trunc[64];
+        strncpy(user_trunc, ju->valuestring, sizeof(user_trunc) - 1);
+        user_trunc[sizeof(user_trunc) - 1] = '\0';
+        strncpy(pass_trunc, jp->valuestring, sizeof(pass_trunc) - 1);
+        pass_trunc[sizeof(pass_trunc) - 1] = '\0';
+        op = nvs_set_str(h, AUTH_NVS_USER, user_trunc);
+        if (op == ESP_OK)
+            op = nvs_set_str(h, AUTH_NVS_PASS, pass_trunc);
+    } else {
+        (void)nvs_erase_key(h, AUTH_NVS_USER);
+        (void)nvs_erase_key(h, AUTH_NVS_PASS);
+    }
+    if (op == ESP_OK)
+        op = nvs_commit(h);
+    nvs_close(h);
     cJSON_Delete(root);
+
+    if (op != ESP_OK) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"凭据未保存\"}");
+        return ESP_OK;
+    }
 
     http_auth_load_from_nvs();
 

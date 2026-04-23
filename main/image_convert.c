@@ -74,9 +74,50 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
 
 typedef struct { int16_t r, g, b; } fs_err_t;
 
-#define FS_RED_R 200
-#define FS_RED_G  30
-#define FS_RED_B  30
+/* 略偏橙的「目标红」，与常见 JPG 里的红/砖红更近，缩小 dr，红墨更容易胜出 */
+#define FS_RED_R 196
+#define FS_RED_G  38
+#define FS_RED_B  34
+
+/**
+ * 允许映射红墨的像素：在拦住真灰（chroma 过低）的前提下尽量放宽。
+ * - 色相扇区 + 饱和度
+ * - 或 R 为最大通道且明显强于 G/B（暗红、棕红、部分肤色旁物体）
+ */
+static bool fs_red_eligible(uint8_t r, uint8_t g, uint8_t b)
+{
+    int ri = (int)r, gi = (int)g, bi = (int)b;
+    int max_c = ri;
+    if (gi > max_c) max_c = gi;
+    if (bi > max_c) max_c = bi;
+    int min_c = ri;
+    if (gi < min_c) min_c = gi;
+    if (bi < min_c) min_c = bi;
+    int chroma = max_c - min_c;
+    if (chroma < 12 || max_c < 18)
+        return false;
+
+    int hue6 = 0;
+    if (max_c == ri)
+        hue6 = ((gi - bi) * 60) / chroma;
+    else if (max_c == gi)
+        hue6 = 120 + ((bi - ri) * 60) / chroma;
+    else
+        hue6 = 240 + ((ri - gi) * 60) / chroma;
+    if (hue6 < 0)
+        hue6 += 360;
+
+    int sat256 = (chroma * 256) / (max_c > 0 ? max_c : 1);
+    bool hue_sat = (hue6 <= 62 || hue6 >= 298) && sat256 > 38;
+
+    bool r_led = (max_c == ri) && ri >= 46 && (gi + bi) * 2 <= ri * 3 + 8 && chroma >= 14;
+
+    return hue_sat || r_led;
+}
+
+/* 与黑比距离时给红墨加权：dr 可乘以 RED_VS_BLACK_NUM/DEN 再与 db 比（仍先判白） */
+#define FS_RED_VS_BLACK_NUM  100
+#define FS_RED_VS_BLACK_DEN  118
 
 static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
                           uint8_t *blk, uint8_t *red_plane,
@@ -106,9 +147,11 @@ static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
             int32_t dr = (rv - FS_RED_R) * (rv - FS_RED_R) +
                          (gv - FS_RED_G) * (gv - FS_RED_G) +
                          (bv - FS_RED_B) * (bv - FS_RED_B);
+            bool allow_red = fs_red_eligible((uint8_t)rv, (uint8_t)gv, (uint8_t)bv);
             if (dw <= db && dw <= dr) {
                 cr = cg = cb = 255;
-            } else if (dr < db) {
+            } else if (allow_red &&
+                       (int64_t)dr * FS_RED_VS_BLACK_DEN <= (int64_t)db * FS_RED_VS_BLACK_NUM) {
                 red_plane[bp] |= bit;
                 blk[bp] &= ~bit;
                 cr = FS_RED_R; cg = FS_RED_G; cb = FS_RED_B;

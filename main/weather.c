@@ -469,10 +469,12 @@ static void render_weather(void)
     esp_err_t err = fb_export(fb, raw_path);
     fb_destroy(fb);
 
-    if (err == ESP_OK) {
+    if (err == ESP_OK && epd_is_ready()) {
         epd_display_from_file(raw_path);
         scheduler_notify_manual_show();
         ESP_LOGI(TAG, "Weather displayed on EPD");
+    } else if (err == ESP_OK) {
+        ESP_LOGW(TAG, "Weather frame ready but EPD not ready, skip refresh");
     }
 }
 

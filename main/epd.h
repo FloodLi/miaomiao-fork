@@ -9,6 +9,13 @@ typedef enum {
     EPD_PANEL_583_BWR  = 1,   /* 5.83" 648x480 BW+Red,UC8179 */
 } epd_panel_t;
 
+/**
+ * 从 NVS 读取面板类型 / busy_idle（不写 SPI、不初始化墨水屏）。
+ * 在 epd_init() 之前调用，便于 HTTP 已启动后 /panel_config 与网页使用正确分辨率；
+ * 换屏后若 NVS 仍是小屏，先起网再改配置可避免长时间卡在 BUSY 等待。
+ */
+void         epd_load_panel_from_nvs(void);
+
 esp_err_t    epd_init(void);
 /** false 直至 epd_init() 成功返回；HTTP 等应在刷图前检查 */
 bool         epd_is_ready(void);

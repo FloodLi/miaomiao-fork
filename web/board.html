@@ -760,7 +760,9 @@ async function imageFileTo1bit(file, maxW, maxH) {
             }
             const oc = document.createElement('canvas');
             oc.width = w; oc.height = h;
-            const cx = oc.getContext('2d');
+            const cx = oc.getContext('2d', { willReadFrequently: true });
+            /* 关闭平滑：双线性插值会让中灰变多，1-bit 抖动后发糊、与设备端最近邻缩放观感不一致 */
+            cx.imageSmoothingEnabled = false;
             cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);
             cx.drawImage(img, 0, 0, w, h);
             const id = cx.getImageData(0, 0, w, h);

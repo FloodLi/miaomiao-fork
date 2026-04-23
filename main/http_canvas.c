@@ -371,6 +371,10 @@ esp_err_t canvas_image_delete_post(httpd_req_t *req)
     }
 
     esp_err_t err = canvas_board_delete_image(name);
+    if (err == ESP_ERR_INVALID_ARG) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "名称无效");
+        return ESP_OK;
+    }
     char json[64];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
@@ -398,6 +402,10 @@ esp_err_t canvas_icon_delete_post(httpd_req_t *req)
     }
 
     esp_err_t err = canvas_board_delete_user_icon(name);
+    if (err == ESP_ERR_INVALID_ARG) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "名称无效");
+        return ESP_OK;
+    }
     char json[64];
     snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
     httpd_resp_set_type(req, "application/json");

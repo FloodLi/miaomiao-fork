@@ -260,6 +260,17 @@ static void full_boot(void)
                  wifi_manager_get_ap_ssid());
     }
 
+    /* 先读 NVS 再起 HTTP：换屏后 NVS 未改时 epd_init 可能长时间等 BUSY，httpd 仍可响应 */
+    epd_load_panel_from_nvs();
+    ESP_LOGI(TAG, "NVS panel preset: %d (%dx%d) — open /config.html if hardware differs",
+             (int)epd_get_panel(), epd_width(), epd_height());
+
+    http_app_config_t cfg = {
+        .mount_path = "/spiffs",
+        .upload_path = "/spiffs/upload.jpg",
+    };
+    ESP_ERROR_CHECK(http_app_start(&cfg));
+
     ESP_ERROR_CHECK(epd_init());
 
     display_policy_set_manual_screen_active(true);
@@ -281,12 +292,6 @@ static void full_boot(void)
     display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
     display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
     display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
-
-    http_app_config_t cfg = {
-        .mount_path = "/spiffs",
-        .upload_path = "/spiffs/upload.jpg",
-    };
-    ESP_ERROR_CHECK(http_app_start(&cfg));
 
     boot_display_route();
     scheduler_boot_complete();
