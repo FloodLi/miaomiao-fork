@@ -393,14 +393,13 @@ static void render_weather(void)
     snprintf(temp_str, sizeof(temp_str), "%d'C", s_data.now.temp);
     fb_utf8_scaled(fb, MX + 60, H * 68 / 480, temp_str, COLOR_BLACK, big ? 4 : 2);
 
+    int rx = W * 360 / 648;
     {
         int txt_x = MX + 60;
         int txt_max = rx - txt_x - 8;
         if (txt_max < 16) txt_max = 16;
         fb_utf8_scaled_maxw(fb, txt_x, H * 140 / 480, s_data.now.text, COLOR_BLACK, sc, txt_max);
     }
-
-    int rx = W * 360 / 648;
 
     char fl_str[48];
     snprintf(fl_str, sizeof(fl_str), "\xe4\xbd\x93\xe6\x84\x9f %d\xc2\xb0""C",
