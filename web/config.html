@@ -528,7 +528,7 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
   <div class="card">
     <div class="hd">
       <div class="title" style="font-size:16px">低功耗 / 深度睡眠</div>
-      <div class="sub">启用后，设备在闲置超时后自动进入深度睡眠。由定时器或按键 SW3/SW4/SW5（GPIO 9/46/3，按下为高）唤醒。</div>
+      <div class="sub">启用后，设备在闲置超时后自动进入深度睡眠。定时器可唤醒；按键仅 <b>SW3/SW5（GPIO 9/3）</b> 支持深睡 EXT1 唤醒（ESP32-S3 芯片限制）。SW4（GPIO46）运行中可用，深睡后请按两侧键或等定时唤醒。</div>
     </div>
     <div class="bd">
       <div class="form-row">

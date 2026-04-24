@@ -25,9 +25,13 @@ static const char *TAG = "power";
 #define CHECK_PERIOD_MS        10000
 #define IDLE_TASK_STACK        4096
 
-/* 与原理图一致：SW3=9 上一模式，SW4=46 刷新，SW5=3 下一模式（见 button.c） */
+/*
+ * 按键引脚见 button.c（SW3=9 / SW4=46 / SW5=3）。
+ * EXT1 深睡唤醒：ESP32-S3 仅允许 RTC GPIO 0–21（见 ESP-IDF sleep_modes 文档），
+ * GPIO46 不能参与 EXT1，掩码里若含 46 会导致 esp_sleep_enable_ext1_wakeup 失败、按键全不能唤醒。
+ * SW4 仍可在运行时使用；深睡后请用 SW3 或 SW5 唤醒，或等定时唤醒。
+ */
 #define WAKE_GPIO_SW3  9
-#define WAKE_GPIO_SW4 46
 #define WAKE_GPIO_SW5  3
 
 static power_config_t s_cfg = {
@@ -196,12 +200,17 @@ void power_mgr_enter_sleep(void)
     uint64_t sleep_us = (uint64_t)s_cfg.interval_min * 60ULL * 1000000ULL;
     esp_sleep_enable_timer_wakeup(sleep_us);
 
-    uint64_t gpio_mask = (1ULL << WAKE_GPIO_SW3) | (1ULL << WAKE_GPIO_SW4) |
-                         (1ULL << WAKE_GPIO_SW5);
-    esp_sleep_enable_ext1_wakeup(gpio_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
+    uint64_t gpio_mask =
+        (1ULL << WAKE_GPIO_SW3) | (1ULL << WAKE_GPIO_SW5);
+    esp_err_t werr =
+        esp_sleep_enable_ext1_wakeup(gpio_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
+    if (werr != ESP_OK)
+        ESP_LOGE(TAG, "ext1 wakeup config failed: %s (check RTC GPIO mask)",
+                 esp_err_to_name(werr));
 
-    ESP_LOGI(TAG, "Entering deep sleep for %d min (GPIO 3/46/9 can wake)",
-             s_cfg.interval_min);
+    ESP_LOGI(TAG,
+             "Entering deep sleep for %d min (EXT1: GPIO %d/%d only; SW4 not on RTC)",
+             s_cfg.interval_min, WAKE_GPIO_SW5, WAKE_GPIO_SW3);
 
     /* Wait for any in-progress EPD refresh before sleeping */
     int wait_count = 0;

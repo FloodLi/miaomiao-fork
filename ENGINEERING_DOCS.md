@@ -463,7 +463,7 @@ fb_bitmap(fb, x, y, black, red, w, h);
 **功能:**
 - 深度睡眠
 - 定时器唤醒
-- EXT1 GPIO 唤醒
+- EXT1 GPIO 唤醒（ESP32-S3 仅 **RTC GPIO 0–21**；原理图 SW4=GPIO46 **不可**写入 EXT1 掩码，否则 `esp_sleep_enable_ext1_wakeup` 失败、**两侧键也会无法唤醒**）
 - 闲置监控
 
 **功耗模式:**
