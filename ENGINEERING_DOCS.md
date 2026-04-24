@@ -189,9 +189,9 @@ USB (CH340):
 按键:
   BOOT = GPIO0
   RST  = GPIO18
-  SW3  = GPIO3
+  SW3  = GPIO9
   SW4  = GPIO46
-  SW5  = GPIO9
+  SW5  = GPIO3
 
 电源管理:
   EN   = GPIO1

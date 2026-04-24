@@ -25,10 +25,10 @@ static const char *TAG = "power";
 #define CHECK_PERIOD_MS        10000
 #define IDLE_TASK_STACK        4096
 
-/* 与原理图一致：SW3=3 上一模式，SW4=46 刷新，SW5=9 下一模式（见 button.c） */
-#define WAKE_GPIO_SW3  3
+/* 与原理图一致：SW3=9 上一模式，SW4=46 刷新，SW5=3 下一模式（见 button.c） */
+#define WAKE_GPIO_SW3  9
 #define WAKE_GPIO_SW4 46
-#define WAKE_GPIO_SW5  9
+#define WAKE_GPIO_SW5  3
 
 static power_config_t s_cfg = {
     .enabled        = false,

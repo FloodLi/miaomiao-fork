@@ -28,9 +28,10 @@
 
 static const char *TAG = "button";
 
-#define BTN_LEFT    GPIO_NUM_3
+/* 原理图：SW3→GPIO9(prev)，SW4→GPIO46(refresh)，SW5→GPIO3(next)，按键接 3V3、10k 下拉 */
+#define BTN_LEFT    GPIO_NUM_9
 #define BTN_MID     GPIO_NUM_46
-#define BTN_RIGHT   GPIO_NUM_9
+#define BTN_RIGHT   GPIO_NUM_3
 
 #define BTN_COUNT       3
 #define POLL_MS         20
