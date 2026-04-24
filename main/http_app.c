@@ -38,6 +38,7 @@
 #include "button.h"
 #include "display_mode.h"
 #include "countdown.h"
+#include "battery_mon.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
@@ -265,20 +266,28 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     char time_str[32] = "";
     time_sync_get_str(time_str, sizeof(time_str));
 
-    char json[512];
+    battery_status_t bat;
+    battery_mon_get_status(&bat);
+
+    char json[768];
     snprintf(json, sizeof(json),
              "{\"upload_path\":\"%s\",\"upload_bytes\":%d,"
              "\"raw_path\":\"/spiffs/image.bin\",\"raw_bytes\":%d,"
              "\"spiffs_total\":%u,\"spiffs_used\":%u,"
              "\"time\":\"%s\",\"time_synced\":%s,"
              "\"current_mode\":%d,"
-             "\"free_heap\":%u,\"min_free_heap\":%u}",
+             "\"free_heap\":%u,\"min_free_heap\":%u,"
+             "\"battery_pct\":%u,\"battery_valid\":%s,\"charging\":%s,\"battery_adc\":%d}",
              s_cfg.upload_path, upload_sz, raw_sz,
              (unsigned)total, (unsigned)used,
              time_str, time_sync_is_synced() ? "true" : "false",
              button_get_current_mode(),
              (unsigned)esp_get_free_heap_size(),
-             (unsigned)esp_get_minimum_free_heap_size());
+             (unsigned)esp_get_minimum_free_heap_size(),
+             (unsigned)bat.percent,
+             bat.valid ? "true" : "false",
+             bat.charging ? "true" : "false",
+             bat.adc_raw);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);

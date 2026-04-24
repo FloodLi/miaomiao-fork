@@ -16,6 +16,9 @@
 #include "epd.h"
 #include "clock_display.h"
 #include "display_policy.h"
+#include "display_mode.h"
+#include "power_mgr.h"
+#include "button.h"
 #include "weather.h"
 #include "fb_render.h"
 #include "time_sync.h"
@@ -323,6 +326,12 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
 
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%lus, mode=%d",
              s_config.enabled, (unsigned long)s_config.interval_sec, s_config.mode);
+
+    /* 网页开启轮播时须同步 last_mode，否则定时唤醒 quick_refresh 仍按旧模式（如时钟）显示 */
+    if (s_config.enabled) {
+        power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
+        button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
+    }
 
     /* HTTP may call this before scheduler_init() creates the event group (see app_main order). */
     if (s_event)

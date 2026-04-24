@@ -25,7 +25,9 @@ static const char *TAG = "power";
 #define CHECK_PERIOD_MS        10000
 #define IDLE_TASK_STACK        4096
 
+/* 与原理图一致：SW3=3 上一模式，SW4=46 刷新，SW5=9 下一模式（见 button.c） */
 #define WAKE_GPIO_SW3  3
+#define WAKE_GPIO_SW4 46
 #define WAKE_GPIO_SW5  9
 
 static power_config_t s_cfg = {
@@ -194,10 +196,11 @@ void power_mgr_enter_sleep(void)
     uint64_t sleep_us = (uint64_t)s_cfg.interval_min * 60ULL * 1000000ULL;
     esp_sleep_enable_timer_wakeup(sleep_us);
 
-    uint64_t gpio_mask = (1ULL << WAKE_GPIO_SW3) | (1ULL << WAKE_GPIO_SW5);
+    uint64_t gpio_mask = (1ULL << WAKE_GPIO_SW3) | (1ULL << WAKE_GPIO_SW4) |
+                         (1ULL << WAKE_GPIO_SW5);
     esp_sleep_enable_ext1_wakeup(gpio_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
 
-    ESP_LOGI(TAG, "Entering deep sleep for %d min (GPIO 3/9 can wake)",
+    ESP_LOGI(TAG, "Entering deep sleep for %d min (GPIO 3/46/9 can wake)",
              s_cfg.interval_min);
 
     /* Wait for any in-progress EPD refresh before sleeping */

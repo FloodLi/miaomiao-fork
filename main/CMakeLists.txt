@@ -28,6 +28,7 @@ idf_component_register(
         "http_canvas.c"
         "canvas_board.c"
         "display_mode.c"
+        "battery_mon.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"
@@ -50,6 +51,7 @@ idf_component_register(
         esp_http_client
         esp-tls
         esp_timer
+        esp_adc
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

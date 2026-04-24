@@ -25,3 +25,6 @@ __pycache__/
 
 # Temporary / Debug
 *.log
+
+# Local reference clones (not part of firmware)
+otto-robot/

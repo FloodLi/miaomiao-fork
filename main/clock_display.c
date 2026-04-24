@@ -18,6 +18,7 @@
 #include "time_sync.h"
 #include "weather.h"
 #include "display_policy.h"
+#include "battery_mon.h"
 
 /* 摘要区占位（无有效天气数据时） */
 static const char k_wx_placeholder_l1[] =
@@ -222,6 +223,8 @@ static void render_clock(void)
              weekday_zh[wday]);
 
     int date_y = time_y + dh + 16;
+    /* 与日期同行靠左；字号用 1，避免小屏上与大号日期字重叠 */
+    battery_mon_draw_percent_compact(fb, 14, date_y, COLOR_BLACK, 1);
     fb_utf8_scaled(fb, W * 120 / 648, date_y, date_str, COLOR_BLACK, sc);
     fb_utf8_scaled(fb, W * 400 / 648, date_y, week_str, COLOR_BLACK, sc);
 
@@ -447,9 +450,10 @@ esp_err_t clock_display_show(void)
         ESP_LOGW(TAG, "Time not synced, using system time for clock");
     }
     display_policy_set_manual_screen_active(false);
+    /* 先画时钟再请求天气：避免 weather_task 与 render_clock 同时抢 s_fetch_mutex / 叠 HTTPS+刷屏压垮 lwIP */
+    render_clock();
     if (s_cfg.show_weather)
         weather_request_embedded_refresh();
-    render_clock();
     if (s_event)
         xEventGroupSetBits(s_event, BIT_CFG_CHANGED);
     return ESP_OK;

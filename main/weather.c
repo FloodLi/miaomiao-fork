@@ -193,6 +193,9 @@ static char *gunzip(const char *src, int src_len)
     return out;
 }
 
+#define WEATHER_HTTP_TIMEOUT_MS 25000
+#define WEATHER_HTTP_RETRIES    3
+
 static char *http_get(const char *url)
 {
     resp_buf_t rb = {
@@ -201,30 +204,48 @@ static char *http_get(const char *url)
         .cap = MAX_RESP_LEN,
     };
     if (!rb.buf) return NULL;
-    rb.buf[0] = '\0';
 
-    esp_http_client_config_t config = {
-        .url              = url,
-        .event_handler    = http_event_handler,
-        .user_data        = &rb,
-        .timeout_ms       = 10000,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-    };
+    esp_err_t err  = ESP_FAIL;
+    int       status = 0;
 
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) {
-        ESP_LOGE(TAG, "esp_http_client_init failed for %s", url);
-        free(rb.buf);
-        return NULL;
+    for (int attempt = 0; attempt < WEATHER_HTTP_RETRIES; attempt++) {
+        rb.len = 0;
+        rb.buf[0] = '\0';
+
+        if (attempt > 0) {
+            ESP_LOGW(TAG, "HTTP GET retry %d/%d after connect failure", attempt + 1,
+                     WEATHER_HTTP_RETRIES);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+
+        esp_http_client_config_t config = {
+            .url               = url,
+            .event_handler     = http_event_handler,
+            .user_data         = &rb,
+            .timeout_ms        = WEATHER_HTTP_TIMEOUT_MS,
+            .crt_bundle_attach = esp_crt_bundle_attach,
+        };
+
+        esp_http_client_handle_t client = esp_http_client_init(&config);
+        if (!client) {
+            ESP_LOGE(TAG, "esp_http_client_init failed for %s", url);
+            free(rb.buf);
+            return NULL;
+        }
+        esp_http_client_set_header(client, "Accept-Encoding", "identity");
+        err = esp_http_client_perform(client);
+        status = esp_http_client_get_status_code(client);
+        esp_http_client_cleanup(client);
+
+        if (err == ESP_OK && status == 200)
+            break;
+        ESP_LOGW(TAG, "HTTP GET attempt %d: err=%s status=%d", attempt + 1,
+                 esp_err_to_name(err), status);
     }
-    esp_http_client_set_header(client, "Accept-Encoding", "identity");
-    esp_err_t err = esp_http_client_perform(client);
-    int status = esp_http_client_get_status_code(client);
-    esp_http_client_cleanup(client);
 
     if (err != ESP_OK || status != 200) {
-        ESP_LOGW(TAG, "HTTP GET %s failed: err=%s status=%d", url,
-                 esp_err_to_name(err), status);
+        ESP_LOGW(TAG, "HTTP GET %s failed after %d tries: err=%s status=%d", url,
+                 WEATHER_HTTP_RETRIES, esp_err_to_name(err), status);
         free(rb.buf);
         return NULL;
     }
@@ -673,7 +694,8 @@ esp_err_t weather_init(void)
     memset(&s_data, 0, sizeof(s_data));
     nvs_load();
 
-    BaseType_t ok = xTaskCreate(weather_task, "weather", 8192, NULL, 3, NULL);
+    /* HTTPS+TLS 栈开销大；固定到 PRO CPU 0 与 lwIP 习惯部署一致，减轻双核下偶发 tcpip 链表损坏 */
+    BaseType_t ok = xTaskCreatePinnedToCore(weather_task, "weather", 16384, NULL, 3, NULL, 0);
     if (ok != pdPASS) return ESP_ERR_NO_MEM;
 
     ESP_LOGI(TAG, "Weather init (enabled=%d, location=%s, refresh=%lum)",

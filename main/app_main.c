@@ -26,6 +26,7 @@
 #include "countdown.h"
 #include "nvs_utils.h"
 #include "display_mode.h"
+#include "battery_mon.h"
 #include "button.h"
 #include "fb_render.h"
 #include "display_policy.h"
@@ -55,6 +56,9 @@ static void render_welcome_screen(void)
         const char *title = "ESP32 E-Paper Display";
         int tw = (int)strlen(title) * 8 * sc;
         fb_utf8_scaled(fb, (W - tw) / 2, 2 * sc, title, COLOR_WHITE, sc);
+        /* 标题栏右侧电量（紧凑），避免与中标题重叠 */
+        int pct_w = 5 * 8 * sc;
+        battery_mon_draw_percent_compact(fb, W - pct_w - pad, 2 * sc, COLOR_WHITE, sc);
     }
     y = bar_h + 2 * sc;
 
@@ -82,6 +86,9 @@ static void render_welcome_screen(void)
     }
     fb_utf8_scaled(fb, pad, y, " 密码: 12345678", COLOR_BLACK, sc); y += ln + gap;
     fb_utf8_scaled(fb, pad, y, " AP: 192.168.4.1", COLOR_BLACK, sc); y += ln + gap * 2;
+
+    battery_mon_draw_on_fb(fb, pad, y, COLOR_BLACK, sc);
+    y += ln + gap;
 
     fb_utf8_scaled(fb, pad, y, "使用方法", COLOR_BLACK, sc);
     y += ln;
@@ -189,6 +196,8 @@ static void quick_refresh_and_sleep(void)
      * scheduler_show_next_image() which works without it. */
     ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
+    /* 与 full_boot 一致：日历依赖 s_mutex，未 init 则 calendar_display_show 直接失败并触发回退到时钟 */
+    ESP_ERROR_CHECK(calendar_display_init());
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());
     ESP_ERROR_CHECK(countdown_init());
@@ -327,6 +336,9 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_utils_init());
 
     ESP_ERROR_CHECK(power_mgr_init());
+
+    if (battery_mon_init() != ESP_OK)
+        ESP_LOGW(TAG, "Battery monitor unavailable (check BAT_DET / ADC pin)");
 
     if (power_mgr_is_timer_wake()) {
         quick_refresh_and_sleep();
