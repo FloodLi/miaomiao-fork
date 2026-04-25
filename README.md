@@ -1,6 +1,6 @@
 # epaper_uploader — ESP32-S3 智能墨水屏终端
 
-[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
 [![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)]()
 
