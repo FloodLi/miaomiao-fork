@@ -2,7 +2,7 @@
 
 > 项目代号：epaper_uploader  
 > 硬件平台：ESP32-S3 + 三色墨水屏（4.2" 400×300 SSD1619 / 5.83" 648×480 UC8179）  
-> 技术栈：ESP-IDF v5.5.1 / C / SPI / WiFi SoftAP / HTTP  
+> 技术栈：ESP-IDF（**最低 v5.5.1**；5.5.x 可） / C / SPI / WiFi SoftAP / HTTP  
 > 固件版本：v2.3.0（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-04-15
 
 ---

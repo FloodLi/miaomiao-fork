@@ -2,7 +2,7 @@
 
 > 项目代号：**epaper_uploader**
 > 硬件平台：ESP32-S3 + SSD1619(4.2" 400×300) / UC8179(5.83" 648×480) 三色墨水屏
-> 技术栈：ESP-IDF v5.5.1 / C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
+> 技术栈：ESP-IDF（**最低 v5.5.1**）/ C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
 > 固件版本：v2.3.0（`PROJECT_VER`） | 文档版本：v2.3 | 2026-04-24
 
 ---
@@ -806,7 +806,7 @@ static void epd_clear(void)
 
 | 组件 | 版本 |
 |------|------|
-| ESP-IDF | **v5.5.1** |
+| ESP-IDF | **最低 v5.5.1**（5.5.x 更高一般兼容） |
 | CMake | ≥ 3.16 |
 | Python | ≥ 3.8 |
 | 操作系统 | Windows / macOS / Linux |
