@@ -1,8 +1,8 @@
 # ESP32 墨水屏项目工程技术文档
 
 > **项目版本**: v2.3.0（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）  
-> **文档版本**: 2.3（随工程文档修订）  
-> **最后更新**: 2026-04-15  
+> **文档版本**: 2.3.1（随工程文档修订）  
+> **最后更新**: 2026-04-24  
 > **硬件平台**: ESP32-S3 + SSD1619(4.2") / UC8179(5.83")  
 > **软件框架**: ESP-IDF v5.5.1  
 > **文档状态**: ✅ 完整
@@ -38,7 +38,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
 - ✅ **Web 管理**: 响应式 UI，三套主题，OTA 升级
 - ✅ **内容丰富**: 天气、时钟、日历、课程表、待办、倒计时、留言板、WYSIWYG 画布
 - ✅ **低功耗**: 深度睡眠，定时器/按键唤醒，80+ 天续航
-- ✅ **物理交互**: 三按键设计，模式切换，便捷操作
+- ✅ **物理交互**: 三键循环切换 **7 种**已注册 `display_mode`（时钟/日历/课程表/天气/轮播/待办/倒计时）；**留言板与画布**由网页推屏，不参与按键轮显
 
 ### 1.3 技术栈
 
@@ -320,7 +320,8 @@ USB (CH340):
 - **策略**：在 NVS 中写入用户名/密码后即视为启用鉴权；`http_check_basic_auth()` 对配置的敏感 **POST**（及个别「推屏」类接口）校验 `Authorization: Basic …`。**未配置凭据时通常不拦截**（便于首次配网）。
 - **OTA 强制鉴权**：`POST /ota` 现在要求必须先在 `/auth_config` 设置凭据，未设凭据时直接返回 `403 Forbidden`，防止内网扫描到设备即可刷写固件。
 - **天气**：`GET /weather_config` 不返回明文 API Key；`POST` 可通过空字符串跳过改 key、`api_key_clear` 等策略与固件版本一致。
-- **前端**：`config.html` / `index.html` / `timetable.html` / `todo.html` / `countdown.html` / `board.html` 使用 `localStorage`（`epd_auth_u`、`epd_auth_p`）构造 Basic 头；**需先在配置页保存认证**，子页面才能匿名以外的方式通过鉴权。
+- **只读 GET 与隐私**：如 `GET /msg_config` 会返回当前留言板 JSON（含 `text` 等），**不经过 Basic Auth**；若设备长期暴露在不可信局域网，请知悉同网段主机可直接读取。需要更强隔离时结合网络层策略（如访客 VLAN）或将敏感内容只留在屏端展示。
+- **前端**：`config.html` / `index.html` / `timetable.html` / `todo.html` / `countdown.html` / `board.html` 使用 `localStorage`（`epd_auth_u`、`epd_auth_p`）构造 Basic 头；**需先在配置页保存认证**，子页面才能以带鉴权方式通过校验。
 
 ### 4.6 并发与同步机制（v2.1.0 补丁）
 
