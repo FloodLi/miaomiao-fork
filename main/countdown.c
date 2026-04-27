@@ -6,6 +6,8 @@
 
 #include "esp_log.h"
 #include "nvs.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "epd.h"
 #include "fb_render.h"
@@ -19,6 +21,7 @@ static const char *TAG = "countdown";
 #define NVS_BLOB "cfg"
 
 static countdown_config_t s_cfg;
+static SemaphoreHandle_t  s_cfg_mutex;
 static uint8_t s_page_idx;
 
 /* ── NVS persistence ──────────────────────────────────────────────── */
@@ -36,11 +39,11 @@ static void nvs_load(void)
     nvs_close(h);
 }
 
-static void nvs_save(void)
+static void nvs_save_snapshot(const countdown_config_t *cfg)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_blob(h, NVS_BLOB, &s_cfg, sizeof(s_cfg));
+    nvs_set_blob(h, NVS_BLOB, cfg, sizeof(*cfg));
     nvs_commit(h);
     nvs_close(h);
 }
@@ -211,7 +214,8 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
     fb_utf8_scaled(fb, (W - dtw) / 2, date_line_y, date_buf, COLOR_BLACK, 1);
 }
 
-static void draw_cards(fb_t *fb, int W, int H, int active_count)
+static void draw_cards(fb_t *fb, int W, int H,
+                       const countdown_config_t *cfg, int active_count)
 {
     const int body_y   = 40;
     const int margin   = 8;
@@ -219,8 +223,8 @@ static void draw_cards(fb_t *fb, int W, int H, int active_count)
 
     int active_idx[COUNTDOWN_MAX_ITEMS];
     int n = 0;
-    for (int i = 0; i < s_cfg.count && i < COUNTDOWN_MAX_ITEMS; i++) {
-        if (s_cfg.items[i].active) active_idx[n++] = i;
+    for (int i = 0; i < cfg->count && i < COUNTDOWN_MAX_ITEMS; i++) {
+        if (cfg->items[i].active) active_idx[n++] = i;
     }
     if (n <= 0) return;
 
@@ -246,7 +250,7 @@ static void draw_cards(fb_t *fb, int W, int H, int active_count)
     int y = body_y;
     for (int k = 0; k < show_n; k++) {
         int i = active_idx[start + k];
-        int days = days_remaining(&s_cfg.items[i]);
+        int days = days_remaining(&cfg->items[i]);
         int abs_days = days < 0 ? -days : days;
 
         fb_fill_rect(fb, margin, y, W - margin * 2, 2, COLOR_RED);
@@ -255,12 +259,12 @@ static void draw_cards(fb_t *fb, int W, int H, int active_count)
         int title_scale = (card_h >= 58) ? 2 : 1;
         int title_y     = y + 6;
         int text_x      = margin + 8;
-        fb_utf8_scaled_maxw(fb, text_x, title_y, s_cfg.items[i].title,
+        fb_utf8_scaled_maxw(fb, text_x, title_y, cfg->items[i].title,
                             COLOR_BLACK, title_scale, left_maxw);
 
         char date_buf[11];
-        format_date_ymd(date_buf, s_cfg.items[i].year,
-                        s_cfg.items[i].month, s_cfg.items[i].day);
+        format_date_ymd(date_buf, cfg->items[i].year,
+                        cfg->items[i].month, cfg->items[i].day);
         int date_y = title_y + 16 * title_scale + 6;
         if (date_y + 16 > y + card_h - 4)
             date_y = y + card_h - 18;
@@ -310,7 +314,12 @@ static void draw_cards(fb_t *fb, int W, int H, int active_count)
 
 esp_err_t countdown_show(void)
 {
-    if (!s_cfg.enabled) {
+    countdown_config_t cfg;
+    esp_err_t cfg_err = countdown_get_config(&cfg);
+    if (cfg_err != ESP_OK)
+        return cfg_err;
+
+    if (!cfg.enabled) {
         ESP_LOGW(TAG, "Countdown disabled");
         return ESP_ERR_INVALID_STATE;
     }
@@ -323,8 +332,8 @@ esp_err_t countdown_show(void)
 
     int active_count = 0;
     int first_active = -1;
-    for (int i = 0; i < s_cfg.count && i < COUNTDOWN_MAX_ITEMS; i++) {
-        if (s_cfg.items[i].active) {
+    for (int i = 0; i < cfg.count && i < COUNTDOWN_MAX_ITEMS; i++) {
+        if (cfg.items[i].active) {
             if (first_active < 0) first_active = i;
             active_count++;
         }
@@ -338,10 +347,10 @@ esp_err_t countdown_show(void)
         int tw2 = text_px_width("请通过网页添加", 1);
         fb_utf8_scaled(fb, (W - tw2) / 2, H / 2 + 24, "请通过网页添加", COLOR_BLACK, 1);
     } else if (active_count == 1) {
-        int days = days_remaining(&s_cfg.items[first_active]);
-        draw_hero(fb, W, H, &s_cfg.items[first_active], days);
+        int days = days_remaining(&cfg.items[first_active]);
+        draw_hero(fb, W, H, &cfg.items[first_active], days);
     } else {
-        draw_cards(fb, W, H, active_count);
+        draw_cards(fb, W, H, &cfg, active_count);
         if (active_count > 4) {
             int pages = (active_count + 3) / 4;
             s_page_idx = (uint8_t)((s_page_idx + 1) % pages);
@@ -350,13 +359,20 @@ esp_err_t countdown_show(void)
         }
     }
 
+    fb_raw_file_lock();
     esp_err_t exp_err = fb_export(fb, "/spiffs/image.bin");
     fb_destroy(fb);
     if (exp_err != ESP_OK) {
+        fb_raw_file_unlock();
         ESP_LOGE(TAG, "fb_export failed: %s", esp_err_to_name(exp_err));
         return exp_err;
     }
-    epd_display_from_file("/spiffs/image.bin");
+    esp_err_t disp_err = epd_display_from_file("/spiffs/image.bin");
+    fb_raw_file_unlock();
+    if (disp_err != ESP_OK) {
+        ESP_LOGE(TAG, "display failed: %s", esp_err_to_name(disp_err));
+        return disp_err;
+    }
 
     display_policy_set_manual_screen_active(true);
     scheduler_notify_manual_show();
@@ -369,23 +385,37 @@ esp_err_t countdown_show(void)
 
 esp_err_t countdown_init(void)
 {
+    s_cfg_mutex = xSemaphoreCreateMutex();
+    if (!s_cfg_mutex)
+        return ESP_ERR_NO_MEM;
     nvs_load();
     ESP_LOGI(TAG, "init ok (enabled=%d, items=%d)", s_cfg.enabled, s_cfg.count);
     return ESP_OK;
 }
 
-const countdown_config_t *countdown_get_config(void)
+esp_err_t countdown_get_config(countdown_config_t *out)
 {
-    return &s_cfg;
+    if (!out) return ESP_ERR_INVALID_ARG;
+    if (!s_cfg_mutex) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
+    *out = s_cfg;
+    xSemaphoreGive(s_cfg_mutex);
+    return ESP_OK;
 }
 
 esp_err_t countdown_set_config(const countdown_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    if (!s_cfg_mutex) return ESP_ERR_INVALID_STATE;
+    countdown_config_t snap;
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     memcpy(&s_cfg, cfg, sizeof(s_cfg));
     if (s_cfg.count > COUNTDOWN_MAX_ITEMS)
         s_cfg.count = COUNTDOWN_MAX_ITEMS;
-    nvs_save();
-    ESP_LOGI(TAG, "Config updated (enabled=%d, items=%d)", s_cfg.enabled, s_cfg.count);
+    snap = s_cfg;
+    xSemaphoreGive(s_cfg_mutex);
+
+    nvs_save_snapshot(&snap);
+    ESP_LOGI(TAG, "Config updated (enabled=%d, items=%d)", snap.enabled, snap.count);
     return ESP_OK;
 }

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <stdatomic.h>
 #include <sys/stat.h>
 #include <dirent.h>
 
@@ -17,6 +18,7 @@
 #include "clock_display.h"
 #include "display_policy.h"
 #include "epd.h"
+#include "fb_render.h"
 #include "image_convert.h"
 #include "scheduler.h"
 #include "weather.h"
@@ -25,6 +27,30 @@
 #include "power_mgr.h"
 
 static const char *TAG = "http_gal";
+static atomic_bool s_upload_active;
+static atomic_uint s_upload_epoch;
+
+static unsigned gallery_upload_begin(void)
+{
+    atomic_store(&s_upload_active, true);
+    return atomic_fetch_add(&s_upload_epoch, 1) + 1;
+}
+
+static void gallery_upload_end(unsigned epoch)
+{
+    if (atomic_load(&s_upload_epoch) == epoch)
+        atomic_store(&s_upload_active, false);
+}
+
+static bool gallery_upload_busy(void)
+{
+    return atomic_load(&s_upload_active);
+}
+
+static unsigned gallery_upload_epoch(void)
+{
+    return atomic_load(&s_upload_epoch);
+}
 
 /** 追加 JSON 片段；*len 为已用长度（不含 '\\0'），cap 为 buf 总容量 */
 static bool gallery_json_append(char *buf, size_t cap, size_t *len, const char *fmt, ...)
@@ -61,14 +87,7 @@ static bool is_safe_filename(const char *name)
 /** 以图片为主页时关闭全页天气定时拉取；若时钟已开且要天气摘要，则保留 API 供嵌入式拉取 */
 static void weather_disable_if_enabled_for_image_focus(void)
 {
-    weather_config_t wcfg;
-    clock_config_t ccfg;
-    if (weather_get_config(&wcfg) != ESP_OK || !wcfg.enabled)
-        return;
-    if (clock_display_get_config(&ccfg) == ESP_OK && ccfg.enabled && ccfg.show_weather)
-        return;
-    wcfg.enabled = false;
-    (void)weather_set_config(&wcfg);
+    /* Image focus is transient state; do not rewrite the user's weather config. */
 }
 
 esp_err_t gallery_images_get_handler(httpd_req_t *req)
@@ -176,6 +195,12 @@ esp_err_t gallery_image_get_handler(httpd_req_t *req)
 esp_err_t gallery_show_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
+    unsigned upload_epoch = gallery_upload_epoch();
+    if (gallery_upload_busy()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "图片正在上传，请稍后再显示图库图片");
+        return ESP_OK;
+    }
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
@@ -197,20 +222,39 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    bool was_manual = display_policy_manual_screen_active();
+    display_policy_set_manual_screen_active(true);
+    display_policy_bump_display_epoch();
+    scheduler_notify_manual_show();
+
     const char *raw_path = "/spiffs/image.bin";
+    fb_raw_file_lock();
+    if (gallery_upload_busy() || gallery_upload_epoch() != upload_epoch) {
+        fb_raw_file_unlock();
+        ESP_LOGI(TAG, "Discard stale gallery show '%s' after upload request", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "图片上传已接管屏幕，本次旧显示请求已忽略");
+        return ESP_OK;
+    }
     esp_err_t cerr = image_convert_file_to_epd_raw(jpeg_path, raw_path);
+    esp_err_t derr = ESP_OK;
+    if (cerr == ESP_OK)
+        derr = epd_display_from_file(raw_path);
+    fb_raw_file_unlock();
     if (cerr != ESP_OK) {
+        if (!was_manual)
+            display_policy_set_manual_screen_active(false);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "图片转换失败");
         return ESP_OK;
     }
-    esp_err_t derr = epd_display_from_file(raw_path);
     if (derr != ESP_OK) {
+        if (!was_manual)
+            display_policy_set_manual_screen_active(false);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "墨水屏刷新失败");
         return ESP_OK;
     }
     scheduler_set_current_image_name(name);
     /* 禁止时钟/天气摘要任务继续写 image.bin 抢屏，直到用户点「立即显示时钟」 */
-    display_policy_set_manual_screen_active(true);
     weather_disable_if_enabled_for_image_focus();
     scheduler_notify_manual_show();
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
@@ -253,7 +297,9 @@ esp_err_t gallery_delete_post_handler(httpd_req_t *req)
     }
 
     int ok1 = (remove(http_app_cfg.upload_path)  == 0) ? 1 : 0;
+    fb_raw_file_lock();
     int ok2 = (remove("/spiffs/image.bin") == 0) ? 1 : 0;
+    fb_raw_file_unlock();
 
     if (epd_is_ready())
         (void)epd_clear_screen();
@@ -279,9 +325,18 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    bool was_manual = display_policy_manual_screen_active();
+    display_policy_set_manual_screen_active(true);
+    display_policy_bump_display_epoch();
+    scheduler_notify_manual_show();
+    unsigned upload_epoch = gallery_upload_begin();
+
     FILE *f = fopen(http_app_cfg.upload_path, "wb");
     if (!f) {
         ESP_LOGE(TAG, "fopen(%s) failed: errno=%d", http_app_cfg.upload_path, errno);
+        gallery_upload_end(upload_epoch);
+        if (!was_manual)
+            display_policy_set_manual_screen_active(false);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "文件打开失败");
         return ESP_OK;
     }
@@ -297,12 +352,18 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         if (r < 0) {
             fclose(f);
             remove(http_app_cfg.upload_path);
+            gallery_upload_end(upload_epoch);
+            if (!was_manual)
+                display_policy_set_manual_screen_active(false);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收数据失败");
             return ESP_OK;
         }
         if (r == 0) {
             fclose(f);
             remove(http_app_cfg.upload_path);
+            gallery_upload_end(upload_epoch);
+            if (!was_manual)
+                display_policy_set_manual_screen_active(false);
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "客户端断开连接");
             return ESP_OK;
         }
@@ -316,6 +377,9 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
             ESP_LOGE(TAG, "fwrite failed: wrote %u of %d", (unsigned)written, r);
             fclose(f);
             remove(http_app_cfg.upload_path);
+            gallery_upload_end(upload_epoch);
+            if (!was_manual)
+                display_policy_set_manual_screen_active(false);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "写入失败");
             return ESP_OK;
         }
@@ -359,26 +423,52 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
     snprintf(final_path, sizeof(final_path), "%s/%s", http_images_dir, name);
     FILE *src = fopen(http_app_cfg.upload_path, "rb");
     FILE *dst = src ? fopen(final_path, "wb") : NULL;
+    bool copy_ok = false;
     if (src && dst) {
         char cbuf[512];
         size_t r;
+        copy_ok = true;
         while ((r = fread(cbuf, 1, sizeof(cbuf), src)) > 0) {
-            fwrite(cbuf, 1, r, dst);
+            if (fwrite(cbuf, 1, r, dst) != r) {
+                copy_ok = false;
+                break;
+            }
         }
         fclose(dst);
-        ESP_LOGI(TAG, "Stored gallery copy at %s", final_path);
+        if (copy_ok) {
+            ESP_LOGI(TAG, "Stored gallery copy at %s", final_path);
+        } else {
+            ESP_LOGE(TAG, "Failed while copying gallery image to %s", final_path);
+        }
     }
     if (src) fclose(src);
+    if (!copy_ok) {
+        remove(final_path);
+        gallery_upload_end(upload_epoch);
+        if (!was_manual)
+            display_policy_set_manual_screen_active(false);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "图库保存失败");
+        return ESP_OK;
+    }
 
     ESP_LOGI(TAG, "Free heap before convert: %lu bytes",
              (unsigned long)esp_get_free_heap_size());
 
-    if (!http_require_epd_ready(req))
+    if (!http_require_epd_ready(req)) {
+        gallery_upload_end(upload_epoch);
+        if (!was_manual)
+            display_policy_set_manual_screen_active(false);
         return ESP_OK;
+    }
 
     const char *raw_path = "/spiffs/image.bin";
+    fb_raw_file_lock();
     esp_err_t cerr = image_convert_file_to_epd_raw(http_app_cfg.upload_path, raw_path);
     if (cerr != ESP_OK) {
+        fb_raw_file_unlock();
+        gallery_upload_end(upload_epoch);
+        if (!was_manual)
+            display_policy_set_manual_screen_active(false);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                             "图片转换失败：请上传标准的 JPEG、PNG 或 BMP 图片");
         return ESP_OK;
@@ -388,18 +478,23 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
              raw_path, (unsigned long)esp_get_free_heap_size());
 
     esp_err_t derr = epd_display_from_file(raw_path);
+    fb_raw_file_unlock();
     if (derr != ESP_OK) {
         ESP_LOGW(TAG, "EPD display failed: %s", esp_err_to_name(derr));
+        gallery_upload_end(upload_epoch);
+        if (!was_manual)
+            display_policy_set_manual_screen_active(false);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "图片已转换但墨水屏刷新失败");
         return ESP_OK;
     }
 
-    display_policy_set_manual_screen_active(true);
+    scheduler_set_current_image_name(name);
     weather_disable_if_enabled_for_image_focus();
     scheduler_notify_manual_show();
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
     power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
+    gallery_upload_end(upload_epoch);
     httpd_resp_sendstr(req, "OK — 已转换并触发墨水屏刷新。");
     return ESP_OK;
 }

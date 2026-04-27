@@ -85,6 +85,7 @@ esp_err_t epd_set_panel(epd_panel_t panel)
         xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
 
     if (s_panel != panel) {
+        fb_release_reserved_planes();
         s_panel_seq_done = false;
         ESP_LOGW(TAG, "Panel changed to %s, will re-init on next display",
                  s_specs[panel].name);
@@ -606,6 +607,25 @@ bool epd_is_ready(void)
     return s_epd_ready;
 }
 
+bool epd_wait_idle(uint32_t timeout_ms)
+{
+    if (!s_epd_mutex || !s_epd_ready)
+        return false;
+    if (xSemaphoreTake(s_epd_mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
+        return false;
+    xSemaphoreGive(s_epd_mutex);
+    return true;
+}
+
+static bool fb_matches_current_panel(const fb_t *fb)
+{
+    return fb &&
+           fb->width == epd_width() &&
+           fb->height == epd_height() &&
+           fb->plane_bytes == epd_plane_bytes() &&
+           fb->row_bytes == epd_width() / 8;
+}
+
 /* ── 对外 API ─────────────────────────────────────────────────────── */
 
 esp_err_t epd_init(void)
@@ -704,28 +724,30 @@ esp_err_t epd_display_test_pattern(void)
             buf[y * rb + (x >> 3)] &= ~(0x80 >> (x & 7));
     }
 
+    uint8_t *red = heap_caps_calloc(1, (size_t)pb, MALLOC_CAP_DMA);
+    if (!red) {
+        free(buf);
+        xSemaphoreGive(s_epd_mutex);
+        return ESP_ERR_NO_MEM;
+    }
+    for (int y = mid_y + 20; y < H - 20; y++) {
+        for (int x = mid_x + 20; x < W - 20; x++) {
+            size_t off = (size_t)y * rb + (size_t)(x >> 3);
+            uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+            red[off] |= bit;
+            buf[off] |= bit;
+        }
+    }
+
     panel_ensure_ready();
 
     if (s_panel == EPD_PANEL_42_BWR) {
-        uint8_t *red = heap_caps_calloc(1, (size_t)pb, MALLOC_CAP_DMA);
-        if (!red) {
-            free(buf);
-            xSemaphoreGive(s_epd_mutex);
-            return ESP_ERR_NO_MEM;
-        }
         ssd1619_write_bw_then_red(buf, red, pb);
-        free(red);
     } else {
-        uint8_t *red = heap_caps_calloc(1, (size_t)pb, MALLOC_CAP_DMA);
-        if (!red) {
-            free(buf);
-            xSemaphoreGive(s_epd_mutex);
-            return ESP_ERR_NO_MEM;
-        }
         uc8179_write_dtm12(buf, red, pb);
-        free(red);
     }
 
+    free(red);
     free(buf);
     xSemaphoreGive(s_epd_mutex);
     ESP_LOGI(TAG, "test pattern done");
@@ -761,6 +783,14 @@ esp_err_t epd_display_from_file(const char *path)
     }
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+    if (pb != epd_plane_bytes()) {
+        ESP_LOGE(TAG, "file/panel mismatch: file plane=%d current=%d",
+                 pb, epd_plane_bytes());
+        xSemaphoreGive(s_epd_mutex);
+        free(buf);
+        fclose(f);
+        return ESP_ERR_INVALID_SIZE;
+    }
     panel_ensure_ready();
 
     if (s_panel == EPD_PANEL_42_BWR) {
@@ -818,9 +848,15 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
     if (!s_epd_mutex || !s_epd_ready)
         return ESP_ERR_INVALID_STATE;
 
-    int pb = epd_plane_bytes();
-
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+    if (!fb_matches_current_panel(fb)) {
+        ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
+                 fb->width, fb->height, fb->plane_bytes,
+                 epd_width(), epd_height(), epd_plane_bytes());
+        xSemaphoreGive(s_epd_mutex);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    int pb = epd_plane_bytes();
     panel_ensure_ready();
 
     if (s_panel == EPD_PANEL_42_BWR) {
@@ -861,9 +897,16 @@ esp_err_t epd_display_fb_free(fb_t *fb)
         return ESP_ERR_INVALID_STATE;
     }
 
-    int pb = epd_plane_bytes();
-
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+    if (!fb_matches_current_panel(fb)) {
+        ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
+                 fb->width, fb->height, fb->plane_bytes,
+                 epd_width(), epd_height(), epd_plane_bytes());
+        xSemaphoreGive(s_epd_mutex);
+        fb_destroy(fb);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    int pb = epd_plane_bytes();
     panel_ensure_ready();
 
     if (s_panel == EPD_PANEL_42_BWR) {
@@ -904,14 +947,21 @@ esp_err_t epd_display_from_buffer_fast(const fb_t *fb)
     if (!s_epd_mutex || !s_epd_ready)
         return ESP_ERR_INVALID_STATE;
 
+    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+    if (!fb_matches_current_panel(fb)) {
+        ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
+                 fb->width, fb->height, fb->plane_bytes,
+                 epd_width(), epd_height(), epd_plane_bytes());
+        xSemaphoreGive(s_epd_mutex);
+        return ESP_ERR_INVALID_SIZE;
+    }
     if (s_panel != EPD_PANEL_42_BWR) {
+        xSemaphoreGive(s_epd_mutex);
         ESP_LOGW(TAG, "fast refresh only for SSD1619, falling back to full");
         return epd_display_from_buffer(fb);
     }
 
     int pb = epd_plane_bytes();
-
-    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
     panel_ensure_ready();
 
     /* BW plane only — skip red for speed */

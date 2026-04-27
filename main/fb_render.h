@@ -21,7 +21,19 @@ typedef struct {
     int      height;
     int      plane_bytes;
     int      row_bytes;
+    bool     planes_split; /* true: black/red 是两次独立 malloc，需分别 free */
+    bool     uses_reserved;/* true: 使用 fb_reserve_planes_early() 预留块，fb_destroy 不 free 平面 */
 } fb_t;
+
+/**
+ * 在 WiFi/HTTP 等大块分配之前调用（需已 epd_load_panel_from_nvs），
+ * 按当前面板尺寸预留 2×plane 连续 RAM，减轻碎片导致 5.83" 无法分配 2×38880。
+ */
+void        fb_reserve_planes_early(void);
+/** 切换面板类型时释放预留（由 epd_set_panel 调用） */
+void        fb_release_reserved_planes(void);
+void        fb_raw_file_lock(void);
+void        fb_raw_file_unlock(void);
 
 fb_t       *fb_create(void);
 void        fb_destroy(fb_t *fb);

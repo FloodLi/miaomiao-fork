@@ -282,6 +282,7 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
       </div>
       <div class="row">
         <button class="btn" onclick="savePanel()">保存并重启</button>
+        <button class="btn ghost sm" onclick="testEpdRed()">红色测试</button>
         <button class="btn ghost sm" onclick="loadPanel()">刷新</button>
       </div>
       <div class="log" id="pnLog">加载中…</div>
@@ -1183,6 +1184,17 @@ async function savePanel(){
       pnLog('已保存！请断电重启设备使新屏幕配置生效。（'+panelNames[panel]+'）','ok');
       await loadPanel();
     }else pnLog('保存失败','bad');
+  }catch(e){pnLog('请求失败: '+e,'bad');}
+}
+
+async function testEpdRed(){
+  if(!confirm('将刷出一张黑白红测试图，用来判断红色通道是否正常。继续？')) return;
+  pnLog('正在显示红色测试图…请等待屏幕刷新完成。');
+  try{
+    const r=await fetch('/epd_test',epdFetchOpts({method:'POST'}));
+    const j=await r.json();
+    if(j.ok) pnLog('测试图已显示：右下角应看到红色块。若没有红色，更像屏幕驱动/硬件红通道问题；若红块正常，就是图片量化算法还要继续调。','ok');
+    else pnLog('测试失败','bad');
   }catch(e){pnLog('请求失败: '+e,'bad');}
 }
 

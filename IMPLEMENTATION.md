@@ -205,9 +205,9 @@ msp/
 
 ```csv
 # Name,      Type, SubType,  Offset,    Size
-nvs,         data, nvs,      0x9000,    0x6000      # 24KB
-otadata,     data, ota,      0xF000,    0x2000      # 8KB — OTA 启动选择
-phy_init,    data, phy,      0x11000,   0x1000      # 4KB
+nvs,         data, nvs,      0x9000,    0xC000      # 48KB — 多模块配置 + PHY 校准
+otadata,     data, ota,      0x15000,   0x2000      # 8KB — OTA 启动选择
+phy_init,    data, phy,      0x17000,   0x1000      # 4KB
 factory,     app,  factory,  0x20000,   0x200000    # 2MB — 出厂固件（回滚保护）
 ota_0,       app,  ota_0,    0x220000,  0x200000    # 2MB — OTA 分区 A
 ota_1,       app,  ota_1,    0x420000,  0x200000    # 2MB — OTA 分区 B

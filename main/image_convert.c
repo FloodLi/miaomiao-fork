@@ -29,6 +29,84 @@ static const uint8_t bayer8[8][8] = {
     { 168, 104, 152,  84, 164, 100, 148,  88 },
 };
 
+static bool red_orange_pixel(uint8_t r, uint8_t g, uint8_t b)
+{
+    int ri = (int)r, gi = (int)g, bi = (int)b;
+    int max_c = ri;
+    if (gi > max_c) max_c = gi;
+    if (bi > max_c) max_c = bi;
+    int min_c = ri;
+    if (gi < min_c) min_c = gi;
+    if (bi < min_c) min_c = bi;
+    int chroma = max_c - min_c;
+    if (max_c < 55 || chroma < 22)
+        return false;
+
+    int hue = 0;
+    if (max_c == ri)
+        hue = ((gi - bi) * 60) / chroma;
+    else if (max_c == gi)
+        hue = 120 + ((bi - ri) * 60) / chroma;
+    else
+        hue = 240 + ((ri - gi) * 60) / chroma;
+    if (hue < 0)
+        hue += 360;
+
+    int sat256 = (chroma * 256) / max_c;
+    int lum = (ri * 77 + gi * 150 + bi * 29) >> 8;
+    bool red_hue = (hue <= 55 || hue >= 305);
+    bool orange_hue = (hue <= 72 && ri >= gi + 24 && ri >= bi + 34 &&
+                       gi * 100 <= ri * 78 && bi * 100 <= ri * 74);
+    bool red_dominant = (ri >= gi + 18) && (ri >= bi + 18);
+
+    return (red_hue || orange_hue) && red_dominant &&
+           sat256 >= 55 && lum >= 35 && lum <= 225;
+}
+
+static uint8_t red_ink_strength(uint8_t r, uint8_t g, uint8_t b)
+{
+    int ri = (int)r, gi = (int)g, bi = (int)b;
+    int max_c = ri;
+    if (gi > max_c) max_c = gi;
+    if (bi > max_c) max_c = bi;
+    int min_c = ri;
+    if (gi < min_c) min_c = gi;
+    if (bi < min_c) min_c = bi;
+    int chroma = max_c - min_c;
+    if (max_c < 55 || chroma < 22 || ri < gi + 14 || ri < bi + 18)
+        return 0;
+
+    int hue = 0;
+    if (max_c == ri)
+        hue = ((gi - bi) * 60) / chroma;
+    else if (max_c == gi)
+        hue = 120 + ((bi - ri) * 60) / chroma;
+    else
+        hue = 240 + ((ri - gi) * 60) / chroma;
+    if (hue < 0)
+        hue += 360;
+    if (!(hue <= 72 || hue >= 305))
+        return 0;
+
+    int sat256 = (chroma * 256) / max_c;
+    int lum = (ri * 77 + gi * 150 + bi * 29) >> 8;
+    int dom = ri - (gi > bi ? gi : bi);
+    int strength = sat256 + dom * 3 / 2 + lum - 210;
+
+    if (hue > 45 && hue < 90)
+        strength -= (hue - 45) * 4;
+    if (lum < 70)
+        strength -= (70 - lum);
+    if (lum > 205)
+        strength -= (lum - 205) * 2;
+
+    if (strength < 0)
+        return 0;
+    if (strength > 245)
+        return 245;
+    return (uint8_t)strength;
+}
+
 /* ── Bayer dithered pixel write (fallback) ────────────────────────── */
 
 static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
@@ -45,6 +123,13 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
     int chroma = max_c - min_c;
     uint8_t lum = (uint8_t)((ri * 77u + gi * 150u + bi * 29u) >> 8);
 
+    int red_strength = red_ink_strength(r, g, b);
+    if (red_strength > (int)threshold) {
+        red[bp] |= bit;
+        black[bp] |= bit;
+        return;
+    }
+
     if (chroma >= 30 && max_c >= 40) {
         int hue6 = 0;
         if (max_c == ri)      hue6 = ((gi - bi) * 60) / chroma;
@@ -56,7 +141,7 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
             int red_str = (sat256 * max_c) >> 8;
             if (red_str > (int)threshold) {
                 red[bp] |= bit;
-                black[bp] &= ~bit;
+                black[bp] |= bit;
             } else if (lum < threshold) {
                 black[bp] &= ~bit;
             }
@@ -64,20 +149,20 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
         }
     }
 
-    if (lum < threshold)
+    int bw_threshold = (threshold > 40) ? ((int)threshold - 40) : 0;
+    if ((int)lum < bw_threshold)
         black[bp] &= ~bit;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
- *  Floyd-Steinberg error-diffusion dithering (3-color: Black/White/Red)
+ *  Red-first dual-plane dithering.
+ *
+ *  Common 3-color e-paper examples treat black and red as two independent
+ *  1-bit planes.  Classify red/orange/brown pixels before black-white
+ *  dithering so dark red backgrounds do not collapse into black.
  * ══════════════════════════════════════════════════════════════════════ */
 
 typedef struct { int16_t r, g, b; } fs_err_t;
-
-/* 略偏橙的「目标红」，与常见 JPG 里的红/砖红更近，缩小 dr，红墨更容易胜出 */
-#define FS_RED_R 196
-#define FS_RED_G  38
-#define FS_RED_B  34
 
 /**
  * 允许映射红墨的像素：在拦住真灰（chroma 过低）的前提下尽量放宽。
@@ -94,7 +179,7 @@ static bool fs_red_eligible(uint8_t r, uint8_t g, uint8_t b)
     if (gi < min_c) min_c = gi;
     if (bi < min_c) min_c = bi;
     int chroma = max_c - min_c;
-    if (chroma < 12 || max_c < 18)
+    if (chroma < 20 || max_c < 40)
         return false;
 
     int hue6 = 0;
@@ -108,16 +193,19 @@ static bool fs_red_eligible(uint8_t r, uint8_t g, uint8_t b)
         hue6 += 360;
 
     int sat256 = (chroma * 256) / (max_c > 0 ? max_c : 1);
-    bool hue_sat = (hue6 <= 62 || hue6 >= 298) && sat256 > 38;
+    bool red_hue = (hue6 <= 55 || hue6 >= 305);
+    bool orange_hue = hue6 <= 72 && gi * 100 <= ri * 78 && bi * 100 <= ri * 74;
+    bool hue_sat = (red_hue || orange_hue) && sat256 > 55 &&
+                   ri >= gi + 16 && ri >= bi + 20;
 
-    bool r_led = (max_c == ri) && ri >= 46 && (gi + bi) * 2 <= ri * 3 + 8 && chroma >= 14;
+    bool r_led = (max_c == ri) && ri >= 55 &&
+                 ri >= gi + 20 && ri >= bi + 28 &&
+                 (gi + bi) * 2 <= ri * 3 && chroma >= 24;
 
     return hue_sat || r_led;
 }
 
-/* 与黑比距离时给红墨加权：dr 可乘以 RED_VS_BLACK_NUM/DEN 再与 db 比（仍先判白） */
-#define FS_RED_VS_BLACK_NUM  100
-#define FS_RED_VS_BLACK_DEN  118
+#define BW_LUMA_THRESHOLD 106
 
 static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
                           uint8_t *blk, uint8_t *red_plane,
@@ -126,64 +214,38 @@ static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
     int rb = w >> 3;
     for (int x = 0; x < w; x++) {
         int ex = x + 1;
-        int rv = rgb[x * 3]     + ec[ex].r;
-        int gv = rgb[x * 3 + 1] + ec[ex].g;
-        int bv = rgb[x * 3 + 2] + ec[ex].b;
-        if (rv < 0) rv = 0;
-        if (rv > 255) rv = 255;
-        if (gv < 0) gv = 0;
-        if (gv > 255) gv = 255;
-        if (bv < 0) bv = 0;
-        if (bv > 255) bv = 255;
+        uint8_t r0 = rgb[x * 3];
+        uint8_t g0 = rgb[x * 3 + 1];
+        uint8_t b0 = rgb[x * 3 + 2];
+        int lum = ((int)r0 * 77 + (int)g0 * 150 + (int)b0 * 29) >> 8;
+        int yv = lum + ec[ex].r;
+        if (yv < 0) yv = 0;
+        if (yv > 255) yv = 255;
 
         size_t bp = (size_t)y * rb + (x >> 3);
         uint8_t bit = 0x80u >> (x & 7);
-        int cr, cg, cb;
 
-        int32_t dw = (rv - 255) * (rv - 255) + (gv - 255) * (gv - 255) + (bv - 255) * (bv - 255);
-        int32_t db = rv * rv + gv * gv + bv * bv;
-
-        if (has_red) {
-            int32_t dr = (rv - FS_RED_R) * (rv - FS_RED_R) +
-                         (gv - FS_RED_G) * (gv - FS_RED_G) +
-                         (bv - FS_RED_B) * (bv - FS_RED_B);
-            bool allow_red = fs_red_eligible((uint8_t)rv, (uint8_t)gv, (uint8_t)bv);
-            if (dw <= db && dw <= dr) {
-                cr = cg = cb = 255;
-            } else if (allow_red &&
-                       (int64_t)dr * FS_RED_VS_BLACK_DEN <= (int64_t)db * FS_RED_VS_BLACK_NUM) {
-                red_plane[bp] |= bit;
-                blk[bp] &= ~bit;
-                cr = FS_RED_R; cg = FS_RED_G; cb = FS_RED_B;
-            } else {
-                blk[bp] &= ~bit;
-                cr = cg = cb = 0;
-            }
-        } else {
-            if (dw <= db) {
-                cr = cg = cb = 255;
-            } else {
-                blk[bp] &= ~bit;
-                cr = cg = cb = 0;
-            }
+        int red_strength = has_red ? red_ink_strength(r0, g0, b0) : 0;
+        if (red_strength > 0 && (red_orange_pixel(r0, g0, b0) || fs_red_eligible(r0, g0, b0)) &&
+            red_strength > (int)bayer8[y & 7][x & 7]) {
+            red_plane[bp] |= bit;
+            blk[bp] |= bit;
+            continue;
         }
 
-        int16_t er = (int16_t)(rv - cr);
-        int16_t eg = (int16_t)(gv - cg);
-        int16_t eb = (int16_t)(bv - cb);
+        int out = 255;
+        if (yv < BW_LUMA_THRESHOLD) {
+            blk[bp] &= ~bit;
+            if (has_red)
+                red_plane[bp] &= ~bit;
+            out = 0;
+        }
 
-        ec[ex + 1].r += er * 7 / 16;
-        ec[ex + 1].g += eg * 7 / 16;
-        ec[ex + 1].b += eb * 7 / 16;
-        en[ex - 1].r += er * 3 / 16;
-        en[ex - 1].g += eg * 3 / 16;
-        en[ex - 1].b += eb * 3 / 16;
-        en[ex].r     += er * 5 / 16;
-        en[ex].g     += eg * 5 / 16;
-        en[ex].b     += eb * 5 / 16;
-        en[ex + 1].r += er * 1 / 16;
-        en[ex + 1].g += eg * 1 / 16;
-        en[ex + 1].b += eb * 1 / 16;
+        int16_t err = (int16_t)(yv - out);
+        ec[ex + 1].r += err * 7 / 16;
+        en[ex - 1].r += err * 3 / 16;
+        en[ex].r     += err * 5 / 16;
+        en[ex + 1].r += err * 1 / 16;
     }
 }
 
@@ -275,7 +337,7 @@ static UINT jpeg_outfunc_bayer(JDEC *jd, void *bitmap, JRECT *rect)
     return 1;
 }
 
-/* ── JPEG output: Floyd-Steinberg (band-buffered, stretch) ────────── */
+/* ── JPEG output: red-first F-S (band-buffered, stretch) ──────────── */
 
 static void fs_flush_band(epd_out_t *o)
 {
@@ -423,8 +485,8 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         .sw = decoded_w, .sh = decoded_h
     };
 
-    /* Try Floyd-Steinberg; fall back to Bayer if OOM */
-    int bh = 16;
+    /* Try red-first Floyd-Steinberg; fall back to Bayer if OOM */
+    int bh = 8;
     size_t bsz = (size_t)bh * decoded_w * 3;
     ctx->out.band    = (uint8_t *)malloc(bsz);
     ctx->out.rgb_row = (uint8_t *)malloc((size_t)EW * 3);
@@ -440,7 +502,7 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         ctx->out.band_top  = -1;
         ctx->out.band_rows = 0;
         ctx->out.has_red   = epd_has_red();
-        ESP_LOGI(TAG, "Floyd-Steinberg (band=%u bytes)", (unsigned)bsz);
+        ESP_LOGI(TAG, "red-first F-S (band=%u bytes)", (unsigned)bsz);
     } else {
         free(ctx->out.band); free(ctx->out.rgb_row);
         free(ctx->out.ec);   free(ctx->out.en);
@@ -476,7 +538,7 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     fclose(f);
 
     ESP_LOGI(TAG, "Converted JPEG -> %s (%u bytes, %s, stretch)",
-             out_path, (unsigned)EC, use_fs ? "Floyd-Steinberg" : "Bayer");
+             out_path, (unsigned)EC, use_fs ? "red-first F-S" : "Bayer");
 
     free(black);
     free(red);
@@ -503,7 +565,7 @@ static esp_err_t jpeg_convert_from_file(const char *input_path, const char *out_
     return ret;
 }
 
-/* ── PNG conversion (stretch-to-fill, Floyd-Steinberg) ────────────── */
+/* ── PNG conversion (stretch-to-fill, red-first F-S) ──────────────── */
 
 static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph,
                                     const char *out_path)
@@ -581,7 +643,7 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
     fclose(f);
 
     ESP_LOGI(TAG, "Converted PNG -> %s (%u bytes, %s, stretch)",
-             out_path, (unsigned)EC, use_fs ? "Floyd-Steinberg" : "Bayer");
+             out_path, (unsigned)EC, use_fs ? "red-first F-S" : "Bayer");
     free(black);
     free(red);
     return ESP_OK;
@@ -607,7 +669,7 @@ esp_err_t image_convert_png_to_epd_raw(const uint8_t *png, size_t png_len,
     return png_decode_to_epd(rgba, pw, ph, out_path);
 }
 
-/* ── BMP conversion (stretch-to-fill, Floyd-Steinberg) ────────────── */
+/* ── BMP conversion (stretch-to-fill, red-first F-S) ──────────────── */
 
 static inline uint16_t bmp_le16(const uint8_t *p)
 {
@@ -749,7 +811,7 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     fclose(f);
 
     ESP_LOGI(TAG, "Converted BMP -> %s (%u bytes, %s, stretch)",
-             out_path, (unsigned)EC, use_fs ? "Floyd-Steinberg" : "Bayer");
+             out_path, (unsigned)EC, use_fs ? "red-first F-S" : "Bayer");
     free(black);
     free(red);
     return ESP_OK;

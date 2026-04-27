@@ -21,7 +21,7 @@ void        scheduler_boot_complete(void);
 esp_err_t   scheduler_get_config(slideshow_config_t *out);
 esp_err_t   scheduler_set_config(const slideshow_config_t *cfg);
 void        scheduler_notify_manual_show(void);
-/** 仅更新 GET /slideshow 的 current_image 字符串（例如网页画廊单张预览）。 */
+/** 记录刚显示过的图片，并把顺序轮播的下一张同步到它后面。 */
 void        scheduler_set_current_image_name(const char *basename);
 const char *scheduler_get_current_image(void);
 

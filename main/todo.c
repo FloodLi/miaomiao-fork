@@ -41,29 +41,30 @@ static void nvs_load(void)
     nvs_close(h);
 }
 
-static void nvs_save(void)
+static void nvs_save_locked_snapshot(const todo_config_t *cfg)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
 
-    nvs_set_u8(h, "enabled", s_cfg.enabled ? 1 : 0);
-    nvs_set_blob(h, "items", s_cfg.items,
-                 (size_t)s_cfg.count * sizeof(todo_item_t));
+    nvs_set_u8(h, "enabled", cfg->enabled ? 1 : 0);
+    nvs_set_blob(h, "items", cfg->items,
+                 (size_t)cfg->count * sizeof(todo_item_t));
     nvs_commit(h);
     nvs_close(h);
 }
 
 /* ── EPD rendering ───────────────────────────────────────────────── */
 
-static int count_pending(void)
+static int count_pending_in(const todo_config_t *cfg)
 {
     int n = 0;
-    for (int i = 0; i < s_cfg.count; i++)
-        if (!s_cfg.items[i].done) n++;
+    for (int i = 0; i < cfg->count; i++)
+        if (!cfg->items[i].done) n++;
     return n;
 }
 
-static void render_todo(void)
+/* 渲染时使用调用方提供的快照，避免与 HTTP POST 并发写 s_cfg 时撕裂 */
+static void render_todo_snapshot(const todo_config_t *cfg)
 {
     fb_t *fb = fb_create();
     if (!fb) return;
@@ -74,8 +75,8 @@ static void render_todo(void)
     const int s = (W >= 600) ? 2 : 1;
 
     int done_n = 0;
-    for (int i = 0; i < s_cfg.count; i++)
-        if (s_cfg.items[i].done) done_n++;
+    for (int i = 0; i < cfg->count; i++)
+        if (cfg->items[i].done) done_n++;
 
     /* ── title bar ── */
     const int title_h = 26 * s;
@@ -92,7 +93,7 @@ static void render_todo(void)
         fb_utf8_scaled(fb, W - 5 * 8 * s - 8 * s, 5 * s, tbuf, COLOR_WHITE, s);
     }
 
-    if (s_cfg.count == 0) {
+    if (cfg->count == 0) {
         const char *empty = "\xe6\x9a\x82\xe6\x97\xa0\xe5\xbe\x85\xe5\x8a\x9e";
         int esc = s + 1;
         int mw = 4 * 16 * esc;
@@ -103,11 +104,11 @@ static void render_todo(void)
 
     /* ── progress section ── */
     int prog_y = title_h + 6 * s;
-    int pct = done_n * 100 / s_cfg.count;
+    int pct = done_n * 100 / cfg->count;
     char pstr[64];
     snprintf(pstr, sizeof(pstr),
              "\xe5\xb7\xb2\xe5\xae\x8c\xe6\x88\x90 %d/%d  %d%%",
-             done_n, (int)s_cfg.count, pct);
+             done_n, (int)cfg->count, pct);
     fb_utf8_scaled(fb, 8 * s, prog_y, pstr, COLOR_BLACK, s);
 
     int bar_y = prog_y + 18 * s;
@@ -116,7 +117,7 @@ static void render_todo(void)
     int bar_h = 6 * s;
     fb_rect(fb, bar_x, bar_y, bar_w, bar_h, COLOR_BLACK);
     if (done_n > 0) {
-        int fill = (bar_w - 2) * done_n / s_cfg.count;
+        int fill = (bar_w - 2) * done_n / cfg->count;
         if (fill < 1) fill = 1;
         fb_fill_rect(fb, bar_x + 1, bar_y + 1, fill, bar_h - 2,
                      (pct >= 100) ? COLOR_BLACK : COLOR_RED);
@@ -125,14 +126,14 @@ static void render_todo(void)
     /* ── item list ── */
     int list_y = bar_y + bar_h + 8 * s;
     int avail  = H - list_y - 4 * s;
-    int n_show = s_cfg.count < 10 ? (int)s_cfg.count : 10;
+    int n_show = cfg->count < 10 ? (int)cfg->count : 10;
     int item_h = avail / n_show;
     if (item_h > 28 * s) item_h = 28 * s;
     int sc   = (item_h >= 30) ? 2 : 1;
     int ch_h = 16 * sc;
 
     for (int i = 0; i < n_show; i++) {
-        const todo_item_t *it = &s_cfg.items[i];
+        const todo_item_t *it = &cfg->items[i];
         int y      = list_y + i * item_h;
         int text_y = y + (item_h - ch_h) / 2;
 
@@ -222,26 +223,32 @@ esp_err_t todo_get_config(todo_config_t *out)
 esp_err_t todo_set_config(const todo_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    todo_config_t snap;
     xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     s_cfg = *cfg;
     if (s_cfg.count > TODO_MAX_ITEMS)
         s_cfg.count = TODO_MAX_ITEMS;
+    snap = s_cfg;
     xSemaphoreGive(s_cfg_mutex);
-    nvs_save();
+    /* NVS 写入可达数十毫秒；释放锁后再写，避免阻塞读者 */
+    nvs_save_locked_snapshot(&snap);
     return ESP_OK;
 }
 
 esp_err_t todo_show(void)
 {
-    if (!s_cfg.enabled)
+    todo_config_t snap;
+    if (todo_get_config(&snap) != ESP_OK)
+        return ESP_FAIL;
+    if (!snap.enabled)
         return ESP_ERR_INVALID_STATE;
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
 
-    render_todo();
+    render_todo_snapshot(&snap);
     display_policy_set_manual_screen_active(true);
     ESP_LOGI(TAG, "displayed %d items (%d pending)",
-             s_cfg.count, count_pending());
+             snap.count, count_pending_in(&snap));
     return ESP_OK;
 }
 
@@ -249,15 +256,25 @@ esp_err_t todo_show(void)
 
 esp_err_t todo_http_get_handler(httpd_req_t *req)
 {
+    todo_config_t snap;
+    if (todo_get_config(&snap) != ESP_OK) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddBoolToObject(root, "enabled", s_cfg.enabled);
+    if (!root) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    cJSON_AddBoolToObject(root, "enabled", snap.enabled);
     cJSON *arr = cJSON_AddArrayToObject(root, "items");
 
-    for (int i = 0; i < s_cfg.count; i++) {
+    for (int i = 0; i < snap.count; i++) {
         cJSON *obj = cJSON_CreateObject();
-        cJSON_AddStringToObject(obj, "text", s_cfg.items[i].text);
-        cJSON_AddBoolToObject(obj, "done", s_cfg.items[i].done);
-        cJSON_AddNumberToObject(obj, "priority", s_cfg.items[i].priority);
+        cJSON_AddStringToObject(obj, "text", snap.items[i].text);
+        cJSON_AddBoolToObject(obj, "done", snap.items[i].done);
+        cJSON_AddNumberToObject(obj, "priority", snap.items[i].priority);
         cJSON_AddItemToArray(arr, obj);
     }
 
@@ -341,9 +358,12 @@ esp_err_t todo_http_post_handler(httpd_req_t *req)
         }
     }
 
-    nvs_save();
+    todo_config_t snap = s_cfg;
     xSemaphoreGive(s_cfg_mutex);
     cJSON_Delete(root);
+
+    /* 释放锁后再写 NVS（flash 写入耗时长，避免阻塞读者） */
+    nvs_save_locked_snapshot(&snap);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");
@@ -362,14 +382,20 @@ esp_err_t todo_show_http_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    todo_config_t snap;
+    if (todo_get_config(&snap) != ESP_OK) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
     /* allow showing even if not "enabled" — treat as manual push */
-    if (s_cfg.count == 0) {
+    if (snap.count == 0) {
         httpd_resp_set_type(req, "application/json");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"no items\"}");
         return ESP_OK;
     }
 
-    render_todo();
+    render_todo_snapshot(&snap);
     display_policy_set_manual_screen_active(true);
     button_set_current_mode(DISPLAY_MODE_TODO);
     power_mgr_save_mode(DISPLAY_MODE_TODO);

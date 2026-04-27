@@ -172,7 +172,7 @@ EPD 驱动刷新
 - Bluetooth: 5.0 LE（视模组是否裁切）
 - 封装：SMD 模组
 
-**应用引脚分配（4.2" 默认接法见 `README.md`；整机接线示意见 `hardware/开发板接线图.png`）:**
+**应用引脚分配（4.2" 与 5.83" 共用同一组接线，详见 `README.md`；整机接线示意见 `hardware/开发板接线图.png`）:**
 ```
 SPI (EPD):
   SCK  = GPIO4
@@ -338,25 +338,83 @@ USB (CH340):
 ### 5.1 EPD 驱动模块 (`epd_stub.c`)
 
 **功能:**
-- SSD1619/UC8179 驱动
+- SSD1619 (4.2" 400×300 BWR) / UC8179 (5.83" 648×480 BWR) 驱动
 - SPI DMA 批量传输
 - BUSY 信号处理
-- 刷新序列控制
+- 全刷 / 快速刷新 / 局部刷新（当前仅 SSD1619 4.2" 启用）
 
 **关键函数:**
 ```c
 esp_err_t epd_init(void);
-esp_err_t epd_display_from_buffer(const fb_t *fb);
+esp_err_t epd_display_from_buffer(const fb_t *fb);          /* 全刷，BWR */
+esp_err_t epd_display_fb_free(fb_t *fb);                    /* 同上，SPI 完成立即释放 fb */
 esp_err_t epd_display_from_file(const char *path);
+esp_err_t epd_display_from_buffer_fast(const fb_t *fb);     /* 全屏快速 BW（4.2"），其它屏回退全刷 */
+esp_err_t epd_display_partial_region(const fb_t *fb,
+                                     int x0, int y0,
+                                     int x1, int y1);        /* 局部刷新（当前仅 4.2"） */
 esp_err_t epd_set_panel(epd_panel_t panel);
 epd_panel_t epd_get_panel(void);
 ```
 
 **技术要点:**
-1. DMA 4KB 分块传输
-2. BUSY 极性自动检测
-3. 双屏参数自动适配
-4. 刷新序列优化
+1. DMA 4KB 分块传输（`EPD_FILL_CHUNK`），非 DMA-capable 源用 bounce buffer
+2. BUSY 极性自动检测 + NVS `epd/busy_idle` 覆盖（4.2" 默认 0、5.83" 默认 1）
+3. 双屏参数自动适配（`s_specs[]` 表 + 切屏时 `s_panel_seq_done` 失效）
+4. 三档刷新：全刷 BWR ~18.8s / 全屏快速 BW（4.2"）~1-2s / 区域局部
+5. **局部刷新策略**：
+   - 4.2" SSD1619：RAM 窗口（0x44/0x45 字节列范围、0x4E/0x4F 光标）+ 快速 LUT
+     （BW only），区域内红色平面同步清零；耗时 ~1.0-1.5s。
+   - 5.83" UC8179：PTL_IN/PTL_OUT 实机验证仍接近全刷（~19s）且会导致后续页面异常，
+     因此当前禁用局刷，`epd_display_partial_region()` 返回 `ESP_ERR_NOT_SUPPORTED`。
+6. **残影管理**：`EPD_PARTIAL_MAX_STREAK = 10`，调用方累计 10 次局部后应主动安排一次
+   全刷消残影；时钟模块已自动处理。整点 / 日期跳变也强制全刷以更新下半屏内容。
+7. **坐标对齐**：`epd_display_partial_region()` 自动把 X 向 8 像素边界外扩（屏控字节寻址
+   要求），fb 尺寸不匹配返回 `ESP_ERR_INVALID_ARG`。
+
+#### 5.1.1 时钟任务事件循环（`clock_task` in `clock_display.c`）
+
+时钟模块是局部刷新主消费者，循环逻辑直接决定每分钟刷屏耗时与是否出现重复全刷。
+
+**核心数据**：
+- `s_state` 渲染状态镜像（`s_state_mux` 自旋锁保护），记录上次成功渲染时的
+  `last_minute / last_hour / last_mday / last_weather_sig / last_show_weather /
+  force_full_next`。
+- 三个事件位：`BIT_CFG_CHANGED`（配置真正变化）、`BIT_WEATHER_DATA`（天气签名
+  变化）、`BIT_WAKE`（外部 `clock_display_show` 渲染完后唤醒任务接管，但**不**
+  触发再渲染）。
+
+**单轮迭代决策**（聚合，最多一次 render）：
+
+```
+等待 (CFG | WEATHER | WAKE)，超时对齐到下一分钟边界 (1~60s)
+   │
+   ▼
+读取 tm + show_weather + s_state 快照
+   │
+   ▼
+聚合信号：minute_changed / hour_changed / day_changed
+         cfg_changed / sw_visibility_changed / weather_data_changed
+   │
+   ▼
+任意"涉及下半屏"信号 → force_full = true
+仅 minute_changed → force_full 维持原值（默认 false → 4.2" partial；5.83" full）
+   │
+   ▼
+render_clock(!force_full)（成功后内部更新 s_state）
+```
+
+**关键去重点**：
+1. `clock_display_notify_weather_data` 入口先 `compute_weather_sig()` 与
+   `s_state.last_weather_sig` 比较，相同直接 `return`，根本不 `setBits`。
+2. `clock_display_set_config` 比对新旧 `enabled/style/show_weather`，无差别时不
+   `setBits(CFG_CHANGED)`。
+3. `clock_display_show` 同步渲染后只 `setBits(BIT_WAKE)` 而不 `BIT_CFG_CHANGED`，
+   任务唤醒后通过 `s_state` 已是最新而跳过冗余刷屏。
+
+**渲染日志**：每次决定渲染前打印
+`tick HH:MM -> render(partial=N) min=X hr=X day=X cfg=X sw_vis=X wx=X ff=X`，
+便于定位"为什么是 partial / 为什么强制 full"。
 
 ### 5.2 图片转换模块 (`image_convert.c`)
 
@@ -873,9 +931,9 @@ idf.py -p COM3 monitor
 
 ```csv
 # Name,      Type, SubType,  Offset,    Size
-nvs,         data, nvs,      0x9000,    0x6000      # 24KB
-otadata,     data, ota,      0xF000,    0x2000      # 8KB
-phy_init,    data, phy,      0x11000,   0x1000      # 4KB
+nvs,         data, nvs,      0x9000,    0xC000      # 48KB（容纳 PHY 校准 + 多个模块的配置 blob）
+otadata,     data, ota,      0x15000,   0x2000      # 8KB
+phy_init,    data, phy,      0x17000,   0x1000      # 4KB
 factory,     app,  factory,  0x20000,   0x200000    # 2MB
 ota_0,       app,  ota_0,    0x220000,  0x200000    # 2MB
 ota_1,       app,  ota_1,    0x420000,  0x200000    # 2MB

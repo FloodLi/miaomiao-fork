@@ -221,18 +221,24 @@ static void render_message(void)
 
     /* export and display */
     const char *raw_path = "/spiffs/image.bin";
+    fb_raw_file_lock();
     esp_err_t err = fb_export(fb, raw_path);
     fb_destroy(fb);
 
     if (err == ESP_OK && epd_is_ready()) {
         ESP_LOGI(TAG, "FB exported, sending to EPD (%d lines, scale=%d)...", line_count, scale);
-        epd_display_from_file(raw_path);
-        display_policy_set_manual_screen_active(true);
-        scheduler_notify_manual_show();
-        ESP_LOGI(TAG, "Message displayed on EPD");
+        esp_err_t disp_err = epd_display_from_file(raw_path);
+        if (disp_err == ESP_OK) {
+            display_policy_set_manual_screen_active(true);
+            scheduler_notify_manual_show();
+            ESP_LOGI(TAG, "Message displayed on EPD");
+        } else {
+            ESP_LOGE(TAG, "display failed: %s", esp_err_to_name(disp_err));
+        }
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "fb_export failed: %s", esp_err_to_name(err));
     }
+    fb_raw_file_unlock();
 }
 
 /* ── public API ───────────────────────────────────────────────────── */

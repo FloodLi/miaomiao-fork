@@ -98,7 +98,7 @@
 | :---: | :---: |
 | ![内部结构](水墨屏内部图/ed0d801723637cc34a69eea9c8024cd5.jpg) | ![内部结构](水墨屏内部图/72fb56b95add88efbb6bea1e20285d28.jpg) |
 
-> **5.83&quot; 面板**若使用另一组 GPIO，请以 `main/epd_stub.c` 中当前面板配置为准；下表为 **4.2&quot; 默认**。
+> **4.2&quot; 与 5.83&quot; 面板共用同一组 GPIO 接线**（见下表），切换面板只需运行时通过 Web 页面或 `POST /panel_config` 修改 `panel` 字段，无需改线，也不需要修改 `main/epd_stub.c` 的引脚宏。
 
 ### 硬件架构与自定义 PCB
 
@@ -243,8 +243,9 @@ msp/
 
 | 分区 | 类型 | 大小 | 说明 |
 |------|------|------|------|
-| nvs | data | 24 KB | 非易失性配置存储 |
+| nvs | data | 48 KB | 非易失性配置存储（PHY 校准 + 各模块 blob） |
 | otadata | data | 8 KB | OTA 状态 |
+| phy_init | data | 4 KB | PHY 初始化基线数据 |
 | factory | app | 2 MB | 出厂固件（回滚保护） |
 | ota_0 / ota_1 | app | 各 2 MB | OTA 双分区 |
 | spiffs | data | ~10 MB | 图片/文件存储 |

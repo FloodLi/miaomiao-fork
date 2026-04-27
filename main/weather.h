@@ -45,12 +45,11 @@ esp_err_t weather_get_config(weather_config_t *out);
 esp_err_t weather_set_config(const weather_config_t *cfg);
 /** force_fullscreen: true = 始终刷整页天气（如 /weather_show）；false = 由显示策略决定（时钟主页时只拉数据） */
 esp_err_t weather_fetch_and_display(bool force_fullscreen);
-const weather_data_t *weather_get_data(void);
 
 /** Display cached weather data on EPD without network fetch. Returns ESP_ERR_INVALID_STATE if no data cached. */
 esp_err_t weather_display_cached(void);
 
-/** 线程安全：在 s_fetch_mutex 保护下拷贝一份天气数据 */
+/** 线程安全：在 s_fetch_mutex 保护下拷贝一份天气数据。out 必填。 */
 void weather_get_data_copy(weather_data_t *out);
 
 /** 供时钟「显示天气摘要」调用：在已配置 API 时触发一次拉取（不抢整页） */

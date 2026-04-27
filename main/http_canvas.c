@@ -28,6 +28,40 @@
 
 static const char *TAG = "http_canvas";
 
+/**
+ * 校验画布资源（图标 / 用户图片）的 name 参数。
+ * 路径形如 "/spiffs/cimg/<name>.bin" 或 "/spiffs/icons/<name>.bin"。
+ * SPIFFS 受 CONFIG_SPIFFS_OBJ_NAME_LEN（含 NUL）限制（默认 32），
+ * 去掉前缀后留给 name 的安全上限 ≈ 20，这里收紧到 16 字符以方便前端预览。
+ *
+ * 返回 false 时已经向客户端发出 4xx 响应，调用方直接 return ESP_OK 即可。
+ */
+#define CANVAS_NAME_MAX 16
+
+static bool canvas_validate_name(httpd_req_t *req, const char *name)
+{
+    if (!name || !*name) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "名称不能为空");
+        return false;
+    }
+    size_t nlen = strlen(name);
+    if (nlen > CANVAS_NAME_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "名称过长（最多 16 个字符）");
+        return false;
+    }
+    for (const char *p = name; *p; p++) {
+        char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                "名称含非法字符（仅允许 a-zA-Z0-9_-）");
+            return false;
+        }
+    }
+    return true;
+}
+
 /* ── GET /board ─────────────────────────────────────────────────────── */
 
 esp_err_t canvas_board_ui_get(httpd_req_t *req)
@@ -68,32 +102,68 @@ esp_err_t canvas_layout_post(httpd_req_t *req)
 
     int len = req->content_len;
     if (len <= 0 || len > CANVAS_LAYOUT_MAX_BYTES) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "内容长度无效");
+        ESP_LOGW(TAG, "layout_post rejected: content_len=%d (limit=%d)",
+                 len, CANVAS_LAYOUT_MAX_BYTES);
+        char msg[96];
+        if (len <= 0) {
+            snprintf(msg, sizeof(msg), "请求体为空（content-length=%d）", len);
+        } else {
+            snprintf(msg, sizeof(msg),
+                     "布局过大：%d 字节，上限 %d 字节",
+                     len, CANVAS_LAYOUT_MAX_BYTES);
+        }
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, msg);
         return ESP_OK;
     }
 
-    char *buf = malloc((size_t)len + 1);
-    if (!buf) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存不足");
+    /* 最优策略：流式接收 → 临时文件 → 校验 → 原子替换。
+     * 收发阶段只占用一个 1KB 栈级 chunk，避免在 HTTP 任务里 malloc 12KB 大块。
+     * 校验阶段才把临时文件读回内存（由 canvas_board_commit_layout_from_file 完成）。 */
+    static const char *TMP_PATH = "/spiffs/canvas_layout.tmp";
+    FILE *tmp = fopen(TMP_PATH, "w");
+    if (!tmp) {
+        ESP_LOGE(TAG, "fopen(%s) failed errno=%d", TMP_PATH, errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "无法创建临时文件");
         return ESP_OK;
     }
 
+    char chunk[1024];
     int total = 0;
     while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
+        int want = len - total;
+        if (want > (int)sizeof(chunk)) want = sizeof(chunk);
+        int r = httpd_req_recv(req, chunk, want);
         if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
         if (r <= 0) {
-            free(buf);
+            fclose(tmp);
+            unlink(TMP_PATH);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
+            return ESP_OK;
+        }
+        if ((int)fwrite(chunk, 1, (size_t)r, tmp) != r) {
+            fclose(tmp);
+            unlink(TMP_PATH);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "写盘失败");
             return ESP_OK;
         }
         total += r;
     }
-    buf[total] = '\0';
+    fclose(tmp);
 
-    esp_err_t err = canvas_board_set_layout(buf, (size_t)total);
-    free(buf);
-
+    /* 校验 + 原子替换正式文件；失败时该函数自行清理 tmp */
+    esp_err_t err = canvas_board_commit_layout_from_file(TMP_PATH);
+    if (err == ESP_ERR_INVALID_ARG) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "布局 JSON 无效");
+        return ESP_OK;
+    }
+    if (err == ESP_ERR_INVALID_SIZE) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "布局过大");
+        return ESP_OK;
+    }
+    if (err == ESP_ERR_NO_MEM) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存不足");
+        return ESP_OK;
+    }
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "保存布局失败");
         return ESP_OK;
@@ -172,23 +242,16 @@ esp_err_t canvas_icon_upload_post(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
-    char name[40] = {0};
+    char name[CANVAS_NAME_MAX + 4] = {0};
     if (!http_get_query_param(req, "name", name, sizeof(name))) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少 name 参数");
         return ESP_OK;
     }
-
-    /* 验证名称 */
-    for (const char *p = name; *p; p++) {
-        char c = *p;
-        if (!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-')) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "图标名称含非法字符");
-            return ESP_OK;
-        }
-    }
+    if (!canvas_validate_name(req, name)) return ESP_OK;
 
     int len = req->content_len;
     if (len <= 0 || len > 4096) {
+        ESP_LOGW(TAG, "icon_upload rejected: name=%s content_len=%d", name, len);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "内容长度无效（期望 32 字节 1-bit 位图）");
         return ESP_OK;
     }
@@ -260,18 +323,12 @@ esp_err_t canvas_image_list_get(httpd_req_t *req)
 
 esp_err_t canvas_image_get(httpd_req_t *req)
 {
-    char name[40] = {0};
+    char name[CANVAS_NAME_MAX + 4] = {0};
     if (!http_get_query_param(req, "name", name, sizeof(name))) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少 name 参数");
         return ESP_OK;
     }
-    for (const char *p = name; *p; p++) {
-        char c = *p;
-        if (!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-')) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "名称非法");
-            return ESP_OK;
-        }
-    }
+    if (!canvas_validate_name(req, name)) return ESP_OK;
     char path[128];
     snprintf(path, sizeof(path), "%s/%s.bin", CANVAS_IMAGES_DIR, name);
     FILE *f = fopen(path, "rb");
@@ -296,22 +353,22 @@ esp_err_t canvas_image_upload_post(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
-    char name[40] = {0};
+    char name[CANVAS_NAME_MAX + 4] = {0};
     if (!http_get_query_param(req, "name", name, sizeof(name))) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少 name 参数");
         return ESP_OK;
     }
-    for (const char *p = name; *p; p++) {
-        char c = *p;
-        if (!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-')) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "图片名称含非法字符");
-            return ESP_OK;
-        }
-    }
+    if (!canvas_validate_name(req, name)) return ESP_OK;
 
     int content_len = req->content_len;
     if (content_len <= 4 || content_len > CANVAS_IMAGE_MAX_BYTES) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "内容长度无效");
+        ESP_LOGW(TAG, "image_upload rejected: name=%s content_len=%d (limit=%d)",
+                 name, content_len, CANVAS_IMAGE_MAX_BYTES);
+        char msg[96];
+        snprintf(msg, sizeof(msg),
+                 "图片大小无效：%d 字节，需 5..%d",
+                 content_len, CANVAS_IMAGE_MAX_BYTES);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, msg);
         return ESP_OK;
     }
 
@@ -358,11 +415,12 @@ esp_err_t canvas_image_delete_post(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
-    char name[40] = {0};
+    char name[CANVAS_NAME_MAX + 4] = {0};
     if (!http_get_query_param(req, "name", name, sizeof(name))) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少 name 参数");
         return ESP_OK;
     }
+    if (!canvas_validate_name(req, name)) return ESP_OK;
     char tmp[64];
     while (req->content_len > 0) {
         int r = httpd_req_recv(req, tmp, sizeof(tmp));
@@ -387,11 +445,12 @@ esp_err_t canvas_icon_delete_post(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
-    char name[40] = {0};
+    char name[CANVAS_NAME_MAX + 4] = {0};
     if (!http_get_query_param(req, "name", name, sizeof(name))) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少 name 参数");
         return ESP_OK;
     }
+    if (!canvas_validate_name(req, name)) return ESP_OK;
 
     /* 消耗请求体 */
     char tmp[64];

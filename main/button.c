@@ -50,7 +50,15 @@ static atomic_bool    s_busy;
 static QueueHandle_t  s_cmd_queue;
 
 int  button_get_current_mode(void) { return s_mode_idx; }
-void button_set_current_mode(int mode) { s_mode_idx = mode; }
+void button_set_current_mode(int mode)
+{
+    /* 防止外部调用方写入越界 idx，导致按键循环跳到无效 entry。 */
+    int n = display_mode_count();
+    if (n <= 0) return;
+    if (mode < 0) mode = 0;
+    if (mode >= n) mode = n - 1;
+    s_mode_idx = mode;
+}
 
 static const gpio_num_t btn_pins[BTN_COUNT] = {
     BTN_LEFT, BTN_MID, BTN_RIGHT,
@@ -205,15 +213,21 @@ esp_err_t button_init(void)
     }
 
     BaseType_t ok;
-    ok = xTaskCreate(display_worker_task, "btn_disp", WORKER_STACK, NULL, 4, NULL);
+    TaskHandle_t worker_h = NULL;
+    ok = xTaskCreate(display_worker_task, "btn_disp", WORKER_STACK, NULL, 4, &worker_h);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "worker task create failed");
+        vQueueDelete(s_cmd_queue);
+        s_cmd_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
 
     ok = xTaskCreate(button_task, "btn_poll", 2560, NULL, 5, NULL);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "poll task create failed");
+        if (worker_h) vTaskDelete(worker_h);
+        vQueueDelete(s_cmd_queue);
+        s_cmd_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
 

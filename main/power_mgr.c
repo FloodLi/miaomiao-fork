@@ -19,6 +19,8 @@ static const char *TAG = "power";
 #define NVS_KEY_EN      "enabled"
 #define NVS_KEY_INTV    "interval"
 #define NVS_KEY_IDLE    "idle"
+#define NVS_KEY_MODE    "last_mode"
+#define NVS_KEY_MODE_V2 "last_mode_v2"
 
 #define DEFAULT_INTERVAL_MIN   60
 #define DEFAULT_IDLE_TIMEOUT_S 120
@@ -158,15 +160,23 @@ esp_err_t power_mgr_set_config(const power_config_t *cfg)
     portENTER_CRITICAL(&s_activity_mux);
     s_cfg = validated;
     portEXIT_CRITICAL(&s_activity_mux);
-    save_config();  /* NVS write outside critical section */
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%d min, idle=%d s",
              s_cfg.enabled, s_cfg.interval_min, s_cfg.idle_timeout_s);
 
     /* 开机时若低功耗为关，app_main 里的 power_mgr_arm() 会直接返回且不会创建
      * pwr_idle；之后仅在网页里打开低功耗时，必须在此再次 arm，否则永远不会进深睡。 */
-    if (s_cfg.enabled)
-        power_mgr_arm();
+    if (s_cfg.enabled) {
+        esp_err_t err = power_mgr_arm();
+        if (err != ESP_OK) {
+            portENTER_CRITICAL(&s_activity_mux);
+            s_cfg.enabled = false;
+            portEXIT_CRITICAL(&s_activity_mux);
+            save_config();
+            return err;
+        }
+    }
 
+    save_config();  /* NVS write outside critical section */
     return ESP_OK;
 }
 
@@ -177,22 +187,30 @@ void power_mgr_reset_activity(void)
     portEXIT_CRITICAL(&s_activity_mux);
 }
 
-void power_mgr_arm(void)
+esp_err_t power_mgr_arm(void)
 {
     if (!s_cfg.enabled) {
         ESP_LOGI(TAG, "Sleep mode disabled, not arming");
-        return;
+        return ESP_OK;
     }
 
     if (!s_idle_task) {
-        xTaskCreate(idle_monitor_task, "pwr_idle", IDLE_TASK_STACK,
-                    NULL, 2, &s_idle_task);
+        TaskHandle_t task = NULL;
+        BaseType_t ok = xTaskCreate(idle_monitor_task, "pwr_idle", IDLE_TASK_STACK,
+                                    NULL, 2, &task);
+        if (ok != pdPASS) {
+            s_idle_task = NULL;
+            ESP_LOGE(TAG, "Failed to create idle monitor task");
+            return ESP_ERR_NO_MEM;
+        }
+        s_idle_task = task;
     }
 
     portENTER_CRITICAL(&s_activity_mux);
     s_last_activity_us = esp_timer_get_time();
     portEXIT_CRITICAL(&s_activity_mux);
     ESP_LOGI(TAG, "Armed: will sleep after %d s of inactivity", s_cfg.idle_timeout_s);
+    return ESP_OK;
 }
 
 void power_mgr_enter_sleep(void)
@@ -212,11 +230,11 @@ void power_mgr_enter_sleep(void)
              "Entering deep sleep for %d min (EXT1: GPIO %d/%d only; SW4 not on RTC)",
              s_cfg.interval_min, WAKE_GPIO_SW5, WAKE_GPIO_SW3);
 
-    /* Wait for any in-progress EPD refresh before sleeping */
-    int wait_count = 0;
-    while (!epd_is_ready() && wait_count < 100) {
-        vTaskDelay(pdMS_TO_TICKS(200));
-        wait_count++;
+    /* Do not sleep while an EPD transfer/refresh still owns the display mutex. */
+    if (epd_is_ready() && !epd_wait_idle(70000)) {
+        ESP_LOGW(TAG, "EPD still busy, postponing deep sleep");
+        power_mgr_reset_activity();
+        return;
     }
 
     nvs_flush_all();
@@ -229,7 +247,8 @@ void power_mgr_save_mode(int mode_index)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_i32(h, "last_mode", (int32_t)mode_index);
+    nvs_set_i32(h, NVS_KEY_MODE, (int32_t)mode_index);
+    nvs_set_u8(h, NVS_KEY_MODE_V2, 1);
     nvs_commit(h);
     nvs_close(h);
 }
@@ -239,7 +258,18 @@ int power_mgr_load_mode(void)
     nvs_handle_t h;
     int32_t mode = 0;
     if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return 0;
-    nvs_get_i32(h, "last_mode", &mode);
+    nvs_get_i32(h, NVS_KEY_MODE, &mode);
     nvs_close(h);
     return (int)mode;
+}
+
+bool power_mgr_saved_mode_has_marker(void)
+{
+    nvs_handle_t h;
+    uint8_t marker = 0;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK)
+        return false;
+    esp_err_t err = nvs_get_u8(h, NVS_KEY_MODE_V2, &marker);
+    nvs_close(h);
+    return err == ESP_OK && marker == 1;
 }

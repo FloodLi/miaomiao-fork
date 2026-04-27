@@ -29,8 +29,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* 最大布局 JSON 字节数（存于 SPIFFS） */
-#define CANVAS_LAYOUT_MAX_BYTES  8192
+/* 最大布局 JSON 字节数（存于 SPIFFS）。
+ * 受限于渲染时同时驻留：78KB 帧缓冲 + 本字符串 + ~5x 的 cJSON 树。
+ * ESP32-S3 在 WiFi+AP 共存下可用堆 ~150KB，12KB 已是安全上限。 */
+#define CANVAS_LAYOUT_MAX_BYTES  12288
 
 /* 图标存储目录 */
 #define CANVAS_ICONS_DIR  "/spiffs/icons"
@@ -49,6 +51,14 @@ esp_err_t canvas_board_get_layout(char *buf, size_t buf_len);
  * 保存布局 JSON（写入 SPIFFS /spiffs/canvas_layout.json）。
  */
 esp_err_t canvas_board_set_layout(const char *json, size_t len);
+
+/**
+ * 提交一个已经流式落盘到临时文件的布局：cJSON 校验通过后原子替换正式文件。
+ * 失败时自动删除临时文件。tmp_path 必须存在；成功返回 ESP_OK。
+ *   - ESP_ERR_INVALID_ARG: tmp 文件内容不是合法 JSON 数组
+ *   - ESP_ERR_INVALID_SIZE: tmp 文件 >  CANVAS_LAYOUT_MAX_BYTES
+ */
+esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path);
 
 /**
  * 从当前布局渲染并推送到墨水屏（异步任务）。

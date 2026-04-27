@@ -1,7 +1,11 @@
 # Name,     Type, SubType,  Offset,    Size,      Flags
-nvs,        data, nvs,      0x9000,    0x6000,
-otadata,    data, ota,      0xF000,    0x2000,
-phy_init,   data, phy,      0x11000,   0x1000,
+# nvs 扩大到 48KB（原 24KB）：原本 24KB 同时承载 PHY 校准(~3KB)+wifi+weather+
+# timetable+todo+clock+countdown+power+basic-auth 等多份 blob，启动期偶发
+# `phy_init: store_cal_data_to_nvs_handle: store calibration data failed(0x1105)`。
+# factory 仍 0x20000 对齐，应用分区无变化。
+nvs,        data, nvs,      0x9000,    0xC000,
+otadata,    data, ota,      0x15000,   0x2000,
+phy_init,   data, phy,      0x17000,   0x1000,
 factory,    app,  factory,  0x20000,   0x200000,
 ota_0,      app,  ota_0,    0x220000,  0x200000,
 ota_1,      app,  ota_1,    0x420000,  0x200000,

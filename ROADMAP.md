@@ -11,6 +11,54 @@
 
 > 说明：下面是从 v1.0 规划落地后的**实际完成项/关键修复**汇总（含多次迭代的经验性修复）。
 
+### 2026-04-26（v2.3.x — EPD 局部刷新 / 启动回落 / 渲染修复）
+
+- **局部刷新（partial refresh）稳定化**：
+  - 4.2" SSD1619：扩展已有快速 LUT 路径，用 RAM 窗口（0x44/0x45）只写矩形字节，
+    并清零矩形内红色平面避免残留。耗时 ~1.0–1.5s。
+  - 5.83" UC8179：实机验证 PTL 局部模式仍接近全刷（~19s）且会导致后续页面显示异常，
+    因此驱动层禁用 UC8179 partial，返回 `ESP_ERR_NOT_SUPPORTED`；大屏优先保证全局页面稳定。
+  - 新 API：`epd_display_partial_region(fb, x0, y0, x1, y1)`，X 自动 8 像素对齐，
+    越界自动 clamp，fb 尺寸不匹配返回 `ESP_ERR_INVALID_ARG`。
+  - 新增 `EPD_PARTIAL_MAX_STREAK=10`：连续局部刷新次数上限，超过后调用方应触发一次
+    全刷消除残影。
+- **时钟模块接入局部刷新**：
+  - `render_clock(prefer_partial)`：局刷代码保留，但默认通过 `CLOCK_ENABLE_PARTIAL_REFRESH=0`
+    关闭。实机验证 SSD1619 小屏 fast LUT 会让整屏背景发灰、下半屏文字变淡；UC8179
+    大屏 PTL partial 也不稳定。因此当前默认走稳定全刷，优先保证显示质量。
+  - 局刷关闭时不再每分钟全刷，而是 `CLOCK_FULL_REFRESH_STEP_MIN=5`：只在 00/05/10/15...
+    分钟边界全刷；整点/跨日/配置/天气变更仍立即全刷。
+  - 整点跳变 / 日期跳变检测：`tm.tm_hour` 或 `tm.tm_mday` 改变时强制全刷，
+    保证下半屏（AM/PM、日期、星期）随时间正确更新。
+- **时钟任务循环重构（修复重复全刷）**：
+  - 旧实现里 `clock_task` 把"分钟跳变"和"事件位 (BIT_CFG_CHANGED / BIT_WEATHER_DATA)"
+    写成两段独立路径，会在同一循环里触发两次渲染（典型现象：配置保存后同分钟 22:19
+    被刷两次全刷，再 22:20 又因 weather 通知被强制全刷）。
+  - 新实现一轮迭代只做一次渲染决策：等待 → 读时间 + 配置 + 天气签名 → 聚合
+    "分钟变 / 整点变 / 日期变 / 配置变 / 天气可见性变 / 天气数据签名变"六个信号 → 一次
+    `render_clock(!force_full)`。
+  - 新增**模块级状态镜像** `s_state{last_minute,last_hour,last_mday,last_weather_sig,
+    last_show_weather,force_full_next}`：所有渲染入口（任务循环、外部
+    `clock_display_show`、weather notify）共用，避免相互不知情导致重复刷屏。
+  - **天气数据签名去重** `compute_weather_sig() = temp|icon|humidity|daily_count`：
+    `clock_display_notify_weather_data` 入口先比对签名，没变直接 `return`；任务
+    循环里同样比对，避免"通知频繁但数据未变"白白触发全刷。
+  - **超时对齐到下一分钟边界** (1~60s)：分钟跳变响应时间从最长 30s 降到 ≤1s。
+  - 新增 `BIT_WAKE` 纯唤醒位：外部 `clock_display_show` 渲染完用它把任务从
+    disabled 长睡里叫醒接管后续分钟刷新，但不会被当成"配置变了"再多刷一次。
+  - 新增渲染原因日志 `tick HH:MM -> render(partial=N) min=.. hr=.. day=.. cfg=..
+    sw_vis=.. wx=.. ff=..`，方便定位为什么是 partial 还是 full。
+- **启动模式空数据回落**：`boot_display_route()` 在持久化模式（如轮播图）数据源缺失时
+  自动回落到时钟（mode 0），不覆盖 NVS 偏好，下次数据补齐后自动恢复。
+- **NVS 分区扩到 48KB**：`partitions.csv` `nvs=0x6000→0xC000`，消除 PHY 校准 `0x1105`
+  失败；`otadata` / `phy_init` 偏移随之调整，`factory` 仍 0x20000 对齐。
+- **画布 / 帧缓冲若干修复**：
+  - `fb_create()` 三级分配回退：DMA 整块 → 普通堆整块 → 双 plane 分离，缓解 5.83" 78KB
+    帧缓冲在堆碎片化场景下的分配失败。
+  - `fb_pixel` / `fb_hline` 画黑色时显式清红色平面，修复 BWR 屏「红色矩形上看不见黑字」。
+  - `canvas_layout` 流式落盘 + 原子 rename + 前端 RDP 路径化简，将单次提交峰值堆占用
+    从 ~30KB 降到 ~6KB。
+
 ### 2026-04-15（v2.3.0 — 全面代码审查与质量加固）
 
 - **轮播 + 低功耗联动修复**：
@@ -164,7 +212,7 @@
 
 | 维度 | 现状 | 问题 |
 |------|------|------|
-| 刷新速度 | 三色全刷较慢 | 三色屏物理全刷较慢（尤其红色），可进一步优化“刷新中”提示与调度 |
+| 刷新速度 | 全刷 ~18.8s，局刷实验默认关闭 | SSD1619 4.2" 局刷代码保留但默认关闭（fast LUT 会造成整屏发灰/下半屏变淡）；UC8179 5.83" PTL partial 实测仍 ~19s 且会刷花，已禁用并回退全刷。时钟自动刷新默认每 5 分钟全刷一次，避免每分钟闪烁 |
 | PNG 内存占用 | PNG 需 RGBA 解码 | 无 PSRAM 时大 PNG 仍可能内存吃紧（可后续做更轻量的解码/限制策略） |
 | 电源管理 | ✅ 已实现 | 闲置自动深睡 + 定时器/按键唤醒，预估 80+ 天续航 |
 

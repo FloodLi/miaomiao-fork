@@ -1,4 +1,4 @@
-#include "weather.h"
+﻿#include "weather.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -47,7 +47,21 @@ static SemaphoreHandle_t  s_fetch_mutex;
 static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool               s_skip_initial_task_fetch;
 
-/* ── weather icons (24x24 bitmaps, 72 bytes each) ────────────────── */
+static void weather_config_snapshot(weather_config_t *out)
+{
+    portENTER_CRITICAL(&s_cfg_mux);
+    *out = s_cfg;
+    portEXIT_CRITICAL(&s_cfg_mux);
+}
+
+static bool weather_config_has_api(const weather_config_t *cfg)
+{
+    return cfg->api_key[0] != '\0' &&
+           cfg->location[0] != '\0' &&
+           cfg->api_host[0] != '\0';
+}
+
+/* 鈹€鈹€ weather icons (24x24 bitmaps, 72 bytes each) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static const uint8_t icon_sunny[72] = {
     0x00,0x18,0x00, 0x00,0x18,0x00, 0x02,0x18,0x40, 0x01,0x00,0x80,
@@ -94,7 +108,7 @@ static const uint8_t *get_icon(int code)
     return icon_cloudy;
 }
 
-/* ── NVS ──────────────────────────────────────────────────────────── */
+/* 鈹€鈹€ NVS 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static void nvs_load(void)
 {
@@ -120,21 +134,21 @@ static void nvs_load(void)
     nvs_close(h);
 }
 
-static void nvs_save(void)
+static void nvs_save_snapshot(const weather_config_t *cfg)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u8(h,  "enabled",  s_cfg.enabled ? 1 : 0);
-    nvs_set_str(h, "api_key",  s_cfg.api_key);
-    nvs_set_str(h, "api_host", s_cfg.api_host);
-    nvs_set_str(h, "location", s_cfg.location);
-    nvs_set_str(h, "city",     s_cfg.city_name);
-    nvs_set_u32(h, "refresh",  s_cfg.refresh_min);
+    nvs_set_u8(h,  "enabled",  cfg->enabled ? 1 : 0);
+    nvs_set_str(h, "api_key",  cfg->api_key);
+    nvs_set_str(h, "api_host", cfg->api_host);
+    nvs_set_str(h, "location", cfg->location);
+    nvs_set_str(h, "city",     cfg->city_name);
+    nvs_set_u32(h, "refresh",  cfg->refresh_min);
     nvs_commit(h);
     nvs_close(h);
 }
 
-/* ── HTTP fetch helper ────────────────────────────────────────────── */
+/* 鈹€鈹€ HTTP fetch helper 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 typedef struct {
     char  *buf;
@@ -265,7 +279,7 @@ static char *http_get(const char *url)
     return rb.buf;
 }
 
-/* ── parse QWeather JSON ──────────────────────────────────────────── */
+/* 鈹€鈹€ parse QWeather JSON 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static bool parse_now(const char *json)
 {
@@ -350,20 +364,23 @@ static bool parse_daily(const char *json)
     return true;
 }
 
-/* ── render weather to EPD ────────────────────────────────────────── */
+/* 鈹€鈹€ render weather to EPD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 static const char *weekday_zh[] = {
-    "\xe6\x97\xa5",  /* 日 */
-    "\xe4\xb8\x80",  /* 一 */
-    "\xe4\xba\x8c",  /* 二 */
-    "\xe4\xb8\x89",  /* 三 */
-    "\xe5\x9b\x9b",  /* 四 */
-    "\xe4\xba\x94",  /* 五 */
-    "\xe5\x85\xad",  /* 六 */
+    "\xe6\x97\xa5",  /* 鏃?*/
+    "\xe4\xb8\x80",  /* 涓€ */
+    "\xe4\xba\x8c",  /* 浜?*/
+    "\xe4\xb8\x89",  /* 涓?*/
+    "\xe5\x9b\x9b",  /* 鍥?*/
+    "\xe4\xba\x94",  /* 浜?*/
+    "\xe5\x85\xad",  /* 鍏?*/
 };
 
 static void render_weather(void)
 {
+    weather_config_t cfg_local;
+    weather_config_snapshot(&cfg_local);
+
     fb_t *fb = fb_create();
     if (!fb) {
         ESP_LOGE(TAG, "fb_create failed");
@@ -396,11 +413,11 @@ static void render_weather(void)
         fb_utf8_scaled(fb, W * 260 / 648, H * 16 / 480, weekday_str, COLOR_BLACK, sc);
     }
 
-    if (s_cfg.city_name[0]) {
+    if (cfg_local.city_name[0]) {
         int city_x = W * 480 / 648;
         int city_max = W - city_x - MX;
         if (city_max < 16) city_max = 16;
-        fb_utf8_scaled_maxw(fb, city_x, H * 16 / 480, s_cfg.city_name, COLOR_BLACK, sc, city_max);
+        fb_utf8_scaled_maxw(fb, city_x, H * 16 / 480, cfg_local.city_name, COLOR_BLACK, sc, city_max);
     }
 
     int hdr_y = H * 54 / 480;
@@ -479,7 +496,7 @@ static void render_weather(void)
     char footer[64];
     snprintf(footer, sizeof(footer), "\xe6\x9b\xb4\xe6\x96\xb0 %s",
              s_data.update_time);
-    /* "更新"=2×16px + space=8px + "HH:MM"≈5×8px = 80px at scale 1 */
+    /* "鏇存柊"=2脳16px + space=8px + "HH:MM"鈮?脳8px = 80px at scale 1 */
     int footer_w = 2 * 16 + 8 + (int)strlen(s_data.update_time) * 8;
     int footer_x = W - footer_w - MX;
     if (footer_x < MX) footer_x = MX;
@@ -487,31 +504,38 @@ static void render_weather(void)
 
     /* export and display */
     const char *raw_path = "/spiffs/image.bin";
+    fb_raw_file_lock();
     esp_err_t err = fb_export(fb, raw_path);
     fb_destroy(fb);
 
     if (err == ESP_OK && epd_is_ready()) {
-        epd_display_from_file(raw_path);
-        scheduler_notify_manual_show();
-        ESP_LOGI(TAG, "Weather displayed on EPD");
+        esp_err_t disp_err = epd_display_from_file(raw_path);
+        if (disp_err == ESP_OK) {
+            scheduler_notify_manual_show();
+            ESP_LOGI(TAG, "Weather displayed on EPD");
+        } else {
+            ESP_LOGE(TAG, "Weather display failed: %s", esp_err_to_name(disp_err));
+        }
     } else if (err == ESP_OK) {
         ESP_LOGW(TAG, "Weather frame ready but EPD not ready, skip refresh");
     }
+    fb_raw_file_unlock();
 }
 
-/* ── fetch + display ──────────────────────────────────────────────── */
+/* 鈹€鈹€ fetch + display 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 esp_err_t weather_fetch_and_display(bool force_fullscreen)
 {
-    if (s_cfg.api_key[0] == '\0' || s_cfg.location[0] == '\0' ||
-        s_cfg.api_host[0] == '\0') {
+    weather_config_t cfg;
+    weather_config_snapshot(&cfg);
+    if (!weather_config_has_api(&cfg)) {
         ESP_LOGW(TAG, "Weather API key, host or location not configured");
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* 轮播占屏时禁止后台天气 HTTPS，与幻灯片/HTTP 服务错开，避免 lwIP 压力叠乘 */
+    /* 杞挱鍗犲睆鏃剁姝㈠悗鍙板ぉ姘?HTTPS锛屼笌骞荤伅鐗?HTTP 鏈嶅姟閿欏紑锛岄伩鍏?lwIP 鍘嬪姏鍙犱箻 */
     if (!display_policy_weather_may_network_fetch(force_fullscreen)) {
-        ESP_LOGI(TAG, "Slideshow is active; weather fetch skipped (use web 「显示天气」 for full page)");
+        ESP_LOGI(TAG, "Weather auto fetch skipped by display policy");
         return ESP_OK;
     }
 
@@ -526,16 +550,17 @@ esp_err_t weather_fetch_and_display(bool force_fullscreen)
     }
 
     esp_err_t ret = ESP_OK;
+    bool notify_clock = false;
 
     ESP_LOGI(TAG, "Fetching weather for location=%s (host=%s) ...",
-             s_cfg.location, s_cfg.api_host);
+             cfg.location, cfg.api_host);
 
     char url[256];
 
     /* fetch current weather */
     snprintf(url, sizeof(url),
              "https://%s/v7/weather/now?location=%s&key=%s",
-             s_cfg.api_host, s_cfg.location, s_cfg.api_key);
+             cfg.api_host, cfg.location, cfg.api_key);
     char *resp = http_get(url);
     if (!resp) {
         ret = ESP_FAIL;
@@ -548,7 +573,7 @@ esp_err_t weather_fetch_and_display(bool force_fullscreen)
         ret = ESP_FAIL;
         goto out;
     }
-    ESP_LOGI(TAG, "Current: %d°C, %s, icon=%d", s_data.now.temp, s_data.now.text, s_data.now.icon);
+    ESP_LOGI(TAG, "Current: %d掳C, %s, icon=%d", s_data.now.temp, s_data.now.text, s_data.now.icon);
 
     /* Let the first TLS connection fully tear down in tcpip before opening the second; back-to-back
      * HTTPS on STA+AP has triggered pbuf_free(ref==0) in tcp_receive on some builds. */
@@ -557,7 +582,7 @@ esp_err_t weather_fetch_and_display(bool force_fullscreen)
     /* fetch 3-day forecast */
     snprintf(url, sizeof(url),
              "https://%s/v7/weather/3d?location=%s&key=%s",
-             s_cfg.api_host, s_cfg.location, s_cfg.api_key);
+             cfg.api_host, cfg.location, cfg.api_key);
     resp = http_get(url);
     if (resp) {
         parse_daily(resp);
@@ -583,15 +608,17 @@ esp_err_t weather_fetch_and_display(bool force_fullscreen)
         if (force_fullscreen)
             display_policy_set_manual_screen_active(true);
     } else {
-        clock_display_notify_weather_data();
+        notify_clock = true;
     }
 
 out:
     xSemaphoreGive(s_fetch_mutex);
+    if (ret == ESP_OK && notify_clock)
+        clock_display_notify_weather_data();
     return ret;
 }
 
-/* ── auto-refresh task ────────────────────────────────────────────── */
+/* 鈹€鈹€ auto-refresh task 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 void weather_request_embedded_refresh(void)
 {
@@ -608,8 +635,9 @@ void weather_notify_slideshow_stopped(void)
     clock_config_t cc;
     if (clock_display_get_config(&cc) != ESP_OK || !cc.enabled || !cc.show_weather)
         return;
-    if (!s_cfg.enabled || s_cfg.api_key[0] == '\0' || s_cfg.location[0] == '\0' ||
-        s_cfg.api_host[0] == '\0')
+    weather_config_t cfg;
+    weather_config_snapshot(&cfg);
+    if (!cfg.enabled || !weather_config_has_api(&cfg))
         return;
     xEventGroupSetBits(s_event, BIT_EMBED_REQUEST);
 }
@@ -628,56 +656,59 @@ static void weather_task(void *arg)
 {
     ESP_LOGI(TAG, "Weather task running");
 
-    /* 联网稍稳后再拉，避免开机立刻失败 */
+    /* 鑱旂綉绋嶇ǔ鍚庡啀鎷夛紝閬垮厤寮€鏈虹珛鍒诲け璐?*/
     vTaskDelay(pdMS_TO_TICKS(2500));
     bool skip_first = s_skip_initial_task_fetch;
     s_skip_initial_task_fetch = false;
-    if (!skip_first && s_cfg.enabled && s_cfg.api_key[0] && s_cfg.location[0] && s_cfg.api_host[0])
+    weather_config_t cfg;
+    weather_config_snapshot(&cfg);
+    if (!skip_first && cfg.enabled && weather_config_has_api(&cfg))
         weather_fetch_and_display(false);
 
     for (;;) {
-        /* 全页天气关或手动刷新周期=0：不跑定时拉取，但须响应 BIT_EMBED_REQUEST（时钟「天气摘要」） */
-        if (!s_cfg.enabled || s_cfg.refresh_min == 0) {
+        weather_config_snapshot(&cfg);
+        /* 鍏ㄩ〉澶╂皵鍏虫垨鎵嬪姩鍒锋柊鍛ㄦ湡=0锛氫笉璺戝畾鏃舵媺鍙栵紝浣嗛』鍝嶅簲 BIT_EMBED_REQUEST锛堟椂閽熴€屽ぉ姘旀憳瑕併€嶏級 */
+        if (!cfg.enabled || cfg.refresh_min == 0) {
             EventBits_t bits = xEventGroupWaitBits(
                 s_event, BIT_CFG_CHANGED | BIT_EMBED_REQUEST,
                 pdTRUE, pdFALSE, portMAX_DELAY);
+            weather_config_snapshot(&cfg);
             bool want = false;
-            if ((bits & BIT_EMBED_REQUEST) && s_cfg.api_key[0] && s_cfg.location[0] &&
-                s_cfg.api_host[0])
+            if ((bits & BIT_EMBED_REQUEST) && weather_config_has_api(&cfg))
                 want = true;
-            if ((bits & BIT_CFG_CHANGED) && s_cfg.enabled && s_cfg.api_key[0] &&
-                s_cfg.location[0] && s_cfg.api_host[0])
+            if ((bits & BIT_CFG_CHANGED) && cfg.enabled && weather_config_has_api(&cfg))
                 want = true;
             if (want)
                 weather_fetch_and_display(false);
             continue;
         }
 
-        uint32_t wait_ms = s_cfg.refresh_min * 60 * 1000;
+        uint32_t wait_ms = cfg.refresh_min * 60 * 1000;
         EventBits_t bits = xEventGroupWaitBits(
             s_event, BIT_CFG_CHANGED | BIT_EMBED_REQUEST,
             pdTRUE, pdFALSE, pdMS_TO_TICKS(wait_ms));
+        weather_config_snapshot(&cfg);
 
-        /* 网页/NVS 更新配置后应立即拉一次，不能仅 continue 等到下个周期 */
+        /* 缃戦〉/NVS 鏇存柊閰嶇疆鍚庡簲绔嬪嵆鎷変竴娆★紝涓嶈兘浠?continue 绛夊埌涓嬩釜鍛ㄦ湡 */
         if (bits & BIT_CFG_CHANGED) {
-            if (s_cfg.enabled && s_cfg.api_key[0] && s_cfg.location[0] && s_cfg.api_host[0])
+            if (cfg.enabled && weather_config_has_api(&cfg))
                 weather_fetch_and_display(false);
             continue;
         }
-        if (!s_cfg.enabled)
+        if (!cfg.enabled)
             continue;
         if (bits & BIT_EMBED_REQUEST) {
-            if (s_cfg.api_key[0] && s_cfg.location[0] && s_cfg.api_host[0])
+            if (weather_config_has_api(&cfg))
                 weather_fetch_and_display(false);
             continue;
         }
 
-        if (s_cfg.api_key[0] && s_cfg.location[0] && s_cfg.api_host[0])
+        if (weather_config_has_api(&cfg))
             weather_fetch_and_display(false);
     }
 }
 
-/* ── public API ───────────────────────────────────────────────────── */
+/* 鈹€鈹€ public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 esp_err_t weather_init(void)
 {
@@ -694,53 +725,66 @@ esp_err_t weather_init(void)
     memset(&s_data, 0, sizeof(s_data));
     nvs_load();
 
-    /* HTTPS+TLS 栈开销大；固定到 PRO CPU 0 与 lwIP 习惯部署一致，减轻双核下偶发 tcpip 链表损坏 */
+    /* HTTPS+TLS 鏍堝紑閿€澶э紱鍥哄畾鍒?PRO CPU 0 涓?lwIP 涔犳儻閮ㄧ讲涓€鑷达紝鍑忚交鍙屾牳涓嬪伓鍙?tcpip 閾捐〃鎹熷潖 */
     BaseType_t ok = xTaskCreatePinnedToCore(weather_task, "weather", 16384, NULL, 3, NULL, 0);
-    if (ok != pdPASS) return ESP_ERR_NO_MEM;
+    if (ok != pdPASS) {
+        vSemaphoreDelete(s_fetch_mutex);
+        s_fetch_mutex = NULL;
+        vEventGroupDelete(s_event);
+        s_event = NULL;
+        return ESP_ERR_NO_MEM;
+    }
 
+    weather_config_t init_cfg;
+    weather_config_snapshot(&init_cfg);
     ESP_LOGI(TAG, "Weather init (enabled=%d, location=%s, refresh=%lum)",
-             s_cfg.enabled, s_cfg.location, (unsigned long)s_cfg.refresh_min);
+             init_cfg.enabled, init_cfg.location, (unsigned long)init_cfg.refresh_min);
     return ESP_OK;
 }
 
 esp_err_t weather_get_config(weather_config_t *out)
 {
     if (!out) return ESP_ERR_INVALID_ARG;
-    portENTER_CRITICAL(&s_cfg_mux);
-    *out = s_cfg;
-    portEXIT_CRITICAL(&s_cfg_mux);
+    weather_config_snapshot(out);
     return ESP_OK;
 }
 
 esp_err_t weather_set_config(const weather_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
+    weather_config_t snap = *cfg;
     portENTER_CRITICAL(&s_cfg_mux);
-    s_cfg = *cfg;
+    s_cfg = snap;
     portEXIT_CRITICAL(&s_cfg_mux);
-    nvs_save();
+    nvs_save_snapshot(&snap);
     ESP_LOGI(TAG, "Config saved: enabled=%d, loc=%s, refresh=%lum",
-             s_cfg.enabled, s_cfg.location, (unsigned long)s_cfg.refresh_min);
+             snap.enabled, snap.location, (unsigned long)snap.refresh_min);
     if (s_event)
         xEventGroupSetBits(s_event, BIT_CFG_CHANGED);
     return ESP_OK;
 }
 
-const weather_data_t *weather_get_data(void)
-{
-    return &s_data;
-}
-
 esp_err_t weather_display_cached(void)
 {
-    if (!s_data.valid) {
-        ESP_LOGW(TAG, "no cached weather data");
-        return ESP_ERR_INVALID_STATE;
-    }
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
 
+    /* 涓庡悗鍙版媺鍙栦换鍔′覆琛岋細fetch 浠诲姟鎸侀攣鏈熼棿浼氬啓 s_data锛?     * 杩欓噷鎸侀攣鍚庡啀璋冪敤 render_weather()锛岄伩鍏嶈鍒版挄瑁傛暟鎹€?*/
+    if (s_fetch_mutex)
+        xSemaphoreTake(s_fetch_mutex, portMAX_DELAY);
+
+    if (!s_data.valid) {
+        if (s_fetch_mutex)
+            xSemaphoreGive(s_fetch_mutex);
+        ESP_LOGW(TAG, "no cached weather data");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     render_weather();
+
+    if (s_fetch_mutex)
+        xSemaphoreGive(s_fetch_mutex);
+
     display_policy_set_manual_screen_active(true);
     return ESP_OK;
 }

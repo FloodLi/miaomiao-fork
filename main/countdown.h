@@ -24,5 +24,5 @@ typedef struct {
 esp_err_t countdown_init(void);
 esp_err_t countdown_show(void);
 
-const countdown_config_t *countdown_get_config(void);
+esp_err_t countdown_get_config(countdown_config_t *out);
 esp_err_t countdown_set_config(const countdown_config_t *cfg);

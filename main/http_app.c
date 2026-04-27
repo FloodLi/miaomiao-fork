@@ -429,11 +429,14 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
 static esp_err_t wifi_forget_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
+    /* 不直接修改 req->content_len（httpd_req_recv 内部会跟踪剩余字节）。
+     * 用本地 remain 计数器消耗请求体即可，避免依赖未文档化的内部行为。 */
     char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
+    int remain = req->content_len;
+    while (remain > 0) {
+        int r = httpd_req_recv(req, tmp, remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp));
         if (r <= 0) break;
-        req->content_len -= r;
+        remain -= r;
     }
 
     esp_err_t err = wifi_manager_forget();
@@ -672,9 +675,14 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
 {
     weather_config_t cfg;
     weather_get_config(&cfg);
-    const weather_data_t *d = weather_get_data();
+    weather_data_t d;
+    weather_get_data_copy(&d);
 
     cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
     cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
     /* 不在 GET 中下发明文 Key，避免局域网嗅探；前端用 api_key_set + 留空保存保留原密钥 */
     cJSON_AddStringToObject(root, "api_key", "");
@@ -683,11 +691,11 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
     cJSON_AddStringToObject(root, "location", cfg.location);
     cJSON_AddStringToObject(root, "city_name", cfg.city_name);
     cJSON_AddNumberToObject(root, "refresh_min", cfg.refresh_min);
-    cJSON_AddBoolToObject(root, "has_data", d->valid);
-    if (d->valid) {
-        cJSON_AddNumberToObject(root, "temp", d->now.temp);
-        cJSON_AddStringToObject(root, "text", d->now.text);
-        cJSON_AddStringToObject(root, "update_time", d->update_time);
+    cJSON_AddBoolToObject(root, "has_data", d.valid);
+    if (d.valid) {
+        cJSON_AddNumberToObject(root, "temp", d.now.temp);
+        cJSON_AddStringToObject(root, "text", d.now.text);
+        cJSON_AddStringToObject(root, "update_time", d.update_time);
     }
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -1088,7 +1096,13 @@ static esp_err_t power_config_post_handler(httpd_req_t *req)
 
     cJSON_Delete(root);
 
-    power_mgr_set_config(&pc);
+    esp_err_t err = power_mgr_set_config(&pc);
+    if (err != ESP_OK) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"low-power task failed\"}");
+        return ESP_OK;
+    }
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
 }
@@ -1106,6 +1120,22 @@ static esp_err_t http_session_open_hook(httpd_handle_t hd, int sockfd)
 
 /* ── server start ──────────────────────────────────────────────────── */
 
+static esp_err_t epd_test_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    if (!http_require_epd_ready(req))
+        return ESP_OK;
+
+    esp_err_t err = epd_display_test_pattern();
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "EPD test failed");
+        return ESP_OK;
+    }
+    display_policy_set_manual_screen_active(true);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
 esp_err_t http_app_start(const http_app_config_t *cfg)
 {
     if (!cfg || !cfg->mount_path || !cfg->upload_path) return ESP_ERR_INVALID_ARG;
@@ -1185,6 +1215,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/countdown_show", HTTP_POST, feat_countdown_show_post,    NULL },
         /* system */
         { "/version",       HTTP_GET,  version_get_handler,        NULL },
+        { "/epd_test",      HTTP_POST, epd_test_post_handler,      NULL },
         { "/ota",           HTTP_POST, ota_post_handler,           NULL },
         { "/auth_config",   HTTP_GET,  auth_config_get_handler,    NULL },
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },

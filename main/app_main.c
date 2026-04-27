@@ -36,6 +36,27 @@
 
 static const char *TAG = "app";
 
+static int normalize_saved_mode(int saved_mode, int mode_count, bool *write_back)
+{
+    if (write_back)
+        *write_back = false;
+
+    if (saved_mode < 0 || saved_mode >= mode_count) {
+        if (write_back)
+            *write_back = true;
+        return DISPLAY_MODE_CLOCK;
+    }
+
+    if (saved_mode == DISPLAY_MODE_SLIDESHOW && !power_mgr_saved_mode_has_marker()) {
+        ESP_LOGW(TAG, "Saved slideshow mode has no v2 marker; treating it as legacy stale state");
+        if (write_back)
+            *write_back = true;
+        return DISPLAY_MODE_CLOCK;
+    }
+
+    return saved_mode;
+}
+
 static void render_welcome_screen(void)
 {
     fb_t *fb = fb_create();
@@ -133,22 +154,45 @@ static void boot_display_route(void)
 {
     ESP_LOGI(TAG, "boot_display_route: starting");
     display_policy_set_manual_screen_active(true);
+    unsigned boot_epoch = display_policy_display_epoch();
 
     ESP_LOGI(TAG, "boot_display_route: showing welcome screen");
     render_welcome_screen();
     ESP_LOGI(TAG, "boot_display_route: welcome screen done, delaying 10s");
     vTaskDelay(pdMS_TO_TICKS(10000));
 
-    int mode = power_mgr_load_mode();
+    if (display_policy_display_epoch() != boot_epoch) {
+        ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");
+        return;
+    }
+
+    int saved_mode = power_mgr_load_mode();
     int n = display_mode_count();
-    if (mode < 0 || mode >= n) mode = 0;
+    bool write_mode_back = false;
+    int mode = normalize_saved_mode(saved_mode, n, &write_mode_back);
     ESP_LOGI(TAG, "boot_display_route: switching to mode %d (%s)",
              mode, display_mode_name(mode));
-    display_mode_show(mode);
+    esp_err_t err = display_mode_show(mode);
+    if (display_policy_display_epoch() != boot_epoch) {
+        ESP_LOGI(TAG, "boot_display_route: mode restore canceled by newer display request");
+        return;
+    }
+    /* 数据源不可用时（典型：轮播图但 SPIFFS 无图）回落到时钟，
+     * 保留 NVS 中用户原偏好，等数据补齐后下次启动自动恢复。 */
+    if (err == ESP_ERR_NOT_FOUND && mode != 0) {
+        ESP_LOGW(TAG, "boot_display_route: mode %d unavailable (%s), falling back to clock",
+                 mode, esp_err_to_name(err));
+        mode = 0;
+        display_mode_show(mode);
+    }
     button_set_current_mode(mode);
-    power_mgr_save_mode(mode);
+    /* 仅当原 NVS 值非法被纠正时才回写，避免把临时回落覆盖掉用户偏好 */
+    if (write_mode_back) {
+        power_mgr_save_mode(mode);
+    }
 
-    ESP_LOGI(TAG, "boot_display_route: done, mode %d active", mode);
+    ESP_LOGI(TAG, "boot_display_route: done, mode %d active%s",
+             mode, (mode != saved_mode) ? " (fallback)" : "");
 }
 
 static void start_mdns(void)
@@ -169,9 +213,11 @@ static void start_mdns(void)
 static void quick_refresh_and_sleep(void)
 {
     ESP_LOGI(TAG, "Quick-refresh path: timer wake-up");
+    int mode = power_mgr_load_mode();
 
     ESP_ERROR_CHECK(spiffs_mount_init());
     display_policy_init();
+    display_policy_set_quick_refresh_active(true);
     device_identity_init();
 
     /* STA-only WiFi (no AP, no mDNS, no HTTP) */
@@ -187,6 +233,8 @@ static void quick_refresh_and_sleep(void)
         }
     }
 
+    epd_load_panel_from_nvs();
+    fb_reserve_planes_early();
     ESP_ERROR_CHECK(epd_init());
 
     /* Init content modules (they load NVS config) */
@@ -194,6 +242,8 @@ static void quick_refresh_and_sleep(void)
     /* NOTE: do NOT call scheduler_boot_complete() here.
      * The slideshow_task must stay blocked — we only need
      * scheduler_show_next_image() which works without it. */
+    if (mode == DISPLAY_MODE_WEATHER)
+        weather_skip_initial_task_fetch_once();
     ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
     /* 与 full_boot 一致：日历依赖 s_mutex，未 init 则 calendar_display_show 直接失败并触发回退到时钟 */
@@ -212,11 +262,21 @@ static void quick_refresh_and_sleep(void)
 
     display_policy_set_manual_screen_active(true);
 
-    int mode = power_mgr_load_mode();
+    int saved_mode = mode;
+    int n = display_mode_count();
+    bool write_mode_back = false;
+    mode = normalize_saved_mode(saved_mode, n, &write_mode_back);
     ESP_LOGI(TAG, "Quick-refresh: restoring mode %d (%s)",
              mode, display_mode_name(mode));
 
-    esp_err_t err = display_mode_show(mode);
+    esp_err_t err;
+    if (mode == DISPLAY_MODE_WEATHER) {
+        /* Deep sleep clears the in-RAM weather cache; timer wake must fetch
+         * before rendering the weather page instead of using cached data. */
+        err = weather_fetch_and_display(true);
+    } else {
+        err = display_mode_show(mode);
+    }
     bool used_fallback = false;
 
     if (err != ESP_OK) {
@@ -226,6 +286,8 @@ static void quick_refresh_and_sleep(void)
     }
 
     if (err == ESP_OK) {
+        if (write_mode_back)
+            power_mgr_save_mode(mode);
         if (!used_fallback) {
             /* Original mode succeeded — no need to update NVS */
             ESP_LOGI(TAG, "Quick-refresh: mode %d displayed", mode);
@@ -273,6 +335,8 @@ static void full_boot(void)
     epd_load_panel_from_nvs();
     ESP_LOGI(TAG, "NVS panel preset: %d (%dx%d) — open /config.html if hardware differs",
              (int)epd_get_panel(), epd_width(), epd_height());
+    /* 在 httpd/WiFi 之前占住双平面连续堆，避免 5.83" 启动后碎片导致 largest<38880 */
+    fb_reserve_planes_early();
 
     http_app_config_t cfg = {
         .mount_path = "/spiffs",
@@ -319,7 +383,9 @@ static void full_boot(void)
     ESP_LOGI(TAG, "Ready. http://%s.local/ or http://192.168.4.1/",
              device_identity_get_mdns_hostname());
 
-    power_mgr_arm();
+    esp_err_t arm_err = power_mgr_arm();
+    if (arm_err != ESP_OK)
+        ESP_LOGW(TAG, "Power manager arm failed: %s", esp_err_to_name(arm_err));
 }
 
 /* ── Entry point ───────────────────────────────────────────────────── */

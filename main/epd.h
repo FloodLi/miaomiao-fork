@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
+#include <stdint.h>
 #include "fb_render.h"
 
 typedef enum {
@@ -19,6 +20,8 @@ void         epd_load_panel_from_nvs(void);
 esp_err_t    epd_init(void);
 /** false 直至 epd_init() 成功返回；HTTP 等应在刷图前检查 */
 bool         epd_is_ready(void);
+/** Wait until no EPD transfer/refresh function is holding the display mutex. */
+bool         epd_wait_idle(uint32_t timeout_ms);
 esp_err_t    epd_display_from_file(const char *path);
 esp_err_t    epd_display_from_buffer(const fb_t *fb);
 /** 同上，但 SPI 传输完成后立即释放 fb，再等待 EPD 刷新——节省 18s 内存占用 */

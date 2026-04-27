@@ -57,14 +57,14 @@ static esp_err_t tt_nvs_load(void)
     return ESP_OK;
 }
 
-static esp_err_t tt_nvs_save(void)
+static esp_err_t tt_nvs_save_snapshot(const timetable_config_t *cfg)
 {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
     if (err != ESP_OK)
         return err;
 
-    err = nvs_set_blob(h, NVS_KEY, &s_cfg, sizeof(s_cfg));
+    err = nvs_set_blob(h, NVS_KEY, cfg, sizeof(*cfg));
     if (err == ESP_OK)
         err = nvs_commit(h);
     nvs_close(h);
@@ -92,9 +92,10 @@ static int tt_now_minutes(const struct tm *tm)
 
 /* ── Week calculation ────────────────────────────────────────────── */
 
-int timetable_current_week(void)
+/** 与 timetable_current_week() 等价，但作用于一个传入的快照（无锁） */
+static int tt_current_week_in(const timetable_config_t *cfg)
 {
-    if (s_cfg.semester_start == 0)
+    if (cfg->semester_start == 0)
         return 0;
 
     struct tm tm;
@@ -105,7 +106,34 @@ int timetable_current_week(void)
     if (now == (time_t)-1)
         return 0;
 
-    int diff_sec = (int)(now - (time_t)s_cfg.semester_start);
+    int diff_sec = (int)(now - (time_t)cfg->semester_start);
+    if (diff_sec < 0)
+        return 0;
+
+    int week = diff_sec / (7 * 24 * 3600) + 1;
+    return (week >= 1 && week <= TT_MAX_WEEKS) ? week : 0;
+}
+
+int timetable_current_week(void)
+{
+    /* 仅需 semester_start，不复制整张表（≈5.4KB），避免给小栈调用方添麻烦。 */
+    int32_t semester_start;
+    xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
+    semester_start = s_cfg.semester_start;
+    xSemaphoreGive(s_cfg_mutex);
+
+    if (semester_start == 0)
+        return 0;
+
+    struct tm tm;
+    if (!time_sync_get_local(&tm))
+        return 0;
+
+    time_t now = mktime(&tm);
+    if (now == (time_t)-1)
+        return 0;
+
+    int diff_sec = (int)(now - (time_t)semester_start);
     if (diff_sec < 0)
         return 0;
 
@@ -122,19 +150,20 @@ static bool tt_cell_active(const tt_cell_t *c, int week)
     return (c->weeks & (1u << (week - 1))) != 0;
 }
 
-/* ── Grid query (current / next course) ──────────────────────────── */
+/* ── Grid query (current / next course)  —— 全部基于传入快照 ──────── */
 
-static const tt_cell_t *tt_find_current(int wd, int now_min, int week)
+static const tt_cell_t *tt_find_current_in(const timetable_config_t *cfg,
+                                           int wd, int now_min, int week)
 {
     if (wd < 0 || wd >= TT_DAYS)
         return NULL;
 
-    for (int p = 0; p < s_cfg.period_count; p++) {
-        const tt_period_def_t *pd = &s_cfg.periods[p];
+    for (int p = 0; p < cfg->period_count; p++) {
+        const tt_period_def_t *pd = &cfg->periods[p];
         int a = tt_minutes(pd->start_hour, pd->start_minute);
         int b = tt_minutes(pd->end_hour, pd->end_minute);
         if (now_min >= a && now_min < b) {
-            const tt_cell_t *c = &s_cfg.grid[wd][p];
+            const tt_cell_t *c = &cfg->grid[wd][p];
             if (tt_cell_active(c, week))
                 return c;
         }
@@ -142,11 +171,13 @@ static const tt_cell_t *tt_find_current(int wd, int now_min, int week)
     return NULL;
 }
 
-/** Find current period index, -1 if none */
-static int tt_current_period_idx(int wd, int now_min)
+/** Find current period index in snapshot, -1 if none */
+static int tt_current_period_idx_in(const timetable_config_t *cfg,
+                                    int wd, int now_min)
 {
-    for (int p = 0; p < s_cfg.period_count; p++) {
-        const tt_period_def_t *pd = &s_cfg.periods[p];
+    (void)wd;
+    for (int p = 0; p < cfg->period_count; p++) {
+        const tt_period_def_t *pd = &cfg->periods[p];
         int a = tt_minutes(pd->start_hour, pd->start_minute);
         int b = tt_minutes(pd->end_hour, pd->end_minute);
         if (now_min >= a && now_min < b)
@@ -155,18 +186,19 @@ static int tt_current_period_idx(int wd, int now_min)
     return -1;
 }
 
-static const tt_cell_t *tt_find_next(int wd, int now_min, int week,
-                                     int *out_wait)
+static const tt_cell_t *tt_find_next_in(const timetable_config_t *cfg,
+                                        int wd, int now_min, int week,
+                                        int *out_wait)
 {
     if (wd < 0 || wd >= TT_DAYS)
         return NULL;
 
-    for (int p = 0; p < s_cfg.period_count; p++) {
-        const tt_period_def_t *pd = &s_cfg.periods[p];
+    for (int p = 0; p < cfg->period_count; p++) {
+        const tt_period_def_t *pd = &cfg->periods[p];
         int a = tt_minutes(pd->start_hour, pd->start_minute);
         if (a <= now_min)
             continue;
-        const tt_cell_t *c = &s_cfg.grid[wd][p];
+        const tt_cell_t *c = &cfg->grid[wd][p];
         if (tt_cell_active(c, week)) {
             if (out_wait)
                 *out_wait = a - now_min;
@@ -205,82 +237,113 @@ esp_err_t timetable_set_config(const timetable_config_t *cfg)
 {
     if (!cfg)
         return ESP_ERR_INVALID_ARG;
+    timetable_config_t snap;
     xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     s_cfg = *cfg;
     if (s_cfg.period_count > TT_MAX_PERIODS)
         s_cfg.period_count = TT_MAX_PERIODS;
     if (s_cfg.show_days != 7)
         s_cfg.show_days = 5;
+    snap = s_cfg;
     xSemaphoreGive(s_cfg_mutex);
-    return tt_nvs_save();
+    /* NVS 写入耗时长，放锁外执行避免阻塞 */
+    return tt_nvs_save_snapshot(&snap);
 }
 
-bool timetable_get_current_course(const char **name, const char **room,
+bool timetable_get_current_course(char *name_buf, size_t name_len,
+                                  char *room_buf, size_t room_len,
                                   int *minutes_remaining)
 {
-    if (!s_cfg.enabled)
-        return false;
+    /* timetable_config_t ≈5.4KB；放在堆上避免压栈 */
+    timetable_config_t *snap = malloc(sizeof(*snap));
+    if (!snap) return false;
+    bool ok = false;
 
-    struct tm tm;
-    if (!time_sync_get_local(&tm))
-        return false;
+    do {
+        if (timetable_get_config(snap) != ESP_OK) break;
+        if (!snap->enabled) break;
 
-    int wd = tt_weekday_mon0(&tm);
-    int now = tt_now_minutes(&tm);
-    int week = timetable_current_week();
+        struct tm tm;
+        if (!time_sync_get_local(&tm)) break;
 
-    const tt_cell_t *c = tt_find_current(wd, now, week);
-    if (!c)
-        return false;
+        int wd = tt_weekday_mon0(&tm);
+        int now = tt_now_minutes(&tm);
+        int week = tt_current_week_in(snap);
 
-    int cur_p = tt_current_period_idx(wd, now);
-    if (cur_p < 0)
-        return false;
+        const tt_cell_t *c = tt_find_current_in(snap, wd, now, week);
+        if (!c) break;
 
-    if (name)  *name = c->name;
-    if (room)  *room = c->room;
-    if (minutes_remaining) {
-        int end = tt_minutes(s_cfg.periods[cur_p].end_hour,
-                             s_cfg.periods[cur_p].end_minute);
-        *minutes_remaining = end - now;
-    }
-    return true;
+        int cur_p = tt_current_period_idx_in(snap, wd, now);
+        if (cur_p < 0) break;
+
+        if (name_buf && name_len > 0) {
+            strncpy(name_buf, c->name, name_len - 1);
+            name_buf[name_len - 1] = '\0';
+        }
+        if (room_buf && room_len > 0) {
+            strncpy(room_buf, c->room, room_len - 1);
+            room_buf[room_len - 1] = '\0';
+        }
+        if (minutes_remaining) {
+            int end = tt_minutes(snap->periods[cur_p].end_hour,
+                                 snap->periods[cur_p].end_minute);
+            *minutes_remaining = end - now;
+        }
+        ok = true;
+    } while (0);
+
+    free(snap);
+    return ok;
 }
 
-bool timetable_get_next_course(const char **name, const char **room,
+bool timetable_get_next_course(char *name_buf, size_t name_len,
+                               char *room_buf, size_t room_len,
                                int *minutes_until_start)
 {
-    if (!s_cfg.enabled)
-        return false;
+    timetable_config_t *snap = malloc(sizeof(*snap));
+    if (!snap) return false;
+    bool ok = false;
 
-    struct tm tm;
-    if (!time_sync_get_local(&tm))
-        return false;
+    do {
+        if (timetable_get_config(snap) != ESP_OK) break;
+        if (!snap->enabled) break;
 
-    int wd = tt_weekday_mon0(&tm);
-    int now = tt_now_minutes(&tm);
-    int week = timetable_current_week();
+        struct tm tm;
+        if (!time_sync_get_local(&tm)) break;
 
-    int wait = 0;
-    const tt_cell_t *c = tt_find_next(wd, now, week, &wait);
+        int wd = tt_weekday_mon0(&tm);
+        int now = tt_now_minutes(&tm);
+        int week = tt_current_week_in(snap);
 
-    if (!c) {
-        int nd = (wd + 1) % TT_DAYS;
-        c = tt_find_next(nd, -1, week, &wait);
-        if (c) {
-            int mins_left_today = 24 * 60 - now;
-            wait += mins_left_today;
+        int wait = 0;
+        const tt_cell_t *c = tt_find_next_in(snap, wd, now, week, &wait);
+
+        if (!c) {
+            int nd = (wd + 1) % TT_DAYS;
+            c = tt_find_next_in(snap, nd, -1, week, &wait);
+            if (c) {
+                int mins_left_today = 24 * 60 - now;
+                wait += mins_left_today;
+            }
         }
-    }
 
-    if (!c)
-        return false;
+        if (!c) break;
 
-    if (name)  *name = c->name;
-    if (room)  *room = c->room;
-    if (minutes_until_start)
-        *minutes_until_start = wait;
-    return true;
+        if (name_buf && name_len > 0) {
+            strncpy(name_buf, c->name, name_len - 1);
+            name_buf[name_len - 1] = '\0';
+        }
+        if (room_buf && room_len > 0) {
+            strncpy(room_buf, c->room, room_len - 1);
+            room_buf[room_len - 1] = '\0';
+        }
+        if (minutes_until_start)
+            *minutes_until_start = wait;
+        ok = true;
+    } while (0);
+
+    free(snap);
+    return ok;
 }
 
 /* ── EPD: today's course card view ──────────────────────────────── */
@@ -292,11 +355,12 @@ static const char *const TT_DAY_FULL[] = {
     "\xe5\x91\xa8\xe6\x97\xa5",
 };
 
-static int tt_collect_today(int wd, int week, int *out, int max)
+static int tt_collect_today_in(const timetable_config_t *cfg,
+                               int wd, int week, int *out, int max)
 {
     int n = 0;
-    for (int p = 0; p < s_cfg.period_count && n < max; p++) {
-        if (tt_cell_active(&s_cfg.grid[wd][p], week))
+    for (int p = 0; p < cfg->period_count && n < max; p++) {
+        if (tt_cell_active(&cfg->grid[wd][p], week))
             out[n++] = p;
     }
     return n;
@@ -323,7 +387,8 @@ static void tt_draw_dashed_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
         fb_hline(fb, x + i, y, (i + 2 <= w) ? 2 : w - i, c);
 }
 
-static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
+static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
+                                          int today, int now_min, int week,
                                           const struct tm *tm)
 {
     fb_t *fb = fb_create();
@@ -333,7 +398,7 @@ static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
 
     int W = fb->width;
     int H = fb->height;
-    int cols = s_cfg.show_days;
+    int cols = cfg->show_days;
 
     /* ── title bar ── */
     int title_h = 40;
@@ -357,7 +422,7 @@ static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
         fb_utf8_scaled(fb, W - tw - 10, 14, ts, COLOR_WHITE, 1);
     }
 
-    int pc = s_cfg.period_count;
+    int pc = cfg->period_count;
     if (pc == 0) {
         const char *msg = "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b";
         int mw = tt_text_px(msg, 2);
@@ -424,7 +489,7 @@ static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
         fb_hline(fb, 0, ry, pcol_w, COLOR_BLACK);
 
         /* period column: number + time range */
-        const tt_period_def_t *pd = &s_cfg.periods[p];
+        const tt_period_def_t *pd = &cfg->periods[p];
         char pnum[4];
         snprintf(pnum, sizeof(pnum), "%d", p + 1);
 
@@ -461,14 +526,15 @@ static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
         /* each day's cell */
         for (int d = 0; d < cols; d++) {
             int cx = pcol_w + d * cell_w;
-            const tt_cell_t *cell = &s_cfg.grid[d][p];
+            const tt_cell_t *cell = &cfg->grid[d][p];
 
             fb_vline(fb, cx, ry, cell_h, COLOR_BLACK);
 
             if (!tt_cell_active(cell, week))
                 continue;
 
-            bool is_cur = (d == today && p == tt_current_period_idx(today, now_min));
+            bool is_cur = (d == today &&
+                           p == tt_current_period_idx_in(cfg, today, now_min));
 
             if (is_cur)
                 fb_fill_rect(fb, cx + 1, ry + 1, cell_w - 2, cell_h - 2, COLOR_RED);
@@ -512,13 +578,13 @@ static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
         int today_courses = 0;
         if (today >= 0 && today < TT_DAYS)
             for (int p = 0; p < pc; p++)
-                if (tt_cell_active(&s_cfg.grid[today][p], week))
+                if (tt_cell_active(&cfg->grid[today][p], week))
                     today_courses++;
 
         int week_courses = 0;
         for (int d = 0; d < cols; d++)
             for (int p = 0; p < pc; p++)
-                if (tt_cell_active(&s_cfg.grid[d][p], week))
+                if (tt_cell_active(&cfg->grid[d][p], week))
                     week_courses++;
 
         char foot[96];
@@ -540,17 +606,30 @@ static esp_err_t timetable_show_week_grid(int today, int now_min, int week,
 
 esp_err_t timetable_show_day(int day)
 {
-    if (!s_cfg.enabled)
-        return ESP_ERR_INVALID_STATE;
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
     if (day < 0 || day >= TT_DAYS)
         return ESP_ERR_INVALID_ARG;
 
+    /* 第一时刻取一份配置快照（≈5.4KB，放堆上避免占满 worker 任务栈），
+     * 后续渲染全部基于它，避免与 HTTP POST 竞争。 */
+    timetable_config_t *snap = malloc(sizeof(*snap));
+    if (!snap)
+        return ESP_ERR_NO_MEM;
+    if (timetable_get_config(snap) != ESP_OK) {
+        free(snap);
+        return ESP_FAIL;
+    }
+    if (!snap->enabled) {
+        free(snap);
+        return ESP_ERR_INVALID_STATE;
+    }
+
     struct tm tm;
     bool have_time = time_sync_get_local(&tm);
     if (!have_time) {
         ESP_LOGW(TAG, "time not synced");
+        free(snap);
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -561,14 +640,18 @@ esp_err_t timetable_show_day(int day)
     if (W >= 600) {
         int today   = tt_weekday_mon0(&tm);
         int now_min = tt_now_minutes(&tm);
-        int week    = timetable_current_week();
-        return timetable_show_week_grid(today, now_min, week, &tm);
+        int week    = tt_current_week_in(snap);
+        esp_err_t err = timetable_show_week_grid(snap, today, now_min, week, &tm);
+        free(snap);
+        return err;
     }
 
     /* 4.2" (400x300): keep single-day agenda view */
     fb_t *fb = fb_create();
-    if (!fb)
+    if (!fb) {
+        free(snap);
         return ESP_ERR_NO_MEM;
+    }
     fb_clear(fb);
 
     W = fb->width;
@@ -577,9 +660,9 @@ esp_err_t timetable_show_day(int day)
 
     int today   = tt_weekday_mon0(&tm);
     int now_min = tt_now_minutes(&tm);
-    int week    = timetable_current_week();
+    int week    = tt_current_week_in(snap);
     bool is_today = (day == today);
-    int cur_p   = is_today ? tt_current_period_idx(day, now_min) : -1;
+    int cur_p   = is_today ? tt_current_period_idx_in(snap, day, now_min) : -1;
 
     /* ── title bar ── */
     int title_h = 22 * s;
@@ -601,7 +684,7 @@ esp_err_t timetable_show_day(int day)
 
     /* ── collect courses for the requested day ── */
     int order[TT_MAX_PERIODS];
-    int count = tt_collect_today(day, week, order, TT_MAX_PERIODS);
+    int count = tt_collect_today_in(snap, day, week, order, TT_MAX_PERIODS);
 
     if (count == 0) {
         /* "X无课" */
@@ -615,6 +698,7 @@ esp_err_t timetable_show_day(int day)
         fb_hline(fb, mx - 28 * s, ly, 20 * s, COLOR_BLACK);
         fb_hline(fb, mx + mw + 8 * s, ly, 20 * s, COLOR_BLACK);
         esp_err_t err = epd_display_fb_free(fb);
+        free(snap);
         return err;
     }
 
@@ -644,8 +728,8 @@ esp_err_t timetable_show_day(int day)
 
     for (int i = 0; i < count; i++) {
         int p = order[i];
-        const tt_cell_t *cell = &s_cfg.grid[day][p];
-        const tt_period_def_t *pd = &s_cfg.periods[p];
+        const tt_cell_t *cell = &snap->grid[day][p];
+        const tt_period_def_t *pd = &snap->periods[p];
         bool is_now = (p == cur_p);
 
         int by = y_top + i * block_h;
@@ -738,6 +822,7 @@ esp_err_t timetable_show_day(int day)
     }
 
     esp_err_t err = epd_display_fb_free(fb);
+    free(snap);
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "epd: %s", esp_err_to_name(err));
@@ -824,27 +909,33 @@ static void tt_weeks_to_str(uint32_t mask, char *buf, int buflen)
 
 esp_err_t timetable_http_get_handler(httpd_req_t *req)
 {
+    timetable_config_t snap;
+    if (timetable_get_config(&snap) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "config unavailable");
+        return ESP_OK;
+    }
+
     cJSON *root = cJSON_CreateObject();
     if (!root) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "json oom");
         return ESP_OK;
     }
 
-    cJSON_AddBoolToObject(root, "enabled", s_cfg.enabled);
-    cJSON_AddNumberToObject(root, "period_count", s_cfg.period_count);
-    cJSON_AddNumberToObject(root, "show_days", s_cfg.show_days);
-    cJSON_AddNumberToObject(root, "semester_start", s_cfg.semester_start);
-    cJSON_AddNumberToObject(root, "current_week", timetable_current_week());
+    cJSON_AddBoolToObject(root, "enabled", snap.enabled);
+    cJSON_AddNumberToObject(root, "period_count", snap.period_count);
+    cJSON_AddNumberToObject(root, "show_days", snap.show_days);
+    cJSON_AddNumberToObject(root, "semester_start", snap.semester_start);
+    cJSON_AddNumberToObject(root, "current_week", tt_current_week_in(&snap));
 
     /* periods */
     cJSON *periods = cJSON_AddArrayToObject(root, "periods");
-    for (int p = 0; p < s_cfg.period_count; p++) {
+    for (int p = 0; p < snap.period_count; p++) {
         cJSON *po = cJSON_CreateObject();
         if (!po) continue;
-        cJSON_AddNumberToObject(po, "start_hour", s_cfg.periods[p].start_hour);
-        cJSON_AddNumberToObject(po, "start_minute", s_cfg.periods[p].start_minute);
-        cJSON_AddNumberToObject(po, "end_hour", s_cfg.periods[p].end_hour);
-        cJSON_AddNumberToObject(po, "end_minute", s_cfg.periods[p].end_minute);
+        cJSON_AddNumberToObject(po, "start_hour", snap.periods[p].start_hour);
+        cJSON_AddNumberToObject(po, "start_minute", snap.periods[p].start_minute);
+        cJSON_AddNumberToObject(po, "end_hour", snap.periods[p].end_hour);
+        cJSON_AddNumberToObject(po, "end_minute", snap.periods[p].end_minute);
         cJSON_AddItemToArray(periods, po);
     }
 
@@ -852,8 +943,8 @@ esp_err_t timetable_http_get_handler(httpd_req_t *req)
     cJSON *grid = cJSON_AddArrayToObject(root, "grid");
     for (int d = 0; d < TT_DAYS; d++) {
         cJSON *day_arr = cJSON_CreateArray();
-        for (int p = 0; p < s_cfg.period_count; p++) {
-            const tt_cell_t *c = &s_cfg.grid[d][p];
+        for (int p = 0; p < snap.period_count; p++) {
+            const tt_cell_t *c = &snap.grid[d][p];
             if (c->name[0] == '\0') {
                 cJSON_AddItemToArray(day_arr, cJSON_CreateNull());
                 continue;

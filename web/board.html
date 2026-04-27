@@ -147,6 +147,7 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
   <div class="tb-sep"></div>
   <button class="tb-btn" onclick="saveLayout()">💾 保存</button>
   <button class="tb-btn" onclick="loadLayout()">📂 重载</button>
+  <button class="tb-btn" onclick="manualCompact()" title="手动化简所有笔画以减小布局体积">🪄 化简</button>
   <span id="save-status" style="font-size:.72rem;color:var(--t2);padding:0 4px;white-space:nowrap"></span>
   <div class="tb-sep"></div>
   <button class="tb-btn" id="btn-grid" onclick="toggleGrid()" title="网格吸附">⊞ 网格</button>
@@ -424,18 +425,96 @@ let color = 0;
 /* 历史（撤销/重做） */
 let history = [], histIdx = -1;
 let _autoSaveTimer = null;
+
+/* 后端 CANVAS_LAYOUT_MAX_BYTES = 12288，留 256B 安全裕度 */
+const LAYOUT_LIMIT_BYTES = 12288;
+const LAYOUT_WARN_BYTES  = 11000;
+
+function estimateSize() { return new Blob([JSON.stringify(elements)]).size; }
+
 function setSaveStatus(s) {
-    document.getElementById('save-status').textContent = s;
+    const el = document.getElementById('save-status');
+    const sz = estimateSize();
+    const pct = Math.min(100, Math.round(sz / LAYOUT_LIMIT_BYTES * 100));
+    let warn = '';
+    if (sz >= LAYOUT_LIMIT_BYTES) warn = ' · ⚠ 超限';
+    else if (sz >= LAYOUT_WARN_BYTES) warn = ' · ⚠ 即将超限';
+    el.textContent = `${s} · ${(sz/1024).toFixed(1)}/${(LAYOUT_LIMIT_BYTES/1024).toFixed(0)}KB (${pct}%)${warn}`;
+    el.style.color = sz >= LAYOUT_LIMIT_BYTES ? '#e33'
+                   : sz >= LAYOUT_WARN_BYTES  ? '#e80'
+                   : 'var(--t2)';
 }
+
+/* Ramer–Douglas–Peucker 路径化简：tolerance 单位为像素。
+ * tol=1.5 通常把自由绘图的点数压到原来的 10~30%，肉眼基本无差。 */
+function _rdpPerp(p, a, b) {
+    const dx = b[0]-a[0], dy = b[1]-a[1];
+    if (dx===0 && dy===0) return Math.hypot(p[0]-a[0], p[1]-a[1]);
+    const t = ((p[0]-a[0])*dx + (p[1]-a[1])*dy) / (dx*dx + dy*dy);
+    const px = a[0] + t*dx, py = a[1] + t*dy;
+    return Math.hypot(p[0]-px, p[1]-py);
+}
+function simplifyPath(pts, tol) {
+    if (!pts || pts.length < 3) return pts || [];
+    const a = pts[0], b = pts[pts.length-1];
+    let dmax = 0, idx = 0;
+    for (let i = 1; i < pts.length-1; i++) {
+        const d = _rdpPerp(pts[i], a, b);
+        if (d > dmax) { dmax = d; idx = i; }
+    }
+    if (dmax > tol) {
+        const left  = simplifyPath(pts.slice(0, idx+1), tol);
+        const right = simplifyPath(pts.slice(idx), tol);
+        return left.slice(0, -1).concat(right);
+    }
+    return [a.slice(), b.slice()];
+}
+/* 整数化 + 兜底化简全部 path，用渐进容差至少压到目标字节以下。 */
+function compactAllPaths(targetBytes) {
+    let tol = 1.5;
+    while (estimateSize() > targetBytes && tol <= 6) {
+        for (const el of elements) {
+            if (el.type === 'path' && el.pts && el.pts.length > 4) {
+                el.pts = simplifyPath(el.pts, tol).map(p => [Math.round(p[0]), Math.round(p[1])]);
+            }
+        }
+        tol += 1.5;
+    }
+}
+/* 手动化简：tol=1.5（与抬笔时一致）一刀切，再整数化 */
+function manualCompact() {
+    const before = estimateSize();
+    let totalBefore = 0, totalAfter = 0;
+    for (const el of elements) {
+        if (el.type === 'path' && el.pts && el.pts.length > 2) {
+            totalBefore += el.pts.length;
+            el.pts = simplifyPath(el.pts, 1.5).map(p => [Math.round(p[0]), Math.round(p[1])]);
+            totalAfter += el.pts.length;
+        }
+    }
+    const after = estimateSize();
+    render(); updateLayerList(); snapshot();
+    if (totalBefore === 0) {
+        toast('没有可化简的笔画');
+    } else {
+        toast(`🪄 ${totalBefore} → ${totalAfter} 点 · ${(before/1024).toFixed(1)} → ${(after/1024).toFixed(1)} KB`);
+    }
+}
+
 function scheduleAutoSave() {
     setSaveStatus('未保存…');
     clearTimeout(_autoSaveTimer);
     _autoSaveTimer = setTimeout(async () => {
         setSaveStatus('保存中…');
+        if (estimateSize() >= LAYOUT_LIMIT_BYTES) {
+            compactAllPaths(LAYOUT_WARN_BYTES);
+            render(); updateLayerList();
+            toast('🪄 路径已自动化简以适配 12KB 上限');
+        }
         try {
-            const r = await fetch('/canvas_layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)});
-            setSaveStatus(r.ok ? '✓ 已保存' : '⚠ 保存失败');
-        } catch(e){ setSaveStatus('⚠ 保存失败'); }
+            const r = await fetch('/canvas_layout',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)}));
+            setSaveStatus(r.ok ? '✓ 已保存' : `⚠ ${r.status}`);
+        } catch(e){ setSaveStatus('⚠ 网络错误'); }
     }, 3000);
 }
 function snapshot(noAutoSave) {
@@ -493,6 +572,21 @@ function toggleGrid() {
 
 const FG_COLORS = [[30,30,30],[192,57,43],[255,255,255]];
 const CSS_COLORS = ['#1e1e1e','#c0392b','#ffffff'];
+
+function epdAuthHeaders(){
+  try{
+    var u=localStorage.getItem('epd_auth_u');
+    var p=localStorage.getItem('epd_auth_p');
+    if(u!=null&&p!=null&&u!==''&&p!=='')
+      return {'Authorization':'Basic '+btoa(unescape(encodeURIComponent(u+':'+p)))};
+  }catch(e){}
+  return {};
+}
+function epdFetchOpts(extra){
+  extra=extra||{};
+  var h=Object.assign({},epdAuthHeaders(),extra.headers||{});
+  return Object.assign({},extra,{headers:h});
+}
 
 const canvas  = document.getElementById('canvas');
 const overlay = document.getElementById('overlay');
@@ -620,7 +714,7 @@ async function init() {
 ═══════════════════════════════════════════════ */
 async function loadUserIcons() {
     try {
-        const r = await fetch('/canvas_icons');
+        const r = await fetch('/canvas_icons', epdFetchOpts());
         const d = await r.json();
         userIcons = d.user || [];
     } catch(e) { userIcons = []; }
@@ -701,7 +795,7 @@ document.getElementById('icon-file-input').onchange = async function() {
     }
     try {
         const r = await fetch('/canvas_icon_upload?name='+encodeURIComponent(name),
-            {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body});
+            epdFetchOpts({method:'POST', headers:{'Content-Type':'application/octet-stream'}, body}));
         if (r.ok) { toast('图标已上传: '+name); await loadUserIcons(); buildIconGrid(); }
         else toast('上传失败: '+r.status);
     } catch(e) { toast('上传失败'); }
@@ -711,7 +805,7 @@ async function deleteSelectedIcon() {
     if (!selectedIconName || BUILTIN_BITMAPS[selectedIconName]) { toast('请先选择用户图标'); return; }
     if (!confirm('删除图标 '+selectedIconName+' ?')) return;
     try {
-        await fetch('/canvas_icon_delete?name='+encodeURIComponent(selectedIconName),{method:'POST'});
+        await fetch('/canvas_icon_delete?name='+encodeURIComponent(selectedIconName),epdFetchOpts({method:'POST'}));
         toast('已删除'); selectedIconName=null; await loadUserIcons(); buildIconGrid();
     } catch(e) { toast('删除失败'); }
 }
@@ -809,7 +903,7 @@ function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
 
 async function loadCanvasImageList() {
     try {
-        const r = await fetch('/canvas_image_list');
+        const r = await fetch('/canvas_image_list', epdFetchOpts());
         const d = await r.json();
         userImageNames = d.images || [];
     } catch(e) { userImageNames = []; }
@@ -818,7 +912,7 @@ async function loadCanvasImageList() {
 async function loadImageData(name) {
     if (CANVAS_IMAGES[name]) return CANVAS_IMAGES[name];
     try {
-        const r = await fetch('/canvas_image?name=' + encodeURIComponent(name));
+        const r = await fetch('/canvas_image?name=' + encodeURIComponent(name), epdFetchOpts());
         if (!r.ok) return null;
         const buf = new Uint8Array(await r.arrayBuffer());
         if (buf.length < 5) return null;
@@ -905,9 +999,9 @@ document.getElementById('image-file-input').onchange = async function() {
         body[2] = imgData.h & 0xff; body[3] = (imgData.h >> 8) & 0xff;
         body.set(imgData.data, 4);
 
-        const r = await fetch('/canvas_image_upload?name=' + encodeURIComponent(name), {
+        const r = await fetch('/canvas_image_upload?name=' + encodeURIComponent(name), epdFetchOpts({
             method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body
-        });
+        }));
         if (r.ok) {
             if (!userImageNames.includes(name)) userImageNames.push(name);
             selectedImageName = name;
@@ -922,7 +1016,7 @@ async function deleteSelectedImage() {
     if (!selectedImageName) { toast('请先选择图片'); return; }
     if (!confirm('删除图片 ' + selectedImageName + ' ？')) return;
     try {
-        await fetch('/canvas_image_delete?name=' + encodeURIComponent(selectedImageName), {method:'POST'});
+        await fetch('/canvas_image_delete?name=' + encodeURIComponent(selectedImageName), epdFetchOpts({method:'POST'}));
         delete CANVAS_IMAGES[selectedImageName];
         userImageNames = userImageNames.filter(n => n !== selectedImageName);
         selectedImageName = null;
@@ -1481,11 +1575,17 @@ function onUp(e) {
     if (!mouseDown) return;
     mouseDown = false;
 
-    /* 铅笔结束 */
+    /* 铅笔结束：先 RDP 化简，再整数化坐标，避免一笔几 KB */
     if (tool === 'pencil' && pencilPts && pencilPts.length >= 2) {
         octx.clearRect(0,0,overlay.width,overlay.height);
         const sw = +document.getElementById('sw-pencil').value||2;
-        elements.push({type:'path', pts:pencilPts, color, sw});
+        const before = pencilPts.length;
+        let pts = simplifyPath(pencilPts, 1.5);
+        pts = pts.map(p => [Math.round(p[0]), Math.round(p[1])]);
+        if (before > 50 && pts.length < before) {
+            console.debug(`[pencil] simplified ${before} → ${pts.length} points`);
+        }
+        elements.push({type:'path', pts, color, sw});
         selected = elements.length-1;
         pencilPts = null;
         render(); updateLayerList(); updateProps(); snapshot();
@@ -1782,16 +1882,27 @@ function clearAll() {
 async function saveLayout() {
     clearTimeout(_autoSaveTimer);
     setSaveStatus('保存中…');
+    if (estimateSize() >= LAYOUT_LIMIT_BYTES) {
+        compactAllPaths(LAYOUT_WARN_BYTES);
+        render(); updateLayerList();
+        toast('🪄 路径已自动化简以适配 12KB 上限');
+    }
     try {
-        const r = await fetch('/canvas_layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)});
-        setSaveStatus(r.ok ? '✓ 已保存' : '⚠ 保存失败');
-        if (r.ok) toast('💾 布局已保存'); else toast('保存失败: '+r.status);
-    } catch(e){ setSaveStatus('⚠ 保存失败'); toast('保存失败'); }
+    const r = await fetch('/canvas_layout',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)}));
+        if (r.ok) {
+            setSaveStatus('✓ 已保存');
+            toast('💾 布局已保存');
+        } else {
+            const msg = await r.text().catch(()=>String(r.status));
+            setSaveStatus(`⚠ ${r.status}`);
+            toast('保存失败: ' + msg);
+        }
+    } catch(e){ setSaveStatus('⚠ 网络错误'); toast('保存失败'); }
 }
 
 async function loadLayout() {
     try {
-        const r = await fetch('/canvas_layout');
+        const r = await fetch('/canvas_layout', epdFetchOpts());
         if (!r.ok) return;
         const data = await r.json();
         if (Array.isArray(data)){
@@ -1805,10 +1916,19 @@ async function loadLayout() {
 
 async function showOnEPD() {
     toast('正在保存并发送…');
+    if (estimateSize() >= LAYOUT_LIMIT_BYTES) {
+        compactAllPaths(LAYOUT_WARN_BYTES);
+        render(); updateLayerList();
+        toast('🪄 路径已自动化简以适配 12KB 上限');
+    }
     try {
-        const r1 = await fetch('/canvas_layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)});
-        if (!r1.ok){ toast('保存失败'); return; }
-        const r2 = await fetch('/canvas_show',{method:'POST'});
+        const r1 = await fetch('/canvas_layout',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)}));
+        if (!r1.ok){
+            const msg = await r1.text().catch(()=>String(r1.status));
+            toast('保存失败: ' + msg);
+            return;
+        }
+        const r2 = await fetch('/canvas_show',epdFetchOpts({method:'POST'}));
         if (r2.ok) toast('✅ 已发送到墨水屏！');
         else toast('发送失败: '+r2.status);
     } catch(e){ toast('发送失败'); }

@@ -8,8 +8,113 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "fb";
+
+/* 启动早期预留：避免 httpd/WiFi/LwIP 切碎堆后单块 < plane_bytes */
+static uint8_t *s_reserved_dual;
+static int      s_reserved_pb;
+static bool     s_reserved_in_use;
+static portMUX_TYPE s_reserved_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static StaticSemaphore_t s_raw_file_mutex_buf;
+static SemaphoreHandle_t s_raw_file_mutex;
+static portMUX_TYPE      s_raw_file_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static SemaphoreHandle_t raw_file_mutex_get(void)
+{
+    SemaphoreHandle_t m;
+    portENTER_CRITICAL(&s_raw_file_mux);
+    if (!s_raw_file_mutex)
+        s_raw_file_mutex = xSemaphoreCreateMutexStatic(&s_raw_file_mutex_buf);
+    m = s_raw_file_mutex;
+    portEXIT_CRITICAL(&s_raw_file_mux);
+
+    if (!m)
+        ESP_LOGE(TAG, "raw file mutex init failed");
+    return m;
+}
+
+void fb_raw_file_lock(void)
+{
+    SemaphoreHandle_t m = raw_file_mutex_get();
+    if (m)
+        xSemaphoreTake(m, portMAX_DELAY);
+}
+
+void fb_raw_file_unlock(void)
+{
+    SemaphoreHandle_t m = s_raw_file_mutex;
+    if (m)
+        xSemaphoreGive(m);
+}
+
+void fb_reserve_planes_early(void)
+{
+    int pb = epd_plane_bytes();
+    if (pb <= 0) return;
+
+    uint8_t *old = NULL;
+    portENTER_CRITICAL(&s_reserved_mux);
+    if (s_reserved_dual && s_reserved_pb == pb) {
+        portEXIT_CRITICAL(&s_reserved_mux);
+        return;
+    }
+    if (s_reserved_dual && s_reserved_in_use) {
+        portEXIT_CRITICAL(&s_reserved_mux);
+        ESP_LOGW(TAG, "early reserve skipped: reserved planes are in use");
+        return;
+    }
+    old = s_reserved_dual;
+    s_reserved_dual = NULL;
+    s_reserved_pb   = 0;
+    s_reserved_in_use = false;
+    portEXIT_CRITICAL(&s_reserved_mux);
+    free(old);
+
+    uint8_t *buf = heap_caps_malloc((size_t)pb * 2, MALLOC_CAP_DMA);
+    if (!buf)
+        buf = malloc((size_t)pb * 2);
+    if (!buf) {
+        ESP_LOGW(TAG, "early reserve 2x%d failed (heap will use ad hoc alloc)", pb);
+        return;
+    }
+
+    bool installed = false;
+    portENTER_CRITICAL(&s_reserved_mux);
+    if (!s_reserved_dual && !s_reserved_in_use) {
+        s_reserved_dual = buf;
+        s_reserved_pb   = pb;
+        installed = true;
+        buf = NULL;
+    }
+    portEXIT_CRITICAL(&s_reserved_mux);
+
+    free(buf);
+    if (installed) {
+        ESP_LOGI(TAG, "early reserve OK 2x%d bytes (panel %dx%d)", pb,
+                 epd_width(), epd_height());
+    }
+}
+
+void fb_release_reserved_planes(void)
+{
+    uint8_t *old = NULL;
+    portENTER_CRITICAL(&s_reserved_mux);
+    if (s_reserved_in_use) {
+        portEXIT_CRITICAL(&s_reserved_mux);
+        ESP_LOGW(TAG, "release reserved while in use, keeping buffer alive");
+        return;
+    }
+    old = s_reserved_dual;
+    s_reserved_dual = NULL;
+    s_reserved_pb   = 0;
+    s_reserved_in_use = false;
+    portEXIT_CRITICAL(&s_reserved_mux);
+    free(old);
+}
 
 /* ── lifecycle ────────────────────────────────────────────────────── */
 
@@ -22,28 +127,72 @@ fb_t *fb_create(void)
     fb_t *fb = calloc(1, sizeof(fb_t));
     if (!fb) return NULL;
 
-    fb->width       = W;
-    fb->height      = H;
-    fb->plane_bytes = pb;
-    fb->row_bytes   = W / 8;
+    fb->width        = W;
+    fb->height       = H;
+    fb->plane_bytes  = pb;
+    fb->row_bytes    = W / 8;
+    fb->planes_split = false;
+    fb->uses_reserved = false;
 
-    /* Allocate both planes as one block to avoid fragmentation */
+    /* 优先：启动预留整块（仅单实例在用，避免双 fb 叠写） */
+    uint8_t *reserved = NULL;
+    portENTER_CRITICAL(&s_reserved_mux);
+    if (s_reserved_dual && pb == s_reserved_pb && !s_reserved_in_use) {
+        reserved = s_reserved_dual;
+        s_reserved_in_use = true;
+    }
+    portEXIT_CRITICAL(&s_reserved_mux);
+    if (reserved) {
+        fb->black         = reserved;
+        fb->red           = reserved + pb;
+        fb->uses_reserved = true;
+        fb_clear(fb);
+        return fb;
+    }
+
+    /* 优先：单次大块（DMA-capable，最低碎片）。
+     * 回退：单次普通堆。
+     * 再回退：分别分配两块（碎片化下的最后一根稻草，
+     *          epd_bulk 已经能透明处理非 DMA-capable 内存）。 */
     uint8_t *buf = heap_caps_malloc((size_t)pb * 2, MALLOC_CAP_DMA);
-    if (!buf) {
+    if (buf) {
+        fb->black = buf;
+        fb->red   = buf + pb;
+    } else {
         buf = malloc((size_t)pb * 2);
-        if (!buf) {
-            free(fb);
-            ESP_LOGE(TAG, "Failed to allocate frame buffer (2x%d bytes), "
-                     "free heap: %lu, largest block: %lu",
+        if (buf) {
+            ESP_LOGW(TAG, "DMA alloc failed, using regular heap (2x%d bytes)", pb);
+            fb->black = buf;
+            fb->red   = buf + pb;
+        } else {
+            /* 单块 2*pb 不行 → 分别申请两个 pb 大小的块，对碎片更友好 */
+            uint8_t *b = heap_caps_malloc((size_t)pb, MALLOC_CAP_DMA);
+            if (!b) b = malloc((size_t)pb);
+            uint8_t *r = NULL;
+            if (b) {
+                r = heap_caps_malloc((size_t)pb, MALLOC_CAP_DMA);
+                if (!r) r = malloc((size_t)pb);
+            }
+            if (!b || !r) {
+                free(b);
+                free(r);
+                free(fb);
+                ESP_LOGE(TAG, "Failed to allocate frame buffer (2x%d bytes), "
+                         "free heap: %lu, largest block: %lu",
+                         pb,
+                         (unsigned long)esp_get_free_heap_size(),
+                         (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+                return NULL;
+            }
+            ESP_LOGW(TAG, "fb split planes (2x%d), free=%lu largest=%lu",
                      pb,
                      (unsigned long)esp_get_free_heap_size(),
                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-            return NULL;
+            fb->black        = b;
+            fb->red          = r;
+            fb->planes_split = true;
         }
-        ESP_LOGW(TAG, "DMA alloc failed, using regular heap (2x%d bytes)", pb);
     }
-    fb->black = buf;
-    fb->red   = buf + pb;
 
     fb_clear(fb);
     return fb;
@@ -52,7 +201,24 @@ fb_t *fb_create(void)
 void fb_destroy(fb_t *fb)
 {
     if (!fb) return;
+    if (fb->uses_reserved) {
+        int current_pb = epd_plane_bytes();
+        uint8_t *old = NULL;
+        portENTER_CRITICAL(&s_reserved_mux);
+        s_reserved_in_use = false;
+        if (s_reserved_dual == fb->black && s_reserved_pb != current_pb) {
+            old = s_reserved_dual;
+            s_reserved_dual = NULL;
+            s_reserved_pb = 0;
+        }
+        portEXIT_CRITICAL(&s_reserved_mux);
+        free(old);
+        free(fb);
+        return;
+    }
     free(fb->black);
+    if (fb->planes_split)
+        free(fb->red);
     free(fb);
 }
 
@@ -74,13 +240,15 @@ void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
     case COLOR_RED:
         if (epd_has_red()) {
             fb->red[byte_idx] |= mask;
-            fb->black[byte_idx] &= ~mask;
+            fb->black[byte_idx] |= mask;
             return;
         }
         /* BW panels: red maps to black */
         __attribute__((fallthrough));
     case COLOR_BLACK:
         fb->black[byte_idx] &= ~mask;
+        /* Black/red planes are exclusive: black clears any stale red bit. */
+        if (epd_has_red()) fb->red[byte_idx] &= ~mask;
         break;
     default:
         fb->black[byte_idx] |= mask;
@@ -108,9 +276,11 @@ void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
         uint8_t mask = (uint8_t)((0xFF >> (x0 % 8)) & (0xFF << (7 - x1 % 8)));
         if (is_black) {
             fb->black[row_off + sb] &= ~mask;
+            /* 同 fb_pixel：清掉可能残留的红位，保证黑色能盖在红色上 */
+            if (has_red) fb->red[row_off + sb] &= ~mask;
         } else if (is_red) {
             fb->red[row_off + sb] |= mask;
-            fb->black[row_off + sb] &= ~mask;
+            fb->black[row_off + sb] |= mask;
         } else {
             fb->black[row_off + sb] |= mask;
             fb->red[row_off + sb] &= ~mask;
@@ -125,13 +295,19 @@ void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
         fb->black[row_off + sb] &= ~lm;
         if (eb - sb > 1) memset(&fb->black[row_off + sb + 1], 0x00, (size_t)(eb - sb - 1));
         fb->black[row_off + eb] &= ~rm;
+        /* 同上：连段红位也要清，避免黑色被红色"穿透" */
+        if (has_red) {
+            fb->red[row_off + sb] &= ~lm;
+            if (eb - sb > 1) memset(&fb->red[row_off + sb + 1], 0x00, (size_t)(eb - sb - 1));
+            fb->red[row_off + eb] &= ~rm;
+        }
     } else if (is_red) {
-        fb->red[row_off + sb] |= lm;   fb->black[row_off + sb] &= ~lm;
+        fb->red[row_off + sb] |= lm;   fb->black[row_off + sb] |= lm;
         if (eb - sb > 1) {
             memset(&fb->red[row_off + sb + 1],   0xFF, (size_t)(eb - sb - 1));
-            memset(&fb->black[row_off + sb + 1], 0x00, (size_t)(eb - sb - 1));
+            memset(&fb->black[row_off + sb + 1], 0xFF, (size_t)(eb - sb - 1));
         }
-        fb->red[row_off + eb] |= rm;   fb->black[row_off + eb] &= ~rm;
+        fb->red[row_off + eb] |= rm;   fb->black[row_off + eb] |= rm;
     } else {
         fb->black[row_off + sb] |= lm; fb->red[row_off + sb] &= ~lm;
         if (eb - sb > 1) {
@@ -253,7 +429,10 @@ static void fb_bitmap_sc(fb_t *fb, int x, int y, int w, int h,
                           const uint8_t *data, fb_color_t c, int sc)
 {
     int stride = (w + 7) / 8;
-    int bold = (sc >= 2) ? 1 : 0;
+    /* bold 扩展（每像素额外扩 1px）仅在 sc≥3 时启用。
+     * sc=2 时保持严格的 2×2 块（32px 字高），避免日历等布局因多出的 1px 越界覆盖格线。
+     * 4.2" 小屏 sc=1 时 bold=0（不变）；5.83" 大屏 sc=2 时 bold=0（新）。*/
+    int bold = (sc >= 3) ? 1 : 0;
     for (int j = 0; j < h; j++) {
         for (int i = 0; i < w; i++) {
             if (data[j * stride + i / 8] & (0x80 >> (i % 8))) {

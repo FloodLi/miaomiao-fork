@@ -118,6 +118,11 @@ static int list_images(char out[][64], int max)
 
 static void show_next_image(void)
 {
+    unsigned epoch = display_policy_display_epoch();
+    if (display_policy_manual_screen_active()) {
+        ESP_LOGI(TAG, "Slideshow skipped: manual screen active");
+        return;
+    }
     display_policy_set_manual_screen_active(false);
 
     slideshow_mode_t mode;
@@ -160,8 +165,16 @@ static void show_next_image(void)
     free(names);
 
     const char *raw_path = "/spiffs/image.bin";
+    fb_raw_file_lock();
+    if (display_policy_manual_screen_active() ||
+        display_policy_display_epoch() != epoch) {
+        fb_raw_file_unlock();
+        ESP_LOGI(TAG, "Slideshow skipped after lock: manual screen active");
+        return;
+    }
     esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
     if (err != ESP_OK) {
+        fb_raw_file_unlock();
         ESP_LOGW(TAG, "Convert failed: %s", esp_err_to_name(err));
         return;
     }
@@ -184,7 +197,14 @@ static void show_next_image(void)
         }
     }
 
+    if (display_policy_manual_screen_active() ||
+        display_policy_display_epoch() != epoch) {
+        fb_raw_file_unlock();
+        ESP_LOGI(TAG, "Slideshow display canceled by newer request");
+        return;
+    }
     err = epd_display_from_file(raw_path);
+    fb_raw_file_unlock();
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Display failed: %s", esp_err_to_name(err));
         return;
@@ -326,13 +346,7 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
 
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%lus, mode=%d",
              s_config.enabled, (unsigned long)s_config.interval_sec, s_config.mode);
-
-    /* 网页开启轮播时须同步 last_mode，否则定时唤醒 quick_refresh 仍按旧模式（如时钟）显示 */
-    if (s_config.enabled) {
-        power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
-        button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
-    }
-
+    /* Enabling slideshow config no longer changes last_mode; explicit image show does. */
     /* HTTP may call this before scheduler_init() creates the event group (see app_main order). */
     if (s_event)
         xEventGroupSetBits(s_event, BIT_CFG_CHANGED);
@@ -345,11 +359,37 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
 void scheduler_set_current_image_name(const char *basename)
 {
     if (!basename || !basename[0]) {
+        portENTER_CRITICAL(&s_cfg_mux);
         s_current_image[0] = '\0';
+        portEXIT_CRITICAL(&s_cfg_mux);
         return;
     }
+
+    int next_index = -1;
+    char (*names)[64] = calloc(MAX_GALLERY, 64);
+    if (names) {
+        int count = list_images(names, MAX_GALLERY);
+        for (int i = 0; i < count; i++) {
+            if (strcmp(names[i], basename) == 0) {
+                next_index = (i + 1) % count;
+                break;
+            }
+        }
+        free(names);
+    }
+
+    bool save_index = false;
+    portENTER_CRITICAL(&s_cfg_mux);
     strncpy(s_current_image, basename, sizeof(s_current_image) - 1);
     s_current_image[sizeof(s_current_image) - 1] = '\0';
+    if (next_index >= 0) {
+        s_current_index = next_index;
+        save_index = true;
+    }
+    portEXIT_CRITICAL(&s_cfg_mux);
+
+    if (save_index)
+        nvs_save_index();
 }
 
 void scheduler_notify_manual_show(void)
@@ -368,6 +408,7 @@ void scheduler_notify_manual_show(void)
 
 const char *scheduler_get_current_image(void)
 {
+    /* The web status endpoint only needs a short-lived best-effort pointer. */
     return s_current_image[0] ? s_current_image : NULL;
 }
 
@@ -375,6 +416,7 @@ esp_err_t scheduler_show_next_image(void)
 {
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
+    unsigned epoch = display_policy_display_epoch();
 
     slideshow_mode_t mode;
     portENTER_CRITICAL(&s_cfg_mux);
@@ -410,11 +452,17 @@ esp_err_t scheduler_show_next_image(void)
     free(names);
 
     const char *raw_path = "/spiffs/image.bin";
+    fb_raw_file_lock();
     esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
-    if (err != ESP_OK)
-        return err;
-
-    err = epd_display_from_file(raw_path);
+    if (err == ESP_OK) {
+        if (display_policy_display_epoch() != epoch) {
+            fb_raw_file_unlock();
+            ESP_LOGI(TAG, "Manual slideshow display canceled by newer request");
+            return ESP_ERR_INVALID_STATE;
+        }
+        err = epd_display_from_file(raw_path);
+    }
+    fb_raw_file_unlock();
     if (err != ESP_OK)
         return err;
 

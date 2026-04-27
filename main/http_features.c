@@ -126,19 +126,30 @@ esp_err_t feat_countdown_ui_get(httpd_req_t *req)
 
 esp_err_t feat_countdown_config_get(httpd_req_t *req)
 {
-    const countdown_config_t *cfg = countdown_get_config();
+    countdown_config_t cfg;
+    if (countdown_get_config(&cfg) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "config unavailable");
+        return ESP_OK;
+    }
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddBoolToObject(root, "enabled", cfg->enabled);
-    cJSON_AddNumberToObject(root, "count", cfg->count);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
+    cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
+    cJSON_AddNumberToObject(root, "count", cfg.count);
     cJSON *arr = cJSON_AddArrayToObject(root, "items");
-    for (int i = 0; i < cfg->count && i < COUNTDOWN_MAX_ITEMS; i++) {
-        cJSON *item = cJSON_CreateObject();
-        cJSON_AddStringToObject(item, "title", cfg->items[i].title);
-        cJSON_AddNumberToObject(item, "year", cfg->items[i].year);
-        cJSON_AddNumberToObject(item, "month", cfg->items[i].month);
-        cJSON_AddNumberToObject(item, "day", cfg->items[i].day);
-        cJSON_AddBoolToObject(item, "active", cfg->items[i].active);
-        cJSON_AddItemToArray(arr, item);
+    if (arr) {
+        for (int i = 0; i < cfg.count && i < COUNTDOWN_MAX_ITEMS; i++) {
+            cJSON *item = cJSON_CreateObject();
+            if (!item) continue;
+            cJSON_AddStringToObject(item, "title", cfg.items[i].title);
+            cJSON_AddNumberToObject(item, "year", cfg.items[i].year);
+            cJSON_AddNumberToObject(item, "month", cfg.items[i].month);
+            cJSON_AddNumberToObject(item, "day", cfg.items[i].day);
+            cJSON_AddBoolToObject(item, "active", cfg.items[i].active);
+            cJSON_AddItemToArray(arr, item);
+        }
     }
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);

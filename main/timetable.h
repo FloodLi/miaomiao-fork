@@ -3,6 +3,7 @@
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define TT_MAX_PERIODS   12
@@ -47,10 +48,16 @@ esp_err_t timetable_show(void);
 /** Render a specific weekday to EPD (day: 0=Mon .. 6=Sun) */
 esp_err_t timetable_show_day(int day);
 
-/** Query helpers for clock summary */
-bool timetable_get_current_course(const char **name, const char **room,
+/** Query helpers for clock summary.
+ *  调用方提供 name/room 缓冲区，函数内部通过 timetable_get_config() 取
+ *  快照后再拷出，规避后台 HTTP POST 改写时的撕裂读。
+ *  name_buf / room_buf 可传 NULL。
+ */
+bool timetable_get_current_course(char *name_buf, size_t name_len,
+                                  char *room_buf, size_t room_len,
                                   int *minutes_remaining);
-bool timetable_get_next_course(const char **name, const char **room,
+bool timetable_get_next_course(char *name_buf, size_t name_len,
+                               char *room_buf, size_t room_len,
                                int *minutes_until_start);
 
 esp_err_t timetable_show_current(void);

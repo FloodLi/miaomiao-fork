@@ -132,9 +132,13 @@ static void cal_layout_build(cal_layout_t *L, int w, int h)
     L->fb_h = h;
     L->sc = (w >= 600) ? 2 : 1;
     int s = L->sc;
-    /* 标题区 + 星期行高度：大屏略放大，与原有比例一致 */
+    /* 大屏（s=2，648×480）布局精算（bold 已改为 sc>=3 才启用，sc=2 字高严格 32px）：
+     *   title_h = 48，wday_h = 36，grid_top = 84，grid_h = 396，row_h = 66
+     *   cell: top_pad(2) + 32(day) + sub_gap(0) + 32(label) = 66 = row_h ✓
+     *   wday 文字起 y = 52，高 32px，结 y = 83 < grid_top=84 ✓
+     * 小屏（s=1，400×300）不变：title_h=24，wday_h=20，row_h=42 */
     L->title_h = 16 * s + 8 * s;
-    L->wday_h = 16 * s + 4 * s;
+    L->wday_h  = (s >= 2) ? 18 * s : 16 * s + 4 * s;
     L->grid_top = L->title_h + L->wday_h;
     L->grid_h = h - L->grid_top;
     if (L->grid_h < 1)
@@ -236,20 +240,28 @@ static void cal_draw_weekday_row(fb_t *fb, const cal_layout_t *L)
 /** 先画线再画数字，避免格线与文字争同一像素（常见月历 widget 顺序） */
 static void cal_draw_grid_lines(fb_t *fb, const cal_layout_t *L)
 {
-    int W = L->fb_w;
-    int H = L->fb_h;
+    int W   = L->fb_w;
+    int H   = L->fb_h;
     int top = L->grid_top;
-    int gh = L->grid_h;
+    int lw  = L->sc;          /* 线宽随屏幕缩放：s=1→1px，s=2→2px，避免大屏线条不可见 */
 
+    /* 横线：每行上边界 */
     for (int r = 0; r <= CAL_GRID_ROWS; r++) {
         int y = top + r * L->row_h;
-        if (y < H)
-            fb_hline(fb, 0, y, W, COLOR_BLACK);
+        for (int t = 0; t < lw; t++) {
+            if (y + t < H)
+                fb_hline(fb, 0, y + t, W, COLOR_BLACK);
+        }
     }
-    int actual_gh = CAL_GRID_ROWS * L->row_h;
+    /* 竖线：每列左边界（不含最左边缘） */
+    int actual_gh = CAL_GRID_ROWS * L->row_h + lw;  /* 延伸覆盖最后一行的底线 */
+    if (top + actual_gh > H) actual_gh = H - top;
     for (int c = 1; c < CAL_GRID_COLS; c++) {
         int x = c * L->col_w;
-        fb_vline(fb, x, top, actual_gh, COLOR_BLACK);
+        for (int t = 0; t < lw; t++) {
+            if (x + t < W)
+                fb_vline(fb, x + t, top, actual_gh, COLOR_BLACK);
+        }
     }
 }
 
@@ -259,17 +271,25 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
                               int today_y, int today_m, int today_d)
 {
     int cw = L->col_w;
-    int s = L->sc;
+    int s  = L->sc;
 
     bool is_today = (year == today_y && month == today_m && day == today_d);
-    bool weekend = (col == 0 || col == CAL_GRID_COLS - 1);
+    bool weekend  = (col == 0 || col == CAL_GRID_COLS - 1);
+
+    /* 自适应单元格内边距（bold 仅 sc>=3 启用，sc=2 字高严格 32px）：
+     * s=1 (4.2" 400×300, row_h=42): top_pad=4, sub_gap=4 → 4+16+4+16=40 ≤42 ✓
+     * s=2 (5.83" 648×480, row_h=66): top_pad=2, sub_gap=0 → 2+32+0+32=66=row_h ✓
+     *   top_pad=2 确保内容在 2px 格线下方不重叠；sub_gap=0 两行紧邻（颜色/大小有视觉差异）*/
+    int top_pad = (s >= 2) ? 2 : 4 * s;
+    int sub_gap = (s >= 2) ? 0 : 4 * s;
 
     if (is_today) {
-        int ccx = cell_x + cw / 2;
-        int ccy = cell_y + 8 * s + 8 * s;
+        int ccx    = cell_x + cw / 2;
+        int ccy    = cell_y + top_pad + 8 * s;   /* 圆心在数字垂直中心 */
         int radius = 9 * s;
-        if (radius > cw / 2 - 1) radius = cw / 2 - 1;
-        if (radius < 4) radius = 4;
+        if (radius > cw / 2 - 1)      radius = cw / 2 - 1;
+        if (radius > ccy - cell_y)     radius = ccy - cell_y;  /* 不超出格顶 */
+        if (radius < 4)                radius = 4;
         cal_fill_circle(fb, ccx, ccy, radius, COLOR_RED);
     }
 
@@ -277,25 +297,25 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
     snprintf(ds, sizeof(ds), "%d", day);
     int dw = (int)strlen(ds) * 8 * s;
     int dx = cell_x + (cw - dw) / 2;
-    int dy = cell_y + 4 * s;
+    int dy = cell_y + top_pad;
     fb_color_t num_c = is_today ? COLOR_WHITE : (weekend ? COLOR_RED : COLOR_BLACK);
     fb_utf8_scaled(fb, dx, dy, ds, num_c, s);
 
     lunar_date_t ld;
-    const char *label = NULL;
-    bool special = false;
+    const char *label  = NULL;
+    bool        special = false;
 
     if (lunar_from_solar(year, month, day, &ld)) {
         const char *fest = lunar_festival(year, month, day, &ld);
         const char *term = lunar_solar_term(year, month, day);
         if (fest) {
-            label = fest;
+            label   = fest;
             special = true;
         } else if (term) {
-            label = term;
+            label   = term;
             special = true;
         } else if (ld.day == 1) {
-            label = lunar_month_str(ld.month);
+            label   = lunar_month_str(ld.month);
             special = true;
         } else {
             label = lunar_day_str(ld.day);
@@ -305,15 +325,16 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
     if (!label)
         return;
 
-    int ly = cell_y + 4 * s + 16 * s + 4 * s;
+    int ly = cell_y + top_pad + 16 * s + sub_gap;
     fb_color_t sub_c = is_today ? COLOR_WHITE
                                 : ((special || weekend) ? COLOR_RED : COLOR_BLACK);
-    int max_w = cw - 4;
-    if (max_w < 8)
-        max_w = 8;
-    int lw = cal_utf8_width_px(label, 8, 16);
-    int lx = (lw <= max_w) ? cell_x + (cw - lw) / 2 : cell_x + 2;
-    fb_utf8_scaled_maxw(fb, lx, ly, label, sub_c, 1, max_w);
+
+    /* 农历标签与日期数字统一使用屏幕缩放系数 s，避免大屏出现大数字配小标签的落差 */
+    int max_w = cw - 4 * s;
+    if (max_w < 8) max_w = 8;
+    int lw = cal_utf8_width_px(label, 8 * s, 16 * s);
+    int lx = (lw <= max_w) ? cell_x + (cw - lw) / 2 : cell_x + 2 * s;
+    fb_utf8_scaled_maxw(fb, lx, ly, label, sub_c, s, max_w);
 }
 
 /* -------------------------------------------------------------------------- */

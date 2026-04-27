@@ -22,7 +22,7 @@ esp_err_t power_mgr_set_config(const power_config_t *cfg);
 void power_mgr_reset_activity(void);
 
 /** Start the inactivity-check timer (call after full boot completes) */
-void power_mgr_arm(void);
+esp_err_t power_mgr_arm(void);
 
 /** Configure wake sources and enter deep sleep immediately */
 void power_mgr_enter_sleep(void);
@@ -33,3 +33,4 @@ bool power_mgr_is_timer_wake(void);
 /** Save/load display mode index across deep sleep cycles */
 void power_mgr_save_mode(int mode_index);
 int  power_mgr_load_mode(void);
+bool power_mgr_saved_mode_has_marker(void);

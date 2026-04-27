@@ -27,6 +27,8 @@
 #include <stdbool.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <errno.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -35,6 +37,8 @@
 #include "cJSON.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "esp_system.h"
 
 static const char *TAG = "canvas";
 
@@ -476,7 +480,7 @@ static void render_element(fb_t *fb, cJSON *el)
 
 static void do_render(void)
 {
-    /* 读取布局文件 */
+    /* 先确认布局文件存在并读取大小：避免无布局时白白占用 78KB 帧缓冲。 */
     FILE *f = fopen(LAYOUT_PATH, "r");
     if (!f) {
         ESP_LOGW(TAG, "No layout file, nothing to render");
@@ -490,9 +494,22 @@ static void do_render(void)
         ESP_LOGE(TAG, "Layout file size invalid: %ld", sz);
         return;
     }
+
+    /* 关键：先分配最大的那块（帧缓冲，约 78KB），再去解析 JSON。
+     * 这样 fb_create 拿到尽可能大的连续块，避免被 cJSON 节点先撑碎堆。 */
+    fb_t *fb = fb_create();
+    if (!fb) {
+        ESP_LOGE(TAG, "fb_create failed (free=%lu, largest=%lu)",
+                 (unsigned long)esp_get_free_heap_size(),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        fclose(f);
+        return;
+    }
+
     char *json_str = malloc((size_t)sz + 1);
     if (!json_str) {
         fclose(f);
+        fb_destroy(fb);
         ESP_LOGE(TAG, "malloc failed for layout (%ld bytes)", sz);
         return;
     }
@@ -502,25 +519,47 @@ static void do_render(void)
     if ((long)nr != sz) {
         ESP_LOGE(TAG, "Layout read incomplete: %zu/%ld", nr, sz);
         free(json_str);
+        fb_destroy(fb);
         return;
     }
 
+    /* 解析前后采样堆状态，便于区分「JSON 损坏」和「内存不足」 */
+    size_t free_before = esp_get_free_heap_size();
+    size_t lblk_before = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     cJSON *root = cJSON_Parse(json_str);
-    free(json_str);
     if (!root) {
-        ESP_LOGE(TAG, "JSON parse failed");
+        const char *errp = cJSON_GetErrorPtr();
+        long offset = (errp && errp >= json_str) ? (long)(errp - json_str) : -1;
+        size_t free_after = esp_get_free_heap_size();
+        size_t lblk_after = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        ESP_LOGE(TAG, "JSON parse failed at offset %ld of %ld bytes; "
+                      "heap free: %u→%u, largest: %u→%u",
+                 offset, sz,
+                 (unsigned)free_before, (unsigned)free_after,
+                 (unsigned)lblk_before, (unsigned)lblk_after);
+        /* 打印失败位置附近的内容（最多 64 字节），帮助判断文件损坏 */
+        if (offset >= 0 && offset < sz) {
+            long start = offset > 16 ? offset - 16 : 0;
+            long end   = offset + 48 < sz ? offset + 48 : sz;
+            char snippet[80];
+            long m = end - start;
+            if (m >= (long)sizeof(snippet)) m = sizeof(snippet) - 1;
+            memcpy(snippet, json_str + start, (size_t)m);
+            snippet[m] = '\0';
+            for (long i = 0; i < m; i++) {
+                if ((unsigned char)snippet[i] < 0x20) snippet[i] = '?';
+            }
+            ESP_LOGE(TAG, "  context: \"%s\"", snippet);
+        }
+        free(json_str);
+        fb_destroy(fb);
         return;
     }
+    free(json_str);
     if (!cJSON_IsArray(root)) {
         ESP_LOGE(TAG, "Layout root is not an array");
         cJSON_Delete(root);
-        return;
-    }
-
-    fb_t *fb = fb_create();
-    if (!fb) {
-        ESP_LOGE(TAG, "fb_create failed");
-        cJSON_Delete(root);
+        fb_destroy(fb);
         return;
     }
 
@@ -672,6 +711,22 @@ esp_err_t canvas_board_set_layout(const char *json, size_t len)
     if (len == 0) len = strlen(json);
     if (len > CANVAS_LAYOUT_MAX_BYTES) return ESP_ERR_INVALID_SIZE;
 
+    /* 写入前先校验是 JSON 数组，防止坏数据污染文件，让后续渲染始终失败 */
+    cJSON *probe = cJSON_ParseWithLength(json, len);
+    if (!probe) {
+        const char *errp = cJSON_GetErrorPtr();
+        long off = (errp && errp >= json) ? (long)(errp - json) : -1;
+        ESP_LOGE(TAG, "set_layout: invalid JSON at offset %ld of %zu bytes",
+                 off, len);
+        return ESP_ERR_INVALID_ARG;
+    }
+    bool is_arr = cJSON_IsArray(probe);
+    cJSON_Delete(probe);
+    if (!is_arr) {
+        ESP_LOGE(TAG, "set_layout: root must be a JSON array");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     FILE *f = fopen(LAYOUT_PATH, "w");
     if (!f) {
         ESP_LOGE(TAG, "Cannot open %s for write", LAYOUT_PATH);
@@ -680,6 +735,72 @@ esp_err_t canvas_board_set_layout(const char *json, size_t len)
     size_t written = fwrite(json, 1, len, f);
     fclose(f);
     return (written == len) ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path)
+{
+    if (!tmp_path) return ESP_ERR_INVALID_ARG;
+
+    /* 1) 取临时文件大小，做大小阈值检查 */
+    FILE *f = fopen(tmp_path, "r");
+    if (!f) {
+        ESP_LOGE(TAG, "commit: tmp file %s missing", tmp_path);
+        return ESP_FAIL;
+    }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    rewind(f);
+    if (sz <= 0 || sz > CANVAS_LAYOUT_MAX_BYTES) {
+        fclose(f);
+        unlink(tmp_path);
+        ESP_LOGE(TAG, "commit: tmp size invalid: %ld", sz);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    /* 2) 读回内存做 cJSON 校验。这里的 (sz+1) 单次 malloc 不可避免，
+     *    但 cJSON 树本身就 ~5x 这一字符串大小，碎片化风险与 tree 一致。 */
+    char *buf = malloc((size_t)sz + 1);
+    if (!buf) {
+        fclose(f);
+        unlink(tmp_path);
+        return ESP_ERR_NO_MEM;
+    }
+    size_t nr = fread(buf, 1, (size_t)sz, f);
+    fclose(f);
+    buf[nr] = '\0';
+    if ((long)nr != sz) {
+        free(buf);
+        unlink(tmp_path);
+        ESP_LOGE(TAG, "commit: read incomplete %zu/%ld", nr, sz);
+        return ESP_FAIL;
+    }
+
+    cJSON *probe = cJSON_ParseWithLength(buf, (size_t)nr);
+    free(buf);
+    if (!probe) {
+        unlink(tmp_path);
+        ESP_LOGE(TAG, "commit: invalid JSON, tmp discarded");
+        return ESP_ERR_INVALID_ARG;
+    }
+    bool is_arr = cJSON_IsArray(probe);
+    cJSON_Delete(probe);
+    if (!is_arr) {
+        unlink(tmp_path);
+        ESP_LOGE(TAG, "commit: root not array, tmp discarded");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    /* 3) 原子替换：unlink 旧文件 → rename(tmp, real)。
+     *    SPIFFS 的 rename 是同分区移动，相对安全。 */
+    unlink(LAYOUT_PATH);
+    if (rename(tmp_path, LAYOUT_PATH) != 0) {
+        ESP_LOGE(TAG, "commit: rename(%s -> %s) failed errno=%d",
+                 tmp_path, LAYOUT_PATH, errno);
+        unlink(tmp_path);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Layout committed (%ld bytes)", sz);
+    return ESP_OK;
 }
 
 esp_err_t canvas_board_show(void)
