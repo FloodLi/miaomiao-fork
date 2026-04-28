@@ -49,31 +49,31 @@
 | 物理按键 | 3 键切换**上述 7 种**轮显模式（上一个 / 刷新 / 下一个）；留言板与画布**仅通过网页**编辑推屏，不参与按键循环 |
 | 深度睡眠 | 闲置自动入睡 + 定时器/按键唤醒 |
 
-下图与仓库目录中**文件名一一对应**（`网页效果展示图片/`、`水墨屏实物展示/`、`水墨屏内部图/`、`复刻所需物料图/`）。
+下图使用 `docs/images/` 下的英文文件名副本，避免代码托管平台对中文图片路径渲染不稳定；原始照片仍保留在对应中文目录中。
 
 ### Web 界面截图
 
 | `上传面板.png` | `设备配置.png` |
 | :---: | :---: |
-| ![上传面板](网页效果展示图片/上传面板.png) | ![设备配置](网页效果展示图片/设备配置.png) |
+| ![上传面板](docs/images/web-upload-panel.png) | ![设备配置](docs/images/web-device-config.png) |
 
 | `课程表管理.png` | `待办事项.png` |
 | :---: | :---: |
-| ![课程表](网页效果展示图片/课程表管理.png) | ![待办事项](网页效果展示图片/待办事项.png) |
+| ![课程表](docs/images/web-timetable.png) | ![待办事项](docs/images/web-todo.png) |
 
 ### 墨水屏实物
 
 | `双屏-时钟与立绘.jpg` | 实物展示 |
 | :---: | :---: |
-| ![双屏时钟与立绘](水墨屏实物展示/双屏-时钟与立绘.jpg) | ![实物展示](水墨屏实物展示/261a36d430592882d8f4c2172a25a371.jpg) |
+| ![双屏时钟与立绘](docs/images/device-dual-clock-art.jpg) | ![实物展示](docs/images/device-photo-01.jpg) |
 
 | 实物展示 | 实物展示 |
 | :---: | :---: |
-| ![实物展示](水墨屏实物展示/2f068f7a1be503b72ba599de70b00d55.jpg) | ![实物展示](水墨屏实物展示/80bd15e5372f7575db894af4dd983b61.jpg) |
+| ![实物展示](docs/images/device-photo-02.jpg) | ![实物展示](docs/images/device-photo-03.jpg) |
 
 | 实物展示 | 实物展示 |
 | :---: | :---: |
-| ![实物展示](水墨屏实物展示/944a6e7e724c69431461e6a164951556.jpg) | ![实物展示](水墨屏实物展示/f85d0b3b600f11d4eee45885d2eb2cd4.jpg) |
+| ![实物展示](docs/images/device-photo-04.jpg) | ![实物展示](docs/images/device-photo-05.jpg) |
 
 ## 🔧 硬件要求
 
@@ -87,7 +87,7 @@
 
 | `模组-ESP32-S3-WROOM-1U-N16R8.png` |
 | :---: |
-| ![模组 ESP32-S3-WROOM-1U-N16R8](复刻所需物料图/模组-ESP32-S3-WROOM-1U-N16R8.png) |
+| ![模组 ESP32-S3-WROOM-1U-N16R8](docs/images/part-esp32-s3-wroom-1u-n16r8.png) |
 
 ### 开发板（核心板）
 
@@ -95,7 +95,7 @@
 
 | `开发板-ESP32-S3-N16R8核心板.png` |
 | :---: |
-| ![ESP32-S3-N16R8 核心板](复刻所需物料图/开发板-ESP32-S3-N16R8核心板.png) |
+| ![ESP32-S3-N16R8 核心板](docs/images/part-esp32-s3-n16r8-devboard.png) |
 
 ### 内部构造（整机 / 自定义 PCB）
 
@@ -103,7 +103,7 @@
 
 | 内部结构 | 内部结构 |
 | :---: | :---: |
-| ![内部结构](水墨屏内部图/ed0d801723637cc34a69eea9c8024cd5.jpg) | ![内部结构](水墨屏内部图/72fb56b95add88efbb6bea1e20285d28.jpg) |
+| ![内部结构](docs/images/internal-01.jpg) | ![内部结构](docs/images/internal-02.jpg) |
 
 > **4.2&quot; 与 5.83&quot; 面板共用同一组 GPIO 接线**（见下表）。通过 Web 页面或 `POST /panel_config` 修改 `panel` 字段后，建议重启设备让面板尺寸、预留 framebuffer 与 `/spiffs/image.bin` 重新按新屏幕初始化；无需改线，也不需要修改 `main/epd_stub.c` 的引脚宏。
 
@@ -120,7 +120,7 @@
 
 基础整机示意：**3.7V 电池 → 充放电模块 → 开关 → 开发板 5V 输入**；**水墨屏驱动板**经 SCL/SDI/RES、D/C、CS、BUSY 与 **3V3/GND** 接至开发板对应 IO；**SW3/SW4/SW5** 分别接 **IO9 / IO46 / IO3**，及 **GND** 与下图一致（与下表核对）。
 
-![开发板接线图](hardware/开发板接线图.png)
+![开发板接线图](docs/images/wiring-diagram.png)
 
 ### 引脚连接
 
