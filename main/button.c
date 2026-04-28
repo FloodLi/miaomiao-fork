@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 
+#include "calendar_display.h"
 #include "display_mode.h"
 #include "display_policy.h"
 #include "driver/gpio.h"
@@ -73,7 +74,7 @@ static debounce_t s_db[BTN_COUNT];
 
 /* ── display worker (runs on 10KB stack) ────────────────────────── */
 
-static void show_unconfigured_hint(int idx)
+static void show_unconfigured_hint(int idx, unsigned epoch)
 {
     fb_t *fb = fb_create();
     if (!fb) return;
@@ -85,6 +86,11 @@ static void show_unconfigured_hint(int idx)
     fb_utf8_scaled(fb, epd_width() / 2 - 36, cy + 42, "未配置", COLOR_BLACK, 2);
     fb_utf8_scaled(fb, epd_width() / 2 - 80, cy + 72, "请通过网页进行设置", COLOR_BLACK, 1);
 
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        return;
+    }
+
     epd_display_fb_free(fb);
 }
 
@@ -95,8 +101,13 @@ static void switch_mode(int dir)
 
     s_mode_idx = (s_mode_idx + dir + n) % n;
 
-    display_policy_set_manual_screen_active(true);
+    unsigned epoch = display_policy_begin_manual_display();
     esp_err_t err = display_mode_show(s_mode_idx);
+    if (err == ESP_OK && s_mode_idx == DISPLAY_MODE_CALENDAR)
+        calendar_display_wait_render_idle();
+
+    if (!display_policy_epoch_is_current(epoch))
+        return;
 
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "switched to %s", display_mode_name(s_mode_idx));
@@ -105,7 +116,7 @@ static void switch_mode(int dir)
     }
 
     ESP_LOGW(TAG, "%s unavailable, showing hint", display_mode_name(s_mode_idx));
-    show_unconfigured_hint(s_mode_idx);
+    show_unconfigured_hint(s_mode_idx, epoch);
 }
 
 static void display_worker_task(void *arg)
@@ -126,9 +137,14 @@ static void display_worker_task(void *arg)
             switch_mode(+1);
             break;
         case CMD_REFRESH:
-            display_policy_set_manual_screen_active(true);
-            if (display_mode_show(s_mode_idx) == ESP_OK)
-                ESP_LOGI(TAG, "refreshed %s", display_mode_name(s_mode_idx));
+            {
+                unsigned epoch = display_policy_begin_manual_display();
+                esp_err_t err = display_mode_show(s_mode_idx);
+                if (err == ESP_OK && s_mode_idx == DISPLAY_MODE_CALENDAR)
+                    calendar_display_wait_render_idle();
+                if (err == ESP_OK && display_policy_epoch_is_current(epoch))
+                    ESP_LOGI(TAG, "refreshed %s", display_mode_name(s_mode_idx));
+            }
             break;
         }
 

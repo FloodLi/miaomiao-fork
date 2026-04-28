@@ -382,6 +382,11 @@ static const uint8_t *find_zh_glyph(uint32_t cp)
     return NULL;
 }
 
+static bool utf8_cont(uint8_t c)
+{
+    return (c & 0xC0) == 0x80;
+}
+
 static int decode_utf8(const char **pp)
 {
     const uint8_t *p = (const uint8_t *)*pp;
@@ -389,14 +394,33 @@ static int decode_utf8(const char **pp)
     if (p[0] < 0x80) {
         cp = p[0]; *pp += 1;
     } else if ((p[0] & 0xE0) == 0xC0) {
+        if (!p[1] || !utf8_cont(p[1])) {
+            *pp += 1;
+            return '?';
+        }
         cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+        if (cp < 0x80)
+            cp = '?';
         *pp += 2;
     } else if ((p[0] & 0xF0) == 0xE0) {
+        if (!p[1] || !utf8_cont(p[1]) || !p[2] || !utf8_cont(p[2])) {
+            *pp += 1;
+            return '?';
+        }
         cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        if (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF))
+            cp = '?';
         *pp += 3;
     } else if ((p[0] & 0xF8) == 0xF0) {
+        if (!p[1] || !utf8_cont(p[1]) || !p[2] || !utf8_cont(p[2]) ||
+            !p[3] || !utf8_cont(p[3])) {
+            *pp += 1;
+            return '?';
+        }
         cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) |
              ((p[2] & 0x3F) << 6)  | (p[3] & 0x3F);
+        if (cp < 0x10000 || cp > 0x10FFFF)
+            cp = '?';
         *pp += 4;
     } else {
         *pp += 1;

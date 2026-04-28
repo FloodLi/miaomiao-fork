@@ -226,10 +226,13 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
         <div class="k">设备 ID</div><div class="v" id="st_id6">-</div>
         <div class="k">mDNS</div><div class="v" id="st_mdns">-</div>
         <div class="k">AP 地址</div><div class="v">192.168.4.1</div>
+        <div class="k">SPIFFS</div><div class="v" id="st_spiffs">-</div>
       </div>
       <div class="row">
         <button class="btn ghost sm" onclick="loadStatus()">刷新状态</button>
         <button class="btn danger sm" onclick="forgetWifi()">忘记 WiFi</button>
+        <button class="btn ghost sm" onclick="retrySpiffs()">重试文件系统</button>
+        <button class="btn danger sm" onclick="formatSpiffs()">格式化 SPIFFS</button>
       </div>
     </div>
   </div>
@@ -574,7 +577,7 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
   <div class="card">
     <div class="hd">
       <div class="title" style="font-size:16px">配置导出/导入</div>
-      <div class="sub">一键备份所有设置到 JSON 文件，或从备份文件恢复。包含天气、时钟、轮播、课程表、待办事项、倒计时等全部配置。</div>
+      <div class="sub">一键备份常用设置到 JSON 文件，或从备份文件恢复。出于安全考虑，访问认证用户名/密码不会导出或导入，请在本页单独设置。</div>
     </div>
     <div class="bd">
       <div class="row" style="margin-bottom:12px">
@@ -671,7 +674,12 @@ function authName(a){
 
 async function loadStatus(){
   try{
-    const r=await fetch('/wifi_status');const j=await r.json();
+    const [wr,sr]=await Promise.all([
+      fetch('/wifi_status',epdFetchOpts()),
+      fetch('/status',epdFetchOpts())
+    ]);
+    const j=await wr.json();
+    const st=sr.ok?await sr.json():{};
     const modeMap={0:'未初始化',1:'AP 模式',2:'STA 模式',3:'AP+STA 模式'};
     document.getElementById('st_mode').textContent=modeMap[j.mode]||j.mode;
     const sta=document.getElementById('st_sta');
@@ -683,7 +691,36 @@ async function loadStatus(){
     document.getElementById('st_id6').textContent=j.id6||'-';
     const mh=j.mdns_host||'epd';
     document.getElementById('st_mdns').innerHTML='<a href="http://'+mh+'.local/" style="color:var(--ac)">'+mh+'.local</a>';
+    const fs=document.getElementById('st_spiffs');
+    if(fs){
+      if(st.spiffs_ok===false){fs.textContent='异常：已进入诊断模式';fs.className='v bad';}
+      else if(st.spiffs_total>0){
+        fs.textContent=((st.spiffs_used/st.spiffs_total)*100).toFixed(1)+'% 已用';
+        fs.className='v ok';
+      }else{fs.textContent='未知';fs.className='v warn';}
+    }
   }catch(e){log('获取状态失败: '+e,'bad');}
+}
+
+async function retrySpiffs(){
+  if(!confirm('将尝试重新挂载 SPIFFS，不会格式化或删除数据。继续吗？'))return;
+  try{
+    const r=await fetch('/spiffs_remount',epdFetchOpts({method:'POST'}));
+    const j=await r.json();
+    log(j.ok?'文件系统重新挂载成功，建议重启设备恢复完整显示服务。':'重试失败：'+(j.err||r.status),j.ok?'ok':'bad');
+    await loadStatus();
+  }catch(e){log('重试文件系统失败: '+e,'bad');}
+}
+
+async function formatSpiffs(){
+  const c=prompt('这会清空图库、画布素材和缓存。若确认格式化，请输入 FORMAT_SPIFFS');
+  if(c!=='FORMAT_SPIFFS'){log('已取消格式化。','warn');return;}
+  try{
+    const r=await fetch('/spiffs_format',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:'FORMAT_SPIFFS'})}));
+    const j=await r.json();
+    log(j.ok?'SPIFFS 已格式化并重新挂载，请重启设备恢复正常启动流程。':'格式化失败：'+(j.err||r.status),j.ok?'ok':'bad');
+    await loadStatus();
+  }catch(e){log('格式化 SPIFFS 失败: '+e,'bad');}
 }
 
 async function scanWifi(){
@@ -692,7 +729,7 @@ async function scanWifi(){
   document.getElementById('scanHint').textContent='扫描中…约需 3-5 秒';
   document.getElementById('apList').innerHTML='<div class="empty">扫描中…</div>';
   try{
-    const r=await fetch('/scan');const j=await r.json();
+    const r=await fetch('/scan',epdFetchOpts());const j=await r.json();
     const list=document.getElementById('apList');
     if(!j.aps||j.aps.length===0){list.innerHTML='<div class="empty">未发现任何 WiFi 热点。</div>';return;}
     list.innerHTML=j.aps.map((a,i)=>{
@@ -761,7 +798,7 @@ function ssLog(s,cls){const el=document.getElementById('ssLog');el.className='lo
 
 async function loadSlideshow(){
   try{
-    const r=await fetch('/slideshow');const j=await r.json();
+    const r=await fetch('/slideshow',epdFetchOpts());const j=await r.json();
     document.getElementById('ssEnabled').checked=j.enabled;
     document.getElementById('ssLabel').textContent=j.enabled?'已开启':'已关闭';
     document.getElementById('ssInterval').value=String(j.interval_sec);
@@ -961,7 +998,7 @@ function ckLog(s,cls){const el=document.getElementById('ckLog');el.className='lo
 
 async function loadClock(){
   try{
-    const r=await fetch('/clock_config');const j=await r.json();
+    const r=await fetch('/clock_config',epdFetchOpts());const j=await r.json();
     document.getElementById('ckEnabled').checked=j.enabled;
     document.getElementById('ckLabel').textContent=j.enabled?'已开启':'已关闭';
     document.getElementById('ckWeather').checked=j.show_weather;
@@ -1010,7 +1047,7 @@ function msgLog(s,cls){const el=document.getElementById('msgLog');el.className='
 
 async function loadMsg(){
   try{
-    const r=await fetch('/msg_config');const j=await r.json();
+    const r=await fetch('/msg_config',epdFetchOpts());const j=await r.json();
     document.getElementById('msgText').value=j.text||'';
     document.getElementById('msgFont').value=String(j.font_size||0);
     document.getElementById('msgAlign').value=String(j.align||0);
@@ -1089,7 +1126,7 @@ function otaLog(s,cls){const el=document.getElementById('otaLog');el.className='
 
 async function loadVersion(){
   try{
-    const r=await fetch('/version');const j=await r.json();
+    const r=await fetch('/version',epdFetchOpts());const j=await r.json();
     document.getElementById('fw_ver').textContent=j.version;
     document.getElementById('fw_date').textContent=j.date+' '+j.time;
     document.getElementById('fw_idf').textContent=j.idf;
@@ -1165,7 +1202,7 @@ const panelNames=['4.2 寸 黑白红 (400×300)','5.83 寸 黑白 (648×480)'];
 
 async function loadPanel(){
   try{
-    const r=await fetch('/panel_config');const j=await r.json();
+    const r=await fetch('/panel_config',epdFetchOpts());const j=await r.json();
     document.getElementById('pnPanel').value=j.panel;
     document.getElementById('pn_current').textContent=panelNames[j.panel]||'未知';
     document.getElementById('pn_res').textContent=j.width+'×'+j.height+(j.has_red?' (BW+R)':' (BW)');
@@ -1229,7 +1266,7 @@ async function testEpdRed(){
 
 function authLog(m,t){document.getElementById('authLog').innerHTML='<span class="'+(t||'')+'">'+ m+'</span>';}
 async function loadAuth(){
-  try{const r=await fetch('/auth_config');const j=await r.json();
+  try{const r=await fetch('/auth_config',epdFetchOpts());const j=await r.json();
     document.getElementById('authUser').value=j.user||'';
     document.getElementById('authPass').value='';
     authLog(j.enabled?'认证已开启（用户: '+j.user+'）':'认证未开启（任何人可操作）');
@@ -1259,7 +1296,7 @@ function pwrLog(s,cls){const el=document.getElementById('pwrLog');el.className='
 
 async function loadPower(){
   try{
-    const r=await fetch('/power_config');const j=await r.json();
+    const r=await fetch('/power_config',epdFetchOpts());const j=await r.json();
     document.getElementById('pwrEnabled').checked=j.enabled;
     document.getElementById('pwrLabel').textContent=j.enabled?'已开启':'已关闭';
     document.getElementById('pwrInterval').value=String(j.interval);
@@ -1297,8 +1334,8 @@ function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'
 async function exportConfig(){
   bkLog('正在收集所有配置…');
   try{
-    var endpoints=['/weather_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/auth_config'];
-    var names=['weather','clock','message','slideshow','timetable','todo','countdown','power','auth'];
+    var endpoints=['/weather_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config'];
+    var names=['weather','clock','message','slideshow','timetable','todo','countdown','power'];
     var backup={_version:1,_date:new Date().toISOString()};
     for(var i=0;i<endpoints.length;i++){
       try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -1309,7 +1346,7 @@ async function exportConfig(){
     a.download='epd_config_'+new Date().toISOString().slice(0,10)+'.json';
     a.click();
     URL.revokeObjectURL(a.href);
-    bkLog('配置已导出！文件名：'+a.download,'ok');
+    bkLog('配置已导出！文件名：'+a.download+'。访问认证未包含在备份中。','ok');
   }catch(e){bkLog('导出失败：'+e,'bad');}
 }
 
@@ -1321,12 +1358,13 @@ async function importConfig(input){
     var backup=JSON.parse(text);
     if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
     var map={weather:'/weather_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
-      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',auth:'/auth_config'};
+      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config'};
     var ok=0,fail=0;
     for(var key in map){
       if(!backup[key])continue;
       try{
-        await fetch(map[key],epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup[key])}));
+        var r=await fetch(map[key],epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(backup[key])}));
+        if(!r.ok)throw new Error(key+' HTTP '+r.status);
         ok++;
       }catch(e){fail++;}
     }

@@ -227,11 +227,11 @@ static void nvs_save_snapshot(const clock_config_t *cfg)
  * 全刷耗时且会刷花画面），因此本模块统一走全刷，画面质量优先。
  * 参数 @p prefer_partial 暂保留接口位置，已不参与决策。
  */
-static void render_clock(bool prefer_partial)
+static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
 {
     if (s_render_mutex && xSemaphoreTake(s_render_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
         ESP_LOGW(TAG, "render_clock: another render in progress, skip");
-        return;
+        return ESP_ERR_TIMEOUT;
     }
 
     /* 在 spinlock 保护下取一份配置快照，整次渲染使用 cfg_local 而非 s_cfg，
@@ -246,7 +246,7 @@ static void render_clock(bool prefer_partial)
         ESP_LOGE(TAG, "fb_create failed");
         if (s_render_mutex)
             xSemaphoreGive(s_render_mutex);
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
     struct tm tm;
@@ -424,6 +424,14 @@ static void render_clock(bool prefer_partial)
     /* ── export to SPIFFS（保留 wake-restore 缓存）── */
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_raw_file_unlock();
+        fb_destroy(fb);
+        if (s_render_mutex)
+            xSemaphoreGive(s_render_mutex);
+        ESP_LOGI(TAG, "Clock display skipped before export: stale request");
+        return ESP_ERR_INVALID_STATE;
+    }
     esp_err_t err = fb_export(fb, raw_path);
     fb_raw_file_unlock();
 
@@ -431,14 +439,27 @@ static void render_clock(bool prefer_partial)
         fb_destroy(fb);
         if (s_render_mutex)
             xSemaphoreGive(s_render_mutex);
-        return;
+        return err;
     }
 
     (void)prefer_partial;
     (void)raw_path;
 
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        if (s_render_mutex)
+            xSemaphoreGive(s_render_mutex);
+        ESP_LOGI(TAG, "Clock display skipped before EPD refresh: stale request");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     /* 全刷：用 epd_display_fb_free，SPI 完成立即释放 fb，省 ~18s 内存占用 */
-    epd_display_fb_free(fb);
+    err = epd_display_fb_free(fb);
+    if (err != ESP_OK) {
+        if (s_render_mutex)
+            xSemaphoreGive(s_render_mutex);
+        return err;
+    }
 
     scheduler_notify_manual_show();
     ESP_LOGI(TAG, "Clock displayed: %02d:%02d", hour, min);
@@ -458,6 +479,7 @@ static void render_clock(bool prefer_partial)
 
     if (s_render_mutex)
         xSemaphoreGive(s_render_mutex);
+    return ESP_OK;
 }
 
 /* ── auto-refresh task ────────────────────────────────────────────── */
@@ -589,7 +611,8 @@ static void clock_task(void *arg)
                  minute_changed, full_step_due, hour_changed, day_changed, cfg_changed,
                  sw_visibility_changed, weather_data_changed, s_force_full);
 
-        render_clock(false);
+        unsigned epoch = display_policy_display_epoch();
+        render_clock(false, epoch);
     }
 }
 
@@ -679,7 +702,11 @@ esp_err_t clock_display_show(void)
 
     /* 同步渲染（耗时 ~18.8s 全刷）。render_clock 末尾会更新 s_state，
      * 任务循环看到 s_state.last_minute 已是当前分钟 → 不会立即重复刷。 */
-    render_clock(false);
+    unsigned epoch = display_policy_display_epoch();
+    esp_err_t err = render_clock(false, epoch);
+    if (err != ESP_OK)
+        return err;
+
     if (show_weather)
         weather_request_embedded_refresh();
 

@@ -376,7 +376,7 @@ static const char *weekday_zh[] = {
     "\xe5\x85\xad",  /* 鍏?*/
 };
 
-static void render_weather(void)
+static void render_weather(unsigned epoch)
 {
     weather_config_t cfg_local;
     weather_config_snapshot(&cfg_local);
@@ -502,13 +502,25 @@ static void render_weather(void)
     if (footer_x < MX) footer_x = MX;
     fb_utf8(fb, footer_x, H - 60, footer, COLOR_BLACK);
 
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        ESP_LOGI(TAG, "Weather display skipped: stale request");
+        return;
+    }
+
     /* export and display */
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        fb_raw_file_unlock();
+        ESP_LOGI(TAG, "Weather display skipped before export: stale request");
+        return;
+    }
     esp_err_t err = fb_export(fb, raw_path);
     fb_destroy(fb);
 
-    if (err == ESP_OK && epd_is_ready()) {
+    if (err == ESP_OK && epd_is_ready() && display_policy_epoch_is_current(epoch)) {
         esp_err_t disp_err = epd_display_from_file(raw_path);
         if (disp_err == ESP_OK) {
             scheduler_notify_manual_show();
@@ -538,6 +550,9 @@ esp_err_t weather_fetch_and_display(bool force_fullscreen)
         ESP_LOGI(TAG, "Weather auto fetch skipped by display policy");
         return ESP_OK;
     }
+
+    unsigned epoch = force_fullscreen ? display_policy_begin_manual_display()
+                                      : display_policy_display_epoch();
 
     /* weather_task, boot_wx, and POST /weather_show must not overlap: shared s_data + concurrent
      * esp_http_client can corrupt lwIP/tcpip internal lists (LoadProhibited in vListInsert). */
@@ -604,8 +619,9 @@ esp_err_t weather_fetch_and_display(bool force_fullscreen)
     s_data.valid = true;
 
     if (display_policy_weather_use_full_page(force_fullscreen)) {
-        render_weather();
-        if (force_fullscreen)
+        if (display_policy_epoch_is_current(epoch))
+            render_weather(epoch);
+        if (force_fullscreen && display_policy_epoch_is_current(epoch))
             display_policy_set_manual_screen_active(true);
     } else {
         notify_clock = true;
@@ -769,6 +785,8 @@ esp_err_t weather_display_cached(void)
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
 
+    unsigned epoch = display_policy_begin_manual_display();
+
     /* 涓庡悗鍙版媺鍙栦换鍔′覆琛岋細fetch 浠诲姟鎸侀攣鏈熼棿浼氬啓 s_data锛?     * 杩欓噷鎸侀攣鍚庡啀璋冪敤 render_weather()锛岄伩鍏嶈鍒版挄瑁傛暟鎹€?*/
     if (s_fetch_mutex)
         xSemaphoreTake(s_fetch_mutex, portMAX_DELAY);
@@ -780,12 +798,13 @@ esp_err_t weather_display_cached(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    render_weather();
+    render_weather(epoch);
 
     if (s_fetch_mutex)
         xSemaphoreGive(s_fetch_mutex);
 
-    display_policy_set_manual_screen_active(true);
+    if (display_policy_epoch_is_current(epoch))
+        display_policy_set_manual_screen_active(true);
     return ESP_OK;
 }
 

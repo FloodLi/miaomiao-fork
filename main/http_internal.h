@@ -17,7 +17,20 @@ static inline char *json_escape(char *dst, size_t dst_len, const char *src)
 {
     if (!dst || dst_len == 0) return dst;
     size_t o = 0;
+    if (!src) src = "";
     for (const char *s = src; *s && o + 2 < dst_len; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c < 0x20) {
+            if (o + 6 >= dst_len) break;
+            static const char hex[] = "0123456789abcdef";
+            dst[o++] = '\\';
+            dst[o++] = 'u';
+            dst[o++] = '0';
+            dst[o++] = '0';
+            dst[o++] = hex[c >> 4];
+            dst[o++] = hex[c & 0x0f];
+            continue;
+        }
         if (*s == '"' || *s == '\\') {
             dst[o++] = '\\';
         }

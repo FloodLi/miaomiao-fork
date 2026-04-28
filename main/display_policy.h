@@ -32,6 +32,8 @@ bool display_policy_weather_may_network_fetch(bool user_explicit);
 /** 留言板、日历、HTTP 看图、上传预览等全屏内容展示中 */
 void display_policy_set_manual_screen_active(bool active);
 bool display_policy_manual_screen_active(void);
+unsigned display_policy_begin_manual_display(void);
+bool display_policy_epoch_is_current(unsigned epoch);
 
 /** 每次用户主动发起全屏显示时递增；长耗时显示可用它判断自己是否已过期。 */
 void display_policy_bump_display_epoch(void);

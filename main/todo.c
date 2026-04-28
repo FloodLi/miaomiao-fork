@@ -64,10 +64,10 @@ static int count_pending_in(const todo_config_t *cfg)
 }
 
 /* 渲染时使用调用方提供的快照，避免与 HTTP POST 并发写 s_cfg 时撕裂 */
-static void render_todo_snapshot(const todo_config_t *cfg)
+static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
 {
     fb_t *fb = fb_create();
-    if (!fb) return;
+    if (!fb) return false;
     fb_clear(fb);
 
     const int W = fb->width;
@@ -98,8 +98,11 @@ static void render_todo_snapshot(const todo_config_t *cfg)
         int esc = s + 1;
         int mw = 4 * 16 * esc;
         fb_utf8_scaled(fb, (W - mw) / 2, H / 2 - 8 * esc, empty, COLOR_BLACK, esc);
-        epd_display_fb_free(fb);
-        return;
+        if (!display_policy_epoch_is_current(epoch)) {
+            fb_destroy(fb);
+            return false;
+        }
+        return epd_display_fb_free(fb) == ESP_OK;
     }
 
     /* ── progress section ── */
@@ -195,7 +198,11 @@ static void render_todo_snapshot(const todo_config_t *cfg)
                 fb_pixel(fb, dx, y + item_h - 1, COLOR_BLACK);
     }
 
-    epd_display_fb_free(fb);
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        return false;
+    }
+    return epd_display_fb_free(fb) == ESP_OK;
 }
 
 /* ── public API ──────────────────────────────────────────────────── */
@@ -245,7 +252,9 @@ esp_err_t todo_show(void)
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
 
-    render_todo_snapshot(&snap);
+    unsigned epoch = display_policy_display_epoch();
+    if (!render_todo_snapshot(&snap, epoch))
+        return ESP_ERR_INVALID_STATE;
     display_policy_set_manual_screen_active(true);
     ESP_LOGI(TAG, "displayed %d items (%d pending)",
              snap.count, count_pending_in(&snap));
@@ -395,7 +404,12 @@ esp_err_t todo_show_http_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    render_todo_snapshot(&snap);
+    unsigned epoch = display_policy_begin_manual_display();
+    if (!render_todo_snapshot(&snap, epoch)) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"display canceled\"}");
+        return ESP_OK;
+    }
     display_policy_set_manual_screen_active(true);
     button_set_current_mode(DISPLAY_MODE_TODO);
     power_mgr_save_mode(DISPLAY_MODE_TODO);

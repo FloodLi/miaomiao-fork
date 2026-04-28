@@ -1,5 +1,12 @@
 # ESP32-S3 三色墨水屏图片上传显示系统 — 实现文档
 
+<!-- release-sync-2026-04-28 -->
+## 实现状态快照（2026-04-28，本轮修复后）
+
+当前实现已经覆盖图片转换、图库、轮播、天气、时钟、课程表、待办、倒计时、留言板、画布、OTA 和低功耗。本轮重点完成上市前质量修复：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容，挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；AP 默认密码固定为 `12345678`，屏幕不可用时仍可进入网页恢复配置，快速刷新回睡，并提供 `/spiffs_remount` 与需要确认口令的 `/spiffs_format`；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志。
+
+后续实现重点：OTA 与低功耗长稳测试、图片算法参数化和网页预览、以及把当前 epoch 仲裁进一步演进成统一显示队列。完整整改清单见：[上市前审查与整改清单](RELEASE_AUDIT_2026-04-28.md)。
+<!-- /release-sync-2026-04-28 -->
 > 项目代号：**epaper_uploader**
 > 硬件平台：ESP32-S3 + SSD1619(4.2" 400×300) / UC8179(5.83" 648×480) 三色墨水屏
 > 技术栈：ESP-IDF（**最低 v5.5.1**）/ C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
@@ -27,7 +34,7 @@
 - Floyd-Steinberg 误差扩散抖动，灰度照片显示效果自然
 - SPI DMA 4KB 分块批量传输，数据传输高效
 - 画廊管理：存储、预览、选择显示、单张删除
-- SPIFFS 文件系统自动损坏检测与修复
+- SPIFFS 文件系统健康检查与数据保护（挂载失败不自动格式化用户内容，完整启动降级保留 AP/Web）
 
 ---
 
@@ -86,7 +93,7 @@ msp/
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 + UC8179，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
-│   ├── http_app.c/h           # HTTP 服务器（约 57 条路由 + Basic Auth + OTA）
+│   ├── http_app.c/h           # HTTP 服务器（约 60 条路由 + Basic Auth + OTA）
 │   ├── http_gallery.c         # 画廊 HTTP 路由
 │   ├── http_features.c        # 功能模块 HTTP 路由
 │   ├── http_canvas.c          # 画布留言板 HTTP 路由与素材管理
@@ -112,7 +119,7 @@ msp/
 │   ├── device_identity.c/h    # 设备标识
 │   ├── time_sync.c/h          # SNTP 时间同步
 │   ├── nvs_utils.c/h          # NVS 工具函数
-│   ├── spiffs_mount.c/h       # SPIFFS 挂载与自动修复
+│   ├── spiffs_mount.c/h       # SPIFFS 挂载与健康检查（失败不自动格式化）
 │   └── lodepng.c/h            # LodePNG 第三方 PNG 解码库
 ├── web/
 │   ├── index.html             # 主页：上传 / 画廊 / 状态
@@ -132,7 +139,7 @@ msp/
 | **应用入口** | `app_main.c` | 双启动路径：完整启动（WiFi+HTTP+全功能）/ 深睡快速刷新 |
 | **EPD 驱动** | `epd_stub.c` / `epd.h` | SSD1619 + UC8179 双屏支持，SPI DMA，BWR 三色 |
 | **图片转换** | `image_convert.c/h` | JPEG/PNG/BMP 解码、拉伸全屏、Floyd-Steinberg 抖色 |
-| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 约 57 条路由 + Basic Auth + OTA |
+| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 约 60 条路由 + Basic Auth + OTA |
 | **WiFi 管理** | `wifi_manager.c/h` | AP+STA 共存、NVS 凭据、自动重连 |
 | **轮播调度** | `scheduler.c/h` | 画廊顺序/随机自动轮播 |
 | **天气** | `weather.c/h` | 和风天气 HTTPS，实时+3 天预报 |
@@ -147,11 +154,16 @@ msp/
 | **帧缓冲渲染** | `fb_render.c/h` | 像素/线/矩形/UTF-8 文字 |
 | **显示策略** | `display_policy.c/h` | EPD 互斥 + 手动屏标记 |
 | **时间同步** | `time_sync.c/h` | SNTP（NTP 阿里云 + pool.ntp.org）|
-| **SPIFFS 存储** | `spiffs_mount.c/h` | 挂载/自动修复/画廊目录 |
+| **SPIFFS 存储** | `spiffs_mount.c/h` | 挂载/健康检查/画廊目录，挂载失败不自动格式化用户数据 |
 | **设备标识** | `device_identity.c/h` | MAC → AP SSID / mDNS |
 | **PNG 解码** | `lodepng.c/h` | 第三方纯 C 库（编译时裁剪）|
 | **Web 前端** | `web/*.html` | `index` / `config` / `timetable` / `todo` / `countdown` + 三套主题 |
 
+### 3.2.1 显示请求仲裁与异步语义
+
+上市收口版把“谁有资格最终刷屏”收敛到 `display_policy`：用户主动触发的显示入口先调用 `display_policy_begin_manual_display()` 获取 epoch，并在最终 `epd_display_*()` 前调用 `display_policy_epoch_is_current(epoch)`。如果用户又上传图片、点画布、按键切换或触发其它显示，新请求会 bump epoch，旧任务在刷屏前退出，避免旧画面反盖新画面。
+
+日历、画布、留言板仍使用内部渲染任务以免阻塞 HTTP 服务器过久，但 HTTP 层已经不再把“任务创建成功”当作“屏幕显示成功”：`/calendar_show`、`/canvas_show`、`/msg_show` 会等待对应渲染任务结束，被新请求抢占时返回 `canceled=true`。后续若做统一 display queue，应保持同样的 epoch 和取消语义。
 ### 3.3 数据流详解
 
 ```
@@ -205,6 +217,7 @@ msp/
 
 ```csv
 # Name,      Type, SubType,  Offset,    Size
+
 nvs,         data, nvs,      0x9000,    0xC000      # 48KB — 多模块配置 + PHY 校准
 otadata,     data, ota,      0x15000,   0x2000      # 8KB — OTA 启动选择
 phy_init,    data, phy,      0x17000,   0x1000      # 4KB
@@ -513,6 +526,7 @@ ESP32-S3 无 PSRAM 时可用 RAM 约 240KB，图片处理需要精细的内存�
 
 ```cmake
 # main/CMakeLists.txt — LodePNG 编译优化
+
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     LODEPNG_NO_COMPILE_ENCODER=1
     LODEPNG_NO_COMPILE_DISK=1
@@ -592,7 +606,7 @@ httpd_resp_send(req, (const char *)index_html_start,
 ### 5.4 画廊管理
 
 - **加载**：`GET /images` 获取 JSON 文件列表
-- **预览**：`<img src="/image?name=xxx">` 懒加载缩略图
+- **预览**：`GET /image?name=xxx` 通过带认证的 `fetch()` 转为 Blob URL 后懒加载缩略图
 - **显示**：`POST /show?name=xxx` 将指定图片转换并推送到墨水屏
 - **删除**：`POST /delete_image?name=xxx` 从 SPIFFS 删除单张图片
 
@@ -606,6 +620,7 @@ httpd_resp_send(req, (const char *)index_html_start,
     "upload_bytes": 85432,
     "raw_path": "/spiffs/image.bin",
     "raw_bytes": 30000,
+    "spiffs_ok": true,
     "spiffs_total": 12517376,
     "spiffs_used": 425984
 }
@@ -623,14 +638,14 @@ SPIFFS 使用率进度条颜色自适应：<70% 绿色、70~90% 黄色、>90% �
 | GET | `/todo` | 待办事项管理页 |
 | GET | `/countdown` | 倒计时配置页 |
 | POST | `/upload` | 图片上传 → 转换 → 显示 |
-| GET | `/status` | 设备状态 JSON |
-| GET | `/images` | 画廊列表 JSON |
-| GET | `/image?name=xxx` | 图片预览 |
+| GET | `/status` | 设备状态 JSON（启用 Basic Auth 后需认证） |
+| GET | `/images` | 画廊列表 JSON（启用 Basic Auth 后需认证） |
+| GET | `/image?name=xxx` | 图片预览（启用 Basic Auth 后需认证） |
 | POST | `/show?name=xxx` | 显示指定图片 |
 | POST | `/delete_image?name=xxx` | 删除单张图片 |
 | POST | `/delete` | 清屏 |
 | GET/POST | `/wifi_*`, `/scan` | WiFi 配网 API |
-| GET/POST | `/panel_config` | 屏幕型号切换 |
+| GET/POST | `/panel_config` | 屏幕型号配置；保存后需重启生效 |
 | GET/POST | `/weather_*` | 天气配置 API |
 | GET/POST | `/clock_*` | 时钟配置 API |
 | GET/POST | `/slideshow` | 轮播配置 API |
@@ -644,29 +659,31 @@ SPIFFS 使用率进度条颜色自适应：<70% 绿色、70~90% 黄色、>90% �
 | GET/POST | `/auth_config` | HTTP 认证配置 |
 | POST | `/ota` | 固件升级 |
 | GET | `/version` | 固件版本 |
-| *… 共约 57 条路由，以 `http_app.c` 为准* | | |
+| POST | `/spiffs_remount` / `/spiffs_format` | 文件系统诊断恢复；格式化必须提交 `{"confirm":"FORMAT_SPIFFS"}` |
+| *… 共约 60 条路由，以 `http_app.c` 为准* | | |
 
 ---
 
 ## 六、关键问题与解决方案
 
-### 6.1 SPIFFS 文件系统损坏检测和自动修复
+### 6.1 SPIFFS 文件系统健康检查与数据保护
 
 **问题**：ESP32 异常断电或频繁写入后，SPIFFS 可能损坏，导致文件读写失败，甚至挂载失败。
 
 **解决方案**（`spiffs_mount.c`）：
 
-```
+```text
 挂载 SPIFFS
   ├─ 成功 → 写读验证（写入"SPIFFS_OK"并读回比对）
   │          ├─ 通过 → 正常使用
-  │          └─ 失败 → 卸载 → 格式化 → 重新挂载
-  └─ 失败 → format_if_mount_failed=true 自动格式化
-             └─ 仍然失败 → 手动卸载 → 格式化 → 重试
+  │          └─ 失败 → 仅记录告警，保留现有文件系统
+  └─ 失败 → 返回错误并保留用户数据；正常启动继续保留 AP/Web 诊断能力
 ```
 
 - 使用快速的写读验证替代耗时的 `esp_spiffs_check()`（后者可能花费数十秒）
-- 三级容错：自动格式化 → 写读验证 → 手动格式化重试
+- 当前上市收口版已改为 `format_if_mount_failed=false`；配置页提供“重试文件系统”和“格式化 SPIFFS”入口，格式化必须输入确认口令，避免误清空图库和画布素材
+- 挂载失败的完整启动路径会先启动 HTTP，再尝试初始化 EPD；若屏幕可用，会显示中文 `文件系统恢复` 页面，包含 AP 热点名、默认密码 `12345678`、`192.168.4.1/config` 和 `FORMAT_SPIFFS` 确认词，避免用户在诊断模式下找不到恢复入口
+- 若屏幕型号错误或屏幕完全不显示，用户仍可直接连接 `ESP32_EPD_xxxxxx` 热点，默认密码为 `12345678`，用于进入网页切换面板或恢复配置
 - 挂载成功后自动创建画廊目录 `/spiffs/images`
 
 ### 6.2 内存不足：从内存缓冲改为文件流式解码
@@ -701,7 +718,7 @@ image_convert_file_to_epd_raw(input_path, out_path);
 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 config.recv_wait_timeout  = 5;      // 接收超时 5 秒，快速释放空闲连接
 config.send_wait_timeout  = 5;      // 发送超时 5 秒
-config.max_uri_handlers   = 60;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前约 57）
+config.max_uri_handlers   = 64;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前约 60）
 config.stack_size         = 16384;  // HTTP 任务栈 16KB（图片转换需要较深调用栈）
 config.lru_purge_enable   = true;   // 当连接数满时，关闭最久未使用的连接
 ```
@@ -816,9 +833,11 @@ static void epd_clear(void)
 ```bash
 #cd 到源码目录
 # 设置目标芯片
+
 idf.py set-target esp32s3
 
 # 编译
+
 idf.py build
 ```
 
@@ -826,12 +845,15 @@ idf.py build
 
 ```bash
 # 烧录固件
+
 idf.py -p COMx flash
 
 # 查看串口日志
+
 idf.py -p COMx monitor
 
 # 一步完成编译+烧录+监控
+
 idf.py flash monitor
 ```
 
@@ -846,7 +868,7 @@ idf.py -p COMx erase-flash
 idf.py -p COMx flash
 ```
 
-**原因**：SPIFFS 分区中可能存在旧的文件系统数据，与新固件的分区布局不兼容，会导致挂载失败或数据损坏。擦除后 SPIFFS 区域为全 `0xFF`，首次挂载时 `format_if_mount_failed=true` 会自动格式化。
+**原因**：SPIFFS 分区中可能存在旧的文件系统数据，与新固件的分区布局不兼容，会导致挂载失败或数据损坏。擦除后 SPIFFS 区域为全 `0xFF`，当前上市收口版 `format_if_mount_failed=false`，只建议在出厂/用户确认恢复出厂时格式化。
 
 ---
 
@@ -856,7 +878,7 @@ idf.py -p COMx flash
 
 1. ESP32-S3 上电后，自动创建 WiFi 热点
 2. 在手机/电脑的 WiFi 列表中找到 **ESP32_EPD**
-3. 输入密码 **12345678** 连接
+3. 输入默认热点密码 **12345678** 连接
 4. 连接成功后，打开浏览器访问 **http://192.168.4.1/**
 
 ### 8.2 上传图片
@@ -902,8 +924,8 @@ app_main()
     │   └─ 若版本不匹配 → erase + 重新初始化
     │
     ├─ spiffs_mount_init()           SPIFFS 文件系统
-    │   ├─ 挂载（失败则格式化重试）
-    │   ├─ 写读验证（失败则格式化重试）
+    │   ├─ 挂载（失败返回错误，保留用户数据，不自动格式化）
+    │   ├─ 写读验证（失败仅告警，保留文件系统）
     │   └─ 创建 /spiffs/images/ 目录
     │
     ├─ power_mgr_init()              电源管理初始化（检测唤醒原因）
@@ -913,7 +935,7 @@ app_main()
     │   └─ NO  → full_boot()（完整启动流程）
     │
     full_boot():
-    ├─ epd_init()                    墨水屏驱动
+    ├─ epd_init()                    墨水屏驱动（失败时保留 AP/Web 诊断入口）
     │   ├─ GPIO 配置（DC/CS/RST=输出，BUSY=输入上拉）
     │   ├─ SPI 总线初始化（SPI2_HOST, DMA, 2MHz）
     │   └─ SSD1619/UC8179 初始化序列
@@ -926,7 +948,7 @@ app_main()
     │
     ├─ 内容模块初始化                天气/时钟/日历/课程表/待办/留言板/画布/轮播
     │
-    ├─ http_app_start()              HTTP 服务器（约 57 条路由，Basic Auth）
+    ├─ http_app_start()              HTTP 服务器（约 60 条路由，Basic Auth）
     │
     ├─ 显示欢迎屏
     │

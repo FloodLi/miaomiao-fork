@@ -1,10 +1,17 @@
 # ESP32 墨水屏项目工程技术文档
 
-> **项目版本**: v2.3.0（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）  
-> **文档版本**: 2.3.2（随工程文档修订）  
-> **最后更新**: 2026-04-25  
-> **硬件平台**: ESP32-S3 + SSD1619(4.2") / UC8179(5.83")  
-> **软件框架**: ESP-IDF（**最低要求 v5.5.1**；5.5.x 更高发行版通常兼容）  
+<!-- release-sync-2026-04-28 -->
+## 上市前工程状态（2026-04-28，本轮修复后）
+
+本工程文档反映当前 ESP32-S3 三色墨水屏固件的上市前收口状态。已完成显示 epoch 仲裁、日历/画布/留言异步显示返回语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 用户数据保护与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、手动画面期间天气后台收敛、EPD 初始化失败降级诊断和 AP 密码日志脱敏。本轮本地构建通过，应用分区仍有约 15% 余量。
+
+剩余工程风险主要集中在长稳压力测试、OTA 失败/回滚全流程、图片转换策略可配置化与后续更完整的显示队列架构。整改与回归矩阵以：[上市前审查与整改清单](RELEASE_AUDIT_2026-04-28.md) 为准。
+<!-- /release-sync-2026-04-28 -->
+> **项目版本**: v2.3.0（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）
+> **文档版本**: 2.3.3（上市前审查同步）
+> **最后更新**: 2026-04-28
+> **硬件平台**: ESP32-S3 + SSD1619(4.2") / UC8179(5.83")
+> **软件框架**: ESP-IDF（**最低要求 v5.5.1**；5.5.x 更高发行版通常兼容）
 > **文档状态**: ✅ 完整
 
 ---
@@ -108,7 +115,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
        │          │          │            │
 ┌──────▼──────────▼──────────▼────────────▼───────────┐
 │              HTTP Server (http_app.c)                │
-│         ~57 Routes + Basic Auth + OTA                │
+│         ~60 Routes + Basic Auth + OTA                │
 └────┬──────────┬──────────┬──────────┬──────────────┘
      │          │          │          │
 ┌────▼───┐ ┌───▼────┐ ┌───▼─────┐ ┌─▼────────────┐
@@ -317,11 +324,12 @@ USB (CH340):
 
 ### 4.5 HTTP 安全（Basic Auth）
 
-- **策略**：在 NVS 中写入用户名/密码后即视为启用鉴权；`http_check_basic_auth()` 对配置的敏感 **POST**（及个别「推屏」类接口）校验 `Authorization: Basic …`。**未配置凭据时通常不拦截**（便于首次配网）。
+- **当前策略**：在 NVS 中写入用户名/密码后即视为启用鉴权；`http_check_basic_auth()` 已覆盖 OTA、上传、删除、配置保存、推屏等多数敏感 **POST**。**未配置凭据时通常不拦截**（便于首次配网）。
+- **当前状态**：API、配置、数据和媒体类 **GET** 已统一纳入 Basic Auth，包括 `/status`、`/wifi_status`、`/scan`、`/images`、`/image`、`/weather_config`、`/msg_config`、`/canvas_layout`、`/timetable.json`、`/todo.json`、`/countdown_config` 等；页面 HTML 保持可打开，用于触发浏览器登录流程。
 - **OTA 强制鉴权**：`POST /ota` 现在要求必须先在 `/auth_config` 设置凭据，未设凭据时直接返回 `403 Forbidden`，防止内网扫描到设备即可刷写固件。
-- **天气**：`GET /weather_config` 不返回明文 API Key；`POST` 可通过空字符串跳过改 key、`api_key_clear` 等策略与固件版本一致。
-- **只读 GET 与隐私**：如 `GET /msg_config` 会返回当前留言板 JSON（含 `text` 等），**不经过 Basic Auth**；若设备长期暴露在不可信局域网，请知悉同网段主机可直接读取。需要更强隔离时结合网络层策略（如访客 VLAN）或将敏感内容只留在屏端展示。
+- **天气**：`GET /weather_config` 不返回明文 API Key，且已受 Basic Auth 保护；`POST` 可通过空字符串跳过改 key、`api_key_clear` 等策略与固件版本一致。
 - **前端**：`config.html` / `index.html` / `timetable.html` / `todo.html` / `countdown.html` / `board.html` 使用 `localStorage`（`epd_auth_u`、`epd_auth_p`）构造 Basic 头；**需先在配置页保存认证**，子页面才能以带鉴权方式通过校验。
+- **备份恢复**：配置导出/导入刻意排除 `/auth_config`，不会备份或恢复 Basic Auth 密码；恢复配置后如需访问保护，必须在配置页重新设置管理账号。
 
 ### 4.6 并发与同步机制（v2.1.0 补丁）
 
@@ -330,6 +338,14 @@ USB (CH340):
 - **`SemaphoreHandle_t` 互斥锁**：用于耗时较长的临界区保护，如 `s_epd_mutex` 保护面板硬件接口（`epd_set_panel` 与刷新），防止 HTTP 推屏与按键切屏发生冲突；`timetable` 和 `todo` 模块的 `s_cfg_mutex` 保护配置读写。
 - **C11 `atomic_bool`**：`time_sync` 的 `s_synced`、`message_board` 的 `s_pending`、`display_policy` 的 `s_manual_screen` 使用 `<stdatomic.h>` 原子布尔，避免自旋锁开销。
 - **数据副本解耦**：`weather` 模块引入 `weather_get_data_copy()` 提供数据副本，替代原有的全局裸指针访问，消除 `clock_display` 混合渲染天气摘要时可能遇到的读写数据竞争。
+
+### 4.7 显示仲裁与异步语义（上市收口）
+
+`display_policy` 负责统一显示所有权。用户主动触发的显示入口调用 `display_policy_begin_manual_display()` 后会同时设置手动画面、递增 display epoch 并通知轮播让出；各渲染任务在最终 `epd_display_*()` 前调用 `display_policy_epoch_is_current(epoch)`，发现已被新请求抢占时直接丢弃旧帧。
+
+对仍采用任务渲染的接口，HTTP 返回语义已收紧：`/calendar_show`、`/canvas_show`、`/msg_show` 会等待本次任务结束再返回；如果期间出现更新的显示请求，JSON 中返回 `canceled=true`，调用方不应把这种结果当作最终上屏成功。后续如引入全局 display queue，应继续保留“排队、完成、取消”三种状态的明确区分。
+
+EPD 初始化失败时，完整启动路径不再直接 `ESP_ERROR_CHECK()` 重启循环，而是尽量保留 AP/Web，供用户在网页或串口日志中诊断 BUSY 极性、屏幕排线和面板配置；定时快速刷新路径失败则记录日志并回到深睡，避免无人值守时反复重启耗电。
 
 ---
 
@@ -360,7 +376,7 @@ epd_panel_t epd_get_panel(void);
 **技术要点:**
 1. DMA 4KB 分块传输（`EPD_FILL_CHUNK`），非 DMA-capable 源用 bounce buffer
 2. BUSY 极性自动检测 + NVS `epd/busy_idle` 覆盖（4.2" 默认 0、5.83" 默认 1）
-3. 双屏参数自动适配（`s_specs[]` 表 + 切屏时 `s_panel_seq_done` 失效）
+3. 双屏参数自动适配（`s_specs[]` 表）；`/panel_config` 当前只保存 NVS 并提示重启生效，避免热切换期间旧 framebuffer/raw 文件按新尺寸读取
 4. 三档刷新：全刷 BWR ~18.8s / 全屏快速 BW（4.2"）~1-2s / 区域局部
 5. **局部刷新策略**：
    - 4.2" SSD1619：RAM 窗口（0x44/0x45 字节列范围、0x4E/0x4F 光标）+ 快速 LUT
@@ -477,11 +493,11 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 
 ### 5.4 HTTP 服务器模块 (`http_app.c` + `http_gallery.c` + `http_features.c` + `http_canvas.c`)
 
-**路由数量:** 57 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
+**路由数量:** 60 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
 **认证方式:** HTTP Basic Auth
 **最大连接:** 5 个并发
 
-**路由分组（共 57 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
+**路由分组（共 60 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
 
 | 分组 | 路径示例 |
 |------|-----------|
@@ -492,7 +508,7 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 | 画布留言板 | `GET /board` · `GET|POST /canvas_layout` · `POST /canvas_show` · 图标图片资源管理 |
 | 天气 / 时钟 / 留言 | `GET|POST /weather_config` · `POST /weather_show` · `GET|POST /clock_config` · `POST /clock_show` · `GET|POST /msg_config` · `POST /msg_show` |
 | 日历 / 课程表 / 待办 / 倒计时 | `POST /calendar_show` · `GET /timetable` `/timetable.json` · `POST /timetable` `/timetable_show` · `GET /todo` `/todo.json` · `POST /todo` `/todo_show` · `GET /countdown` · `GET|POST /countdown_config` · `POST /countdown_show` |
-| 系统 | `GET /version` · `POST /ota` |
+| 系统 | `GET /version` · `POST /epd_test` · `POST /spiffs_remount` `/spiffs_format` · `POST /ota` |
 
 ### 5.5 帧缓冲渲染模块 (`fb_render.c`)
 
@@ -556,8 +572,8 @@ fb_bitmap(fb, x, y, black, red, w, h);
 
 **渲染流:**
 ```
-[Web UI 布局] -> JSON 数组 -> [HTTP POST /canvas_layout] 
-  -> canvas_board.c 解析 JSON 
+[Web UI 布局] -> JSON 数组 -> [HTTP POST /canvas_layout]
+  -> canvas_board.c 解析 JSON
   -> 按 Z-Index(数组顺序) 调用 fb_render 原语
   -> (包含实时按比例缩小解析 spiffs/cimg/ 下的 1-bit 图片缓冲)
   -> EPD 刷新
@@ -731,6 +747,9 @@ POST /show?name=img_20260101.jpg
 {"ok": true}
 ```
 
+#### 显示类接口返回语义
+
+`/calendar_show`、`/canvas_show`、`/msg_show` 会等待当前渲染任务结束再返回。正常完成时返回类似 `{"ok":true,"canceled":false}`；如果本次显示在等待期间被更新的上传、按键或网页推屏请求抢占，则返回 `canceled=true`，前端应提示“已被新显示请求替换”，不要再保存为最后成功模式。
 ### 6.4 画布留言板 API
 
 #### GET /canvas_layout
@@ -909,21 +928,27 @@ function setTheme(name) {
 
 ```powershell
 # 1.下载源码解压
+
 cd msp
 
 # 2. 设置目标芯片
+
 idf.py set-target esp32s3
 
 # 3. 配置项目 (可选)
+
 idf.py menuconfig
 
 # 4. 编译
+
 idf.py build
 
 # 5. 烧录
+
 idf.py -p COM3 flash
 
 # 6. 监控
+
 idf.py -p COM3 monitor
 ```
 
@@ -931,6 +956,7 @@ idf.py -p COM3 monitor
 
 ```csv
 # Name,      Type, SubType,  Offset,    Size
+
 nvs,         data, nvs,      0x9000,    0xC000      # 48KB（容纳 PHY 校准 + 多个模块的配置 blob）
 otadata,     data, ota,      0x15000,   0x2000      # 8KB
 phy_init,    data, phy,      0x17000,   0x1000      # 4KB
@@ -1092,9 +1118,9 @@ idf.py -p COM3 monitor
 
 ---
 
-**文档版本:** 2.1  
-**最后更新:** 2026-04-10  
-**维护者:** 项目维护者  
+**文档版本:** 2.1
+**最后更新:** 2026-04-10
+**维护者:** 项目维护者
 
 ---
 

@@ -1,4 +1,10 @@
 # Claude 开发备忘录
+
+<!-- release-sync-2026-04-28 -->
+## Launch Readiness Note（2026-04-28，本轮修复后）
+
+Before release-oriented work, review `RELEASE_AUDIT_2026-04-28.md`. The first launch-blocking pass is implemented: display epoch arbitration, blocking/cancel-aware semantics for calendar/canvas/message display requests, Basic Auth on API/media GET routes, SPIFFS no-auto-format with degraded AP/Web boot on mount failure and explicit remount/confirmed-format recovery, Basic Auth excluded from config backup/restore, reboot-required panel config, bad-gallery cleanup, manual-screen weather throttling, EPD init graceful fallback, and AP-password log masking. Prioritize validation, OTA/low-power stress, image-algorithm productization, and long-run stability over new features.
+<!-- /release-sync-2026-04-28 -->
 > 项目路径：C:\Users\43060\Desktop\msp
 > 用户自己编译，提问用中文
 

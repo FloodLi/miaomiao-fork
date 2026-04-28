@@ -1,5 +1,12 @@
 # epaper_uploader — ESP32-S3 智能墨水屏终端
 
+<!-- release-sync-2026-04-28 -->
+## 上市前状态（2026-04-28，本轮修复后）
+
+当前固件已完成第一轮上市前 P1/P2 收口：显示请求统一接入 display epoch 仲裁，旧渲染/旧图库请求在刷屏前会被拦截；`/calendar_show`、`/canvas_show`、`/msg_show` 会等待本次渲染结束再返回，若被更新的显示请求抢占会返回 `canceled=true`；API/配置/媒体类 GET 接口已补齐 Basic Auth；面板配置改为保存到 NVS 后重启生效；SPIFFS 挂载失败不再自动格式化用户数据，完整启动会保留 AP/Web 诊断入口，配置页提供重试挂载和确认格式化入口，若屏幕可用还会显示 `文件系统恢复` 恢复页（热点名、默认密码与恢复地址），屏幕不可用时也可直接用默认热点密码 `12345678` 进入网页；配置备份/恢复不包含 Basic Auth，避免误关闭认证；图库坏图转换失败会清理入库文件；正常启动时 EPD 初始化失败会保留 AP/Web 诊断入口；串口日志不再输出 AP 密码。本轮已通过本地 `idf.py build`。
+
+上市前仍建议重点回归：OTA 成功/失败/回滚、低功耗定时唤醒、轮播+天气 24 小时稳定性、连续上传抢占场景、认证开启后的手机端访问，以及图片算法参数化与网页预览。详细风险、测试矩阵和整改记录见：[上市前审查与整改清单](RELEASE_AUDIT_2026-04-28.md)。
+<!-- /release-sync-2026-04-28 -->
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
 [![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)]()
@@ -19,7 +26,7 @@
 - 🌐 **Web 管理** — 响应式 UI，三套主题，手机/电脑均可操作
 - 🔋 **超低功耗** — 闲置可进深度睡眠（μA 级），定时器/按键唤醒；双启动路径（完整服务 ↔ 快速刷屏），支持跨深睡的显示模式一致性记忆
 - 🔄 **OTA 升级** — 双分区设计，Web 端一键升级固件
-- 🔒 **安全与稳定** — 在网页中配置 Basic Auth 后，敏感 POST / 推屏类接口需鉴权；未配置时开放以便首次配网（详见 `ENGINEERING_DOCS.md` §4.5）；多核并发锁与防数据撕裂
+- 🔒 **安全与稳定** — 在网页中配置 Basic Auth 后，推屏/配置/数据/媒体接口统一要求授权；前端页面复用 `epdFetchOpts()` 自动携带凭据；多核并发锁、display epoch 与防数据撕裂持续加固
 - 🎓 **课程表** — 学期周次管理，自动高亮当前课程
 - 🌤️ **天气日历** — 和风天气 API + 农历 + 节气 + 节日
 - 📋 **待办/倒计时** — 优先级管理 + 进度条 + 目标日期倒数
@@ -70,7 +77,7 @@
 
 ## 🔧 硬件要求
 
-主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。两种屏幕二选一，软件支持运行时切换。
+主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。两种屏幕二选一；固件可保存面板配置，上市版建议**保存后重启生效**，避免热切换期间 framebuffer/raw cache 尺寸不一致。
 
 以下为复刻时常用器件的**示意配图**（文件名与下图一致）；**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
 
@@ -98,7 +105,7 @@
 | :---: | :---: |
 | ![内部结构](水墨屏内部图/ed0d801723637cc34a69eea9c8024cd5.jpg) | ![内部结构](水墨屏内部图/72fb56b95add88efbb6bea1e20285d28.jpg) |
 
-> **4.2&quot; 与 5.83&quot; 面板共用同一组 GPIO 接线**（见下表），切换面板只需运行时通过 Web 页面或 `POST /panel_config` 修改 `panel` 字段，无需改线，也不需要修改 `main/epd_stub.c` 的引脚宏。
+> **4.2&quot; 与 5.83&quot; 面板共用同一组 GPIO 接线**（见下表）。通过 Web 页面或 `POST /panel_config` 修改 `panel` 字段后，建议重启设备让面板尺寸、预留 framebuffer 与 `/spiffs/image.bin` 重新按新屏幕初始化；无需改线，也不需要修改 `main/epd_stub.c` 的引脚宏。
 
 ### 硬件架构与自定义 PCB
 
@@ -139,7 +146,9 @@
 
 ```powershell
 # Windows: 下载 ESP-IDF Tools Installer
+
 # https://dl.espressif.com/dl/esp-idf/?id=Windows
+
 ```
 
 ### 2. 克隆项目
@@ -153,9 +162,11 @@ cd miaomiao   # 或你本地的 msp 目录名
 
 ```powershell
 # 设置目标芯片
+
 idf.py set-target esp32s3
 
 # 编译（首次编译约 3-5 分钟）
+
 idf.py build
 ```
 
@@ -163,12 +174,15 @@ idf.py build
 
 ```powershell
 # 首次烧录需先擦除 Flash
+
 idf.py -p COM3 erase-flash
 
 # 烧录固件
+
 idf.py -p COM3 flash
 
 # 查看串口日志
+
 idf.py -p COM3 monitor
 ```
 
@@ -176,10 +190,12 @@ idf.py -p COM3 monitor
 
 ### 5. 首次使用
 
-1. 设备上电后自动创建 WiFi 热点 `ESP32_EPD_xxxx`（密码 `12345678`）
+1. 设备上电后自动创建 WiFi 热点 `ESP32_EPD_xxxxxx`（默认密码 `12345678`）
 2. 手机连接该热点，浏览器打开 `http://192.168.4.1/`
 3. 进入「设备配置」→ 连接家庭 WiFi
 4. 连接后通过 `http://epdxxxx.local/` 或 STA IP 访问
+
+> 屏幕不亮或面板型号配置错误时，也可以直接连接热点 `ESP32_EPD_xxxxxx`，默认密码为 `12345678`。进入网页后到 `/config` 修改面板型号并重启。
 
 ## 📁 项目结构
 
@@ -189,7 +205,7 @@ msp/
 │   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
 │   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
-│   ├── http_app.c/h             # HTTP 服务（约 57 条 URI + Basic Auth + OTA）
+│   ├── http_app.c/h             # HTTP 服务（约 60 条 URI + Basic Auth + OTA）
 │   ├── http_gallery.c           # 画廊相关路由
 │   ├── http_features.c          # 功能模块路由
 │   ├── wifi_manager.c/h         # WiFi AP/STA + 配网 + 自动重连
@@ -214,7 +230,7 @@ msp/
 │   ├── time_sync.c/h            # SNTP 时间同步
 │   ├── device_identity.c/h      # 设备标识（MAC → AP SSID / mDNS）
 │   ├── nvs_utils.c/h            # NVS 工具函数
-│   ├── spiffs_mount.c/h         # SPIFFS 挂载 + 自动修复
+│   ├── spiffs_mount.c/h         # SPIFFS 挂载 + 健康检查（挂载失败不自动格式化用户数据）
 │   └── lodepng.c/h              # LodePNG 第三方 PNG 解码库
 ├── web/                         # Web UI（构建时嵌入固件）
 │   ├── index.html               # 主页：上传 / 画廊 / 状态
@@ -252,7 +268,7 @@ msp/
 
 ## 🌐 Web API 概览
 
-设备提供 **约 57 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
+设备提供 **约 60 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
 
 | 分类 | 路径 | 说明 |
 |------|------|------|
@@ -280,13 +296,14 @@ msp/
 - **完整启动**（上电 / 复位 / **按键 GPIO3·9 唤醒** 等）：AP+STA、mDNS、`http_app`、按键任务、欢迎屏流程；**可通过网页访问**。
 - **定时器唤醒**：仅 STA、刷新 `NVS` 中记忆的模式画面后回睡；**不启动 HTTP / 不配 SoftAP**，无法在此阶段打开网页。
 
-**HTTP Basic Auth**：可在配置页启用。启用后敏感操作需带 `Authorization`；各 `web/*.html` 在配置页保存认证后使用 `localStorage`（`epd_auth_u` / `epd_auth_p`）自动附带请求头。详见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第七章。
+**HTTP Basic Auth**：可在配置页启用。启用后敏感操作需带 `Authorization`；各 `web/*.html` 在配置页保存认证后使用 `localStorage`（`epd_auth_u` / `epd_auth_p`）自动附带请求头。配置导出/导入不会包含认证密码，恢复备份后请在配置页单独设置管理账号。详见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) §4.5。
 
 ## 📚 文档导航
 
 | 文档 | 说明 | 适用人群 |
 |------|------|---------|
 | [文档索引.md](文档索引.md) | 全部文档导航与按角色检索 | 所有人 |
+| [RELEASE_AUDIT_2026-04-28.md](RELEASE_AUDIT_2026-04-28.md) | 上市前风险、整改顺序、测试矩阵与放行门槛 | 开发 / 测试 / 生产 / 售后 |
 | [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) | 工程技术文档（架构/API/模块）⭐ | 开发者 |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
 | [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |

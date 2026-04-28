@@ -67,6 +67,8 @@ bool display_policy_weather_may_network_fetch(bool user_explicit)
         return true;
     if (atomic_load(&s_quick_refresh))
         return false;
+    if (atomic_load(&s_manual_screen))
+        return false;
     return !display_policy_slideshow_owns_display();
 }
 
@@ -78,6 +80,19 @@ void display_policy_set_manual_screen_active(bool active)
 bool display_policy_manual_screen_active(void)
 {
     return atomic_load(&s_manual_screen);
+}
+
+unsigned display_policy_begin_manual_display(void)
+{
+    atomic_store(&s_manual_screen, true);
+    unsigned epoch = atomic_fetch_add(&s_display_epoch, 1) + 1;
+    scheduler_notify_manual_show();
+    return epoch;
+}
+
+bool display_policy_epoch_is_current(unsigned epoch)
+{
+    return atomic_load(&s_display_epoch) == epoch;
 }
 
 void display_policy_bump_display_epoch(void)

@@ -50,9 +50,9 @@ const char *wifi_manager_get_sta_ssid(void);
 int wifi_manager_scan(wifi_mgr_ap_record_t *out, int max_records);
 
 /**
- * Save credentials to NVS and attempt STA connection.
+ * Validate credentials, attempt STA connection, then save them to NVS only on success.
  * On success the device enters APSTA mode.
- * On failure it stays in AP mode.
+ * On failure it stays in AP mode and keeps the previous stored credentials.
  */
 esp_err_t wifi_manager_connect(const char *ssid, const char *password);
 

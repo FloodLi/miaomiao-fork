@@ -14,6 +14,7 @@
 #include "calendar_display.h"
 #include "button.h"
 #include "display_mode.h"
+#include "display_policy.h"
 #include "power_mgr.h"
 
 __attribute__((unused)) static const char *TAG = "http_feat";
@@ -34,6 +35,7 @@ esp_err_t feat_timetable_ui_get(httpd_req_t *req)
 
 esp_err_t feat_timetable_json_get(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     return timetable_http_get_handler(req);
 }
 
@@ -63,6 +65,7 @@ esp_err_t feat_todo_ui_get(httpd_req_t *req)
 
 esp_err_t feat_todo_json_get(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     return todo_http_get_handler(req);
 }
 
@@ -101,13 +104,22 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
         }
     }
 
+    unsigned epoch = display_policy_begin_manual_display();
     esp_err_t err = calendar_display_show(year, month);
+    if (err == ESP_OK)
+        calendar_display_wait_render_idle();
     if (err == ESP_OK) {
-        button_set_current_mode(DISPLAY_MODE_CALENDAR);
-        power_mgr_save_mode(DISPLAY_MODE_CALENDAR);
+        if (display_policy_epoch_is_current(epoch)) {
+            button_set_current_mode(DISPLAY_MODE_CALENDAR);
+            power_mgr_save_mode(DISPLAY_MODE_CALENDAR);
+        } else {
+            err = ESP_ERR_INVALID_STATE;
+        }
     }
     char json[96];
-    snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",
+             err == ESP_OK ? "true" : "false",
+             err == ESP_ERR_INVALID_STATE ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -126,6 +138,7 @@ esp_err_t feat_countdown_ui_get(httpd_req_t *req)
 
 esp_err_t feat_countdown_config_get(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
     countdown_config_t cfg;
     if (countdown_get_config(&cfg) != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "config unavailable");
@@ -224,6 +237,7 @@ esp_err_t feat_countdown_show_post(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req)) return ESP_OK;
+    display_policy_begin_manual_display();
     esp_err_t err = countdown_show();
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_COUNTDOWN);

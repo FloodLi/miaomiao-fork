@@ -41,6 +41,45 @@
 #include "esp_system.h"
 
 static const char *TAG = "canvas";
+static SemaphoreHandle_t s_layout_file_mutex;
+
+static SemaphoreHandle_t layout_file_mutex(void)
+{
+    if (!s_layout_file_mutex) {
+        s_layout_file_mutex = xSemaphoreCreateMutex();
+    }
+    return s_layout_file_mutex;
+}
+
+static bool layout_file_lock(TickType_t timeout)
+{
+    SemaphoreHandle_t m = layout_file_mutex();
+    return m && xSemaphoreTake(m, timeout) == pdTRUE;
+}
+
+static void layout_file_unlock(void)
+{
+    if (s_layout_file_mutex) {
+        xSemaphoreGive(s_layout_file_mutex);
+    }
+}
+
+static esp_err_t write_layout_bytes(const char *path, const char *buf, size_t len)
+{
+    FILE *out = fopen(path, "w");
+    if (!out) {
+        ESP_LOGE(TAG, "commit: fopen(%s) failed errno=%d", path, errno);
+        return ESP_FAIL;
+    }
+    size_t nw = fwrite(buf, 1, len, out);
+    int close_rc = fclose(out);
+    if (nw != len || close_rc != 0) {
+        ESP_LOGE(TAG, "commit: write %s failed %zu/%zu close=%d errno=%d",
+                 path, nw, len, close_rc, errno);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
 
 static bool is_valid_name(const char *name)
 {
@@ -54,7 +93,8 @@ static bool is_valid_name(const char *name)
     return true;
 }
 
-#define LAYOUT_PATH  "/spiffs/canvas_layout.json"
+#define LAYOUT_PATH      "/spiffs/canvas_layout.json"
+#define LAYOUT_BAK_PATH  "/spiffs/canvas_layout.bak"
 
 /* ── 渲染互斥 ───────────────────────────────────────────────────────── */
 
@@ -116,10 +156,10 @@ static void draw_rounded_rect(fb_t *fb, int x, int y, int w, int h,
     r = r < h/2 ? r : h/2;
 
     /* 四个圆弧中心 */
-    int cx0 = x + r,       cy0 = y + r;
-    int cx1 = x + w - 1 - r, cy1 = y + r;
-    int cx2 = x + r,       cy2 = y + h - 1 - r;
-    int cx3 = x + w - 1 - r, cy3 = y + h - 1 - r;
+    int cx0 = x + r,         cy0 = y + r;
+    int cx1 = x + w - 1 - r;
+    int cx2 = x + r,         cy2 = y + h - 1 - r;
+    int cx3 = x + w - 1 - r;
 
     if (fill) {
         /* 水平填充行 */
@@ -478,11 +518,16 @@ static void render_element(fb_t *fb, cJSON *el)
 
 /* ── 渲染全帧 ───────────────────────────────────────────────────────── */
 
-static void do_render(void)
+static void do_render(unsigned epoch)
 {
     /* 先确认布局文件存在并读取大小：避免无布局时白白占用 78KB 帧缓冲。 */
+    if (!layout_file_lock(pdMS_TO_TICKS(5000))) {
+        ESP_LOGW(TAG, "Layout file busy, skip render");
+        return;
+    }
     FILE *f = fopen(LAYOUT_PATH, "r");
     if (!f) {
+        layout_file_unlock();
         ESP_LOGW(TAG, "No layout file, nothing to render");
         return;
     }
@@ -491,6 +536,7 @@ static void do_render(void)
     rewind(f);
     if (sz <= 0 || sz > CANVAS_LAYOUT_MAX_BYTES) {
         fclose(f);
+        layout_file_unlock();
         ESP_LOGE(TAG, "Layout file size invalid: %ld", sz);
         return;
     }
@@ -503,18 +549,21 @@ static void do_render(void)
                  (unsigned long)esp_get_free_heap_size(),
                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         fclose(f);
+        layout_file_unlock();
         return;
     }
 
     char *json_str = malloc((size_t)sz + 1);
     if (!json_str) {
         fclose(f);
+        layout_file_unlock();
         fb_destroy(fb);
         ESP_LOGE(TAG, "malloc failed for layout (%ld bytes)", sz);
         return;
     }
     size_t nr = fread(json_str, 1, (size_t)sz, f);
     fclose(f);
+    layout_file_unlock();
     json_str[nr] = '\0';
     if ((long)nr != sz) {
         ESP_LOGE(TAG, "Layout read incomplete: %zu/%ld", nr, sz);
@@ -571,6 +620,12 @@ static void do_render(void)
     }
     cJSON_Delete(root);
 
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        ESP_LOGI(TAG, "skip stale canvas render");
+        return;
+    }
+
     esp_err_t err = epd_display_fb_free(fb);
     if (err == ESP_OK) {
         display_policy_set_manual_screen_active(true);
@@ -585,8 +640,8 @@ static void do_render(void)
 
 static void render_task(void *arg)
 {
-    (void)arg;
-    do_render();
+    unsigned epoch = (unsigned)(uintptr_t)arg;
+    do_render(epoch);
     xSemaphoreGive(s_mutex);
     vTaskDelete(NULL);
 }
@@ -598,6 +653,30 @@ static void ensure_images_dir(void)
     struct stat st;
     if (stat(CANVAS_IMAGES_DIR, &st) != 0)
         mkdir(CANVAS_IMAGES_DIR, 0755);
+}
+
+static void restore_layout_backup_if_needed(void)
+{
+    struct stat st;
+    if (!layout_file_lock(pdMS_TO_TICKS(5000))) {
+        ESP_LOGW(TAG, "Layout file busy, skip backup restore");
+        return;
+    }
+    if (stat(LAYOUT_PATH, &st) == 0) {
+        layout_file_unlock();
+        return;
+    }
+    if (stat(LAYOUT_BAK_PATH, &st) != 0) {
+        layout_file_unlock();
+        return;
+    }
+
+    if (rename(LAYOUT_BAK_PATH, LAYOUT_PATH) == 0) {
+        ESP_LOGW(TAG, "Restored canvas layout from backup");
+    } else {
+        ESP_LOGE(TAG, "Failed to restore canvas layout backup: errno=%d", errno);
+    }
+    layout_file_unlock();
 }
 
 /* ── 图片管理 ───────────────────────────────────────────────────────── */
@@ -687,20 +766,24 @@ esp_err_t canvas_board_init(void)
     xSemaphoreGive(s_mutex);
     ensure_icons_dir();
     ensure_images_dir();
+    restore_layout_backup_if_needed();
     return ESP_OK;
 }
 
 esp_err_t canvas_board_get_layout(char *buf, size_t buf_len)
 {
     if (!buf || buf_len == 0) return ESP_ERR_INVALID_ARG;
+    if (!layout_file_lock(pdMS_TO_TICKS(5000))) return ESP_ERR_TIMEOUT;
     FILE *f = fopen(LAYOUT_PATH, "r");
     if (!f) {
         strncpy(buf, "[]", buf_len - 1);
         buf[buf_len - 1] = '\0';
+        layout_file_unlock();
         return ESP_OK;
     }
     size_t r = fread(buf, 1, buf_len - 1, f);
     fclose(f);
+    layout_file_unlock();
     buf[r] = '\0';
     return ESP_OK;
 }
@@ -727,14 +810,10 @@ esp_err_t canvas_board_set_layout(const char *json, size_t len)
         return ESP_ERR_INVALID_ARG;
     }
 
-    FILE *f = fopen(LAYOUT_PATH, "w");
-    if (!f) {
-        ESP_LOGE(TAG, "Cannot open %s for write", LAYOUT_PATH);
-        return ESP_FAIL;
-    }
-    size_t written = fwrite(json, 1, len, f);
-    fclose(f);
-    return (written == len) ? ESP_OK : ESP_FAIL;
+    if (!layout_file_lock(pdMS_TO_TICKS(5000))) return ESP_ERR_TIMEOUT;
+    esp_err_t err = write_layout_bytes(LAYOUT_PATH, json, len);
+    layout_file_unlock();
+    return err;
 }
 
 esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path)
@@ -776,8 +855,8 @@ esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path)
     }
 
     cJSON *probe = cJSON_ParseWithLength(buf, (size_t)nr);
-    free(buf);
     if (!probe) {
+        free(buf);
         unlink(tmp_path);
         ESP_LOGE(TAG, "commit: invalid JSON, tmp discarded");
         return ESP_ERR_INVALID_ARG;
@@ -785,40 +864,76 @@ esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path)
     bool is_arr = cJSON_IsArray(probe);
     cJSON_Delete(probe);
     if (!is_arr) {
+        free(buf);
         unlink(tmp_path);
         ESP_LOGE(TAG, "commit: root not array, tmp discarded");
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* 3) 原子替换：unlink 旧文件 → rename(tmp, real)。
-     *    SPIFFS 的 rename 是同分区移动，相对安全。 */
-    unlink(LAYOUT_PATH);
-    if (rename(tmp_path, LAYOUT_PATH) != 0) {
-        ESP_LOGE(TAG, "commit: rename(%s -> %s) failed errno=%d",
-                 tmp_path, LAYOUT_PATH, errno);
+    /* 3) 替换正式文件。当前板上 SPIFFS 对 tmp->real rename 稳定返回 EIO，
+     *    所以这里直接写入已校验的 JSON；如已有旧文件，先备份便于失败恢复。 */
+    if (!layout_file_lock(pdMS_TO_TICKS(5000))) {
+        free(buf);
+        return ESP_ERR_TIMEOUT;
+    }
+    bool had_old = (access(LAYOUT_PATH, F_OK) == 0);
+    bool backup_ok = false;
+    if (had_old) {
+        unlink(LAYOUT_BAK_PATH);
+        if (rename(LAYOUT_PATH, LAYOUT_BAK_PATH) != 0) {
+            ESP_LOGE(TAG, "commit: backup rename(%s -> %s) failed errno=%d",
+                     LAYOUT_PATH, LAYOUT_BAK_PATH, errno);
+        } else {
+            backup_ok = true;
+        }
+    }
+
+    esp_err_t write_err = write_layout_bytes(LAYOUT_PATH, buf, (size_t)nr);
+    if (write_err != ESP_OK) {
+        unlink(LAYOUT_PATH);
+        if (backup_ok && rename(LAYOUT_BAK_PATH, LAYOUT_PATH) != 0) {
+            ESP_LOGE(TAG, "commit: restore layout backup failed errno=%d", errno);
+        }
         unlink(tmp_path);
+        layout_file_unlock();
+        free(buf);
         return ESP_FAIL;
     }
+
+    if (backup_ok)
+        unlink(LAYOUT_BAK_PATH);
+    unlink(tmp_path);
+    layout_file_unlock();
+    free(buf);
     ESP_LOGI(TAG, "Layout committed (%ld bytes)", sz);
     return ESP_OK;
 }
 
-esp_err_t canvas_board_show(void)
+esp_err_t canvas_board_show_queued(unsigned *out_epoch)
 {
     if (!s_mutex) return ESP_ERR_INVALID_STATE;
     if (!epd_is_ready()) {
         ESP_LOGW(TAG, "EPD not ready");
         return ESP_ERR_INVALID_STATE;
     }
+    unsigned epoch = display_policy_begin_manual_display();
+    if (out_epoch)
+        *out_epoch = epoch;
     if (xSemaphoreTake(s_mutex, 0) != pdTRUE) {
         ESP_LOGW(TAG, "render already in progress");
         return ESP_ERR_INVALID_STATE;
     }
-    if (xTaskCreate(render_task, "canvas_render", 8192, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(render_task, "canvas_render", 8192,
+                    (void *)(uintptr_t)epoch, 5, NULL) != pdPASS) {
         xSemaphoreGive(s_mutex);
         return ESP_FAIL;
     }
     return ESP_OK;
+}
+
+esp_err_t canvas_board_show(void)
+{
+    return canvas_board_show_queued(NULL);
 }
 
 void canvas_board_wait_idle(void)

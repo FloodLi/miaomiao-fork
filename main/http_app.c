@@ -38,6 +38,7 @@
 #include "button.h"
 #include "display_mode.h"
 #include "countdown.h"
+#include "spiffs_mount.h"
 #include "battery_mon.h"
 #include "cJSON.h"
 
@@ -122,6 +123,8 @@ bool http_check_basic_auth(httpd_req_t *req)
 
 static esp_err_t auth_config_get_handler(httpd_req_t *req)
 {
+    if (http_auth_is_enabled() && !http_check_basic_auth(req)) return ESP_OK;
+
     cJSON *root = cJSON_CreateObject();
     if (!root) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
@@ -215,6 +218,20 @@ int http_stat_size_or_neg(const char *path)
     return -1;
 }
 
+static void drain_request_body(httpd_req_t *req)
+{
+    char tmp[64];
+    int remain = req ? req->content_len : 0;
+    while (remain > 0) {
+        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
+        int r = httpd_req_recv(req, tmp, to_recv);
+        if (r <= 0) {
+            break;
+        }
+        remain -= r;
+    }
+}
+
 /** EPD 未就绪时返回 JSON 503，避免 httpd 与 epd_init 并行时刷硬件 */
 bool http_require_epd_ready(httpd_req_t *req)
 {
@@ -257,11 +274,14 @@ static esp_err_t index_get_handler(httpd_req_t *req)
 
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     const int upload_sz = http_stat_size_or_neg(s_cfg.upload_path);
     const int raw_sz    = http_stat_size_or_neg("/spiffs/image.bin");
 
     size_t total = 0, used = 0;
-    esp_spiffs_info(NULL, &total, &used);
+    bool spiffs_ok = spiffs_mount_is_mounted() &&
+                     esp_spiffs_info(NULL, &total, &used) == ESP_OK;
 
     char time_str[32] = "";
     time_sync_get_str(time_str, sizeof(time_str));
@@ -273,13 +293,13 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     snprintf(json, sizeof(json),
              "{\"upload_path\":\"%s\",\"upload_bytes\":%d,"
              "\"raw_path\":\"/spiffs/image.bin\",\"raw_bytes\":%d,"
-             "\"spiffs_total\":%u,\"spiffs_used\":%u,"
+             "\"spiffs_ok\":%s,\"spiffs_total\":%u,\"spiffs_used\":%u,"
              "\"time\":\"%s\",\"time_synced\":%s,"
              "\"current_mode\":%d,"
              "\"free_heap\":%u,\"min_free_heap\":%u,"
              "\"battery_pct\":%u,\"battery_valid\":%s,\"charging\":%s,\"battery_adc\":%d}",
              s_cfg.upload_path, upload_sz, raw_sz,
-             (unsigned)total, (unsigned)used,
+             spiffs_ok ? "true" : "false", (unsigned)total, (unsigned)used,
              time_str, time_sync_is_synced() ? "true" : "false",
              button_get_current_mode(),
              (unsigned)esp_get_free_heap_size(),
@@ -313,17 +333,32 @@ static esp_err_t config_get_handler(httpd_req_t *req)
 
 static esp_err_t wifi_status_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char sta_ssid[80];
+    char sta_ip[32];
+    char ap_ssid[80];
+    char mdns_host[64];
+    char id6[16];
+    json_escape(sta_ssid, sizeof(sta_ssid), wifi_manager_get_sta_ssid());
+    json_escape(sta_ip, sizeof(sta_ip), wifi_manager_get_sta_ip());
+    json_escape(ap_ssid, sizeof(ap_ssid), wifi_manager_get_ap_ssid());
+    json_escape(mdns_host, sizeof(mdns_host), device_identity_get_mdns_hostname());
+    json_escape(id6, sizeof(id6), device_identity_get_id6_upper());
+
     char json[384];
     snprintf(json, sizeof(json),
              "{\"mode\":%d,\"sta_connected\":%s,\"sta_ssid\":\"%s\",\"sta_ip\":\"%s\","
-             "\"ap_ssid\":\"%s\",\"mdns_host\":\"%s\",\"id6\":\"%s\"}",
+             "\"ap_ssid\":\"%s\",\"mdns_host\":\"%s\",\"id6\":\"%s\","
+             "\"recovery_ap\":%s}",
              (int)wifi_manager_get_mode(),
              wifi_manager_sta_connected() ? "true" : "false",
-             wifi_manager_get_sta_ssid(),
-             wifi_manager_get_sta_ip(),
-             wifi_manager_get_ap_ssid(),
-             device_identity_get_mdns_hostname(),
-             device_identity_get_id6_upper());
+             sta_ssid,
+             sta_ip,
+             ap_ssid,
+             mdns_host,
+             id6,
+             device_identity_recovery_ap_mode() ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -333,6 +368,8 @@ static esp_err_t wifi_status_get_handler(httpd_req_t *req)
 
 static esp_err_t scan_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     wifi_mgr_ap_record_t aps[20];
     int count = wifi_manager_scan(aps, 20);
 
@@ -370,7 +407,7 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
     char buf[256] = {0};
     int len = req->content_len;
     if (len <= 0 || len >= (int)sizeof(buf)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体错误");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid request body");
         return ESP_OK;
     }
     int total = 0;
@@ -451,6 +488,8 @@ static esp_err_t wifi_forget_post_handler(httpd_req_t *req)
 
 static esp_err_t slideshow_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     slideshow_config_t cfg;
     scheduler_get_config(&cfg);
     const char *current = scheduler_get_current_image();
@@ -530,6 +569,8 @@ static esp_err_t slideshow_post_handler(httpd_req_t *req)
 
 static esp_err_t version_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     const esp_app_desc_t *desc = esp_app_get_description();
     const esp_partition_t *running = esp_ota_get_running_partition();
     const esp_partition_t *next    = esp_ota_get_next_update_partition(NULL);
@@ -673,6 +714,8 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
 
 static esp_err_t weather_config_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     weather_config_t cfg;
     weather_get_config(&cfg);
     weather_data_t d;
@@ -769,13 +812,7 @@ static esp_err_t weather_show_post_handler(httpd_req_t *req)
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
-    char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
-        if (r <= 0) {
-            break;
-        }
-    }
+    drain_request_body(req);
 
     esp_err_t err = weather_fetch_and_display(true);
     if (err == ESP_OK) {
@@ -793,6 +830,8 @@ static esp_err_t weather_show_post_handler(httpd_req_t *req)
 
 static esp_err_t clock_config_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     clock_config_t cfg;
     clock_display_get_config(&cfg);
 
@@ -863,12 +902,9 @@ static esp_err_t clock_show_post_handler(httpd_req_t *req)
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
-    char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
-        if (r <= 0) break;
-    }
+    drain_request_body(req);
 
+    display_policy_bump_display_epoch();
     esp_err_t err = clock_display_show();
     if (err == ESP_OK) {
         button_set_current_mode(DISPLAY_MODE_CLOCK);
@@ -885,6 +921,8 @@ static esp_err_t clock_show_post_handler(httpd_req_t *req)
 
 static esp_err_t msg_config_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     msg_config_t cfg;
     message_board_get_config(&cfg);
 
@@ -978,15 +1016,18 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
-    char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
-        if (r <= 0) break;
-    }
+    drain_request_body(req);
 
-    esp_err_t err = message_board_show();
-    char json[96];
-    snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
+    unsigned epoch = display_policy_display_epoch();
+    esp_err_t err = message_board_show_queued(&epoch);
+    if (err == ESP_OK)
+        message_board_wait_idle();
+    if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
+        err = ESP_ERR_INVALID_STATE;
+    char json[112];
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",
+             err == ESP_OK ? "true" : "false",
+             err == ESP_ERR_INVALID_STATE ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -998,6 +1039,8 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
 
 static esp_err_t panel_config_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     char json[160];
     snprintf(json, sizeof(json),
              "{\"panel\":%d,\"width\":%d,\"height\":%d,\"has_red\":%s,\"busy_idle\":%d}",
@@ -1013,6 +1056,10 @@ static esp_err_t panel_config_get_handler(httpd_req_t *req)
 static esp_err_t panel_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
+    if (req->content_len <= 0 || req->content_len >= 128) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid request body");
+        return ESP_OK;
+    }
     char buf[128];
     int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (len <= 0) {
@@ -1027,20 +1074,38 @@ static esp_err_t panel_config_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    epd_panel_t pending_panel = epd_get_panel();
+    int pending_busy = epd_busy_idle_level();
+
     cJSON *jp = cJSON_GetObjectItem(root, "panel");
+    esp_err_t cfg_err = ESP_OK;
     if (jp && cJSON_IsNumber(jp)) {
-        epd_set_panel((epd_panel_t)jp->valueint);
+        pending_panel = (epd_panel_t)jp->valueint;
     }
     cJSON *jb = cJSON_GetObjectItem(root, "busy_idle");
-    if (jb && cJSON_IsNumber(jb)) {
-        epd_set_busy_idle(jb->valueint);
+    if (cfg_err == ESP_OK && jb && cJSON_IsNumber(jb)) {
+        pending_busy = jb->valueint;
     }
+    cfg_err = epd_save_panel_config(pending_panel, pending_busy);
     cJSON_Delete(root);
 
-    char json[160];
+    if (cfg_err != ESP_OK) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"invalid panel config\"}");
+        return ESP_OK;
+    }
+
+    bool reboot_required = (pending_panel != epd_get_panel()) ||
+                           (pending_busy != epd_busy_idle_level());
+    char json[224];
     snprintf(json, sizeof(json),
-             "{\"ok\":true,\"panel\":%d,\"width\":%d,\"height\":%d,\"busy_idle\":%d,\"note\":\"reboot if panel changed\"}",
-             (int)epd_get_panel(), epd_width(), epd_height(), epd_busy_idle_level());
+             "{\"ok\":true,\"active_panel\":%d,\"pending_panel\":%d,"
+             "\"width\":%d,\"height\":%d,\"busy_idle\":%d,\"pending_busy_idle\":%d,"
+             "\"reboot_required\":%s,\"note\":\"panel config saved; reboot to apply\"}",
+             (int)epd_get_panel(), (int)pending_panel,
+             epd_width(), epd_height(), epd_busy_idle_level(), pending_busy,
+             reboot_required ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -1059,6 +1124,8 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
 
 static esp_err_t power_config_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     power_config_t pc;
     power_mgr_get_config(&pc);
     char buf[128];
@@ -1126,6 +1193,7 @@ static esp_err_t epd_test_post_handler(httpd_req_t *req)
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
+    display_policy_begin_manual_display();
     esp_err_t err = epd_display_test_pattern();
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "EPD test failed");
@@ -1136,6 +1204,69 @@ static esp_err_t epd_test_post_handler(httpd_req_t *req)
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
 }
+
+static void send_spiffs_action_result(httpd_req_t *req, esp_err_t err, bool reboot_required)
+{
+    char json[160];
+    snprintf(json, sizeof(json),
+             "{\"ok\":%s,\"spiffs_ok\":%s,\"err\":\"%s\",\"reboot_required\":%s}",
+             err == ESP_OK ? "true" : "false",
+             spiffs_mount_is_mounted() ? "true" : "false",
+             err == ESP_OK ? "ESP_OK" : esp_err_to_name(err),
+             reboot_required ? "true" : "false");
+    if (err != ESP_OK)
+        httpd_resp_set_status(req, "500 Internal Server Error");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t spiffs_remount_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    drain_request_body(req);
+
+    esp_err_t err = spiffs_mount_retry();
+    send_spiffs_action_result(req, err, err == ESP_OK);
+    return ESP_OK;
+}
+
+static esp_err_t spiffs_format_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char buf[128] = {0};
+    int len = req->content_len;
+    if (len <= 0 || len >= (int)sizeof(buf)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid request body");
+        return ESP_OK;
+    }
+
+    int total = 0;
+    while (total < len) {
+        int r = httpd_req_recv(req, buf + total, len - total);
+        if (r <= 0) {
+            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "recv failed");
+            return ESP_OK;
+        }
+        total += r;
+    }
+    buf[total] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    const char *confirm = root ? cJSON_GetStringValue(cJSON_GetObjectItem(root, "confirm")) : NULL;
+    if (!confirm || strcmp(confirm, "FORMAT_SPIFFS") != 0) {
+        if (root) cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "missing confirm");
+        return ESP_OK;
+    }
+    cJSON_Delete(root);
+
+    esp_err_t err = spiffs_mount_format_and_mount();
+    send_spiffs_action_result(req, err, err == ESP_OK);
+    return ESP_OK;
+}
+
 esp_err_t http_app_start(const http_app_config_t *cfg)
 {
     if (!cfg || !cfg->mount_path || !cfg->upload_path) return ESP_ERR_INVALID_ARG;
@@ -1145,7 +1276,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.uri_match_fn      = httpd_uri_match_wildcard;
     config.recv_wait_timeout  = 5;
     config.send_wait_timeout  = 5;
-    config.max_uri_handlers   = 60;
+    config.max_uri_handlers   = 64;
     config.stack_size         = 16384;
     config.lru_purge_enable   = true;
     config.open_fn            = http_session_open_hook;
@@ -1216,6 +1347,8 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         /* system */
         { "/version",       HTTP_GET,  version_get_handler,        NULL },
         { "/epd_test",      HTTP_POST, epd_test_post_handler,      NULL },
+        { "/spiffs_remount", HTTP_POST, spiffs_remount_post_handler, NULL },
+        { "/spiffs_format", HTTP_POST, spiffs_format_post_handler, NULL },
         { "/ota",           HTTP_POST, ota_post_handler,           NULL },
         { "/auth_config",   HTTP_GET,  auth_config_get_handler,    NULL },
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },

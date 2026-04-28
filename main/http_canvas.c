@@ -18,6 +18,7 @@
 #include <sys/unistd.h>
 #include <errno.h>
 #include "canvas_board.h"
+#include "display_policy.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,8 +26,19 @@
 
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "http_canvas";
+static SemaphoreHandle_t s_layout_lock;
+
+static SemaphoreHandle_t layout_lock(void)
+{
+    if (!s_layout_lock) {
+        s_layout_lock = xSemaphoreCreateMutex();
+    }
+    return s_layout_lock;
+}
 
 /**
  * 校验画布资源（图标 / 用户图片）的 name 参数。
@@ -77,6 +89,8 @@ esp_err_t canvas_board_ui_get(httpd_req_t *req)
 
 esp_err_t canvas_layout_get(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     char *buf = malloc(CANVAS_LAYOUT_MAX_BYTES + 4);
     if (!buf) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存不足");
@@ -120,10 +134,17 @@ esp_err_t canvas_layout_post(httpd_req_t *req)
      * 收发阶段只占用一个 1KB 栈级 chunk，避免在 HTTP 任务里 malloc 12KB 大块。
      * 校验阶段才把临时文件读回内存（由 canvas_board_commit_layout_from_file 完成）。 */
     static const char *TMP_PATH = "/spiffs/canvas_layout.tmp";
+    SemaphoreHandle_t lock = layout_lock();
+    if (!lock || xSemaphoreTake(lock, pdMS_TO_TICKS(8000)) != pdTRUE) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "画布保存忙，请稍后重试");
+        return ESP_OK;
+    }
+
     FILE *tmp = fopen(TMP_PATH, "w");
     if (!tmp) {
         ESP_LOGE(TAG, "fopen(%s) failed errno=%d", TMP_PATH, errno);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "无法创建临时文件");
+        xSemaphoreGive(lock);
         return ESP_OK;
     }
 
@@ -138,12 +159,14 @@ esp_err_t canvas_layout_post(httpd_req_t *req)
             fclose(tmp);
             unlink(TMP_PATH);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
+            xSemaphoreGive(lock);
             return ESP_OK;
         }
         if ((int)fwrite(chunk, 1, (size_t)r, tmp) != r) {
             fclose(tmp);
             unlink(TMP_PATH);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "写盘失败");
+            xSemaphoreGive(lock);
             return ESP_OK;
         }
         total += r;
@@ -152,6 +175,7 @@ esp_err_t canvas_layout_post(httpd_req_t *req)
 
     /* 校验 + 原子替换正式文件；失败时该函数自行清理 tmp */
     esp_err_t err = canvas_board_commit_layout_from_file(TMP_PATH);
+    xSemaphoreGive(lock);
     if (err == ESP_ERR_INVALID_ARG) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "布局 JSON 无效");
         return ESP_OK;
@@ -183,17 +207,26 @@ esp_err_t canvas_show_post(httpd_req_t *req)
 
     /* 消耗请求体 */
     char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
+    int remain = req->content_len;
+    while (remain > 0) {
+        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
+        int r = httpd_req_recv(req, tmp, to_recv);
         if (r <= 0) break;
-        req->content_len -= (size_t)r;
+        remain -= r;
     }
 
-    esp_err_t err = canvas_board_show();
+    unsigned epoch = display_policy_display_epoch();
+    esp_err_t err = canvas_board_show_queued(&epoch);
+    if (err == ESP_OK)
+        canvas_board_wait_idle();
+    if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
+        err = ESP_ERR_INVALID_STATE;
     /* 不切换循环模式，留言板属于手动触发内容 */
 
-    char json[64];
-    snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
+    char json[96];
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",
+             err == ESP_OK ? "true" : "false",
+             err == ESP_ERR_INVALID_STATE ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -203,6 +236,8 @@ esp_err_t canvas_show_post(httpd_req_t *req)
 
 esp_err_t canvas_icons_get(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     char *builtin = malloc(2048);
     char *user    = malloc(1024);
     if (!builtin || !user) {
@@ -295,6 +330,8 @@ esp_err_t canvas_icon_upload_post(httpd_req_t *req)
 
 esp_err_t canvas_image_list_get(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     char *list = malloc(2048);
     if (!list) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存不足");
@@ -323,6 +360,8 @@ esp_err_t canvas_image_list_get(httpd_req_t *req)
 
 esp_err_t canvas_image_get(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     char name[CANVAS_NAME_MAX + 4] = {0};
     if (!http_get_query_param(req, "name", name, sizeof(name))) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少 name 参数");
@@ -422,10 +461,12 @@ esp_err_t canvas_image_delete_post(httpd_req_t *req)
     }
     if (!canvas_validate_name(req, name)) return ESP_OK;
     char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
+    int remain = req->content_len;
+    while (remain > 0) {
+        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
+        int r = httpd_req_recv(req, tmp, to_recv);
         if (r <= 0) break;
-        req->content_len -= (size_t)r;
+        remain -= r;
     }
 
     esp_err_t err = canvas_board_delete_image(name);
@@ -454,10 +495,12 @@ esp_err_t canvas_icon_delete_post(httpd_req_t *req)
 
     /* 消耗请求体 */
     char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
+    int remain = req->content_len;
+    while (remain > 0) {
+        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
+        int r = httpd_req_recv(req, tmp, to_recv);
         if (r <= 0) break;
-        req->content_len -= (size_t)r;
+        remain -= r;
     }
 
     esp_err_t err = canvas_board_delete_user_icon(name);

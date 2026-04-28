@@ -389,7 +389,8 @@ static void tt_draw_dashed_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
 
 static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
                                           int today, int now_min, int week,
-                                          const struct tm *tm)
+                                          const struct tm *tm,
+                                          unsigned epoch)
 {
     fb_t *fb = fb_create();
     if (!fb)
@@ -427,6 +428,10 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
         const char *msg = "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b";
         int mw = tt_text_px(msg, 2);
         fb_utf8_scaled(fb, (W - mw) / 2, H / 2 - 16, msg, COLOR_BLACK, 2);
+        if (!display_policy_epoch_is_current(epoch)) {
+            fb_destroy(fb);
+            return ESP_ERR_INVALID_STATE;
+        }
         esp_err_t err = epd_display_fb_free(fb);
         return err;
     }
@@ -595,6 +600,11 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
         fb_utf8_scaled(fb, (W - fw) / 2, H - footer_h + 2, foot, COLOR_BLACK, 1);
     }
 
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        return ESP_ERR_INVALID_STATE;
+    }
+
     esp_err_t err = epd_display_fb_free(fb);
 
     if (err == ESP_OK)
@@ -610,6 +620,8 @@ esp_err_t timetable_show_day(int day)
         return ESP_ERR_INVALID_STATE;
     if (day < 0 || day >= TT_DAYS)
         return ESP_ERR_INVALID_ARG;
+
+    unsigned epoch = display_policy_display_epoch();
 
     /* 第一时刻取一份配置快照（≈5.4KB，放堆上避免占满 worker 任务栈），
      * 后续渲染全部基于它，避免与 HTTP POST 竞争。 */
@@ -641,7 +653,7 @@ esp_err_t timetable_show_day(int day)
         int today   = tt_weekday_mon0(&tm);
         int now_min = tt_now_minutes(&tm);
         int week    = tt_current_week_in(snap);
-        esp_err_t err = timetable_show_week_grid(snap, today, now_min, week, &tm);
+        esp_err_t err = timetable_show_week_grid(snap, today, now_min, week, &tm, epoch);
         free(snap);
         return err;
     }
@@ -697,6 +709,11 @@ esp_err_t timetable_show_day(int day)
         int ly = my + 8 * (s + 1);
         fb_hline(fb, mx - 28 * s, ly, 20 * s, COLOR_BLACK);
         fb_hline(fb, mx + mw + 8 * s, ly, 20 * s, COLOR_BLACK);
+        if (!display_policy_epoch_is_current(epoch)) {
+            fb_destroy(fb);
+            free(snap);
+            return ESP_ERR_INVALID_STATE;
+        }
         esp_err_t err = epd_display_fb_free(fb);
         free(snap);
         return err;
@@ -819,6 +836,12 @@ esp_err_t timetable_show_day(int day)
                  TT_DAY_FULL[day], count);
         int fw = tt_text_px(foot, 1);
         fb_utf8_scaled(fb, (W - fw) / 2, H - footer_h, foot, COLOR_BLACK, 1);
+    }
+
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        free(snap);
+        return ESP_ERR_INVALID_STATE;
     }
 
     esp_err_t err = epd_display_fb_free(fb);
@@ -1112,10 +1135,12 @@ esp_err_t timetable_show_http_handler(httpd_req_t *req)
 
     /* parse optional {"day":0..6} from body */
     int show_day = -1;
-    if (req->content_len > 0 && req->content_len < 128) {
+    int body_remaining = req->content_len;
+    if (body_remaining > 0 && body_remaining < 128) {
         char buf[128];
         int r = httpd_req_recv(req, buf, sizeof(buf) - 1);
         if (r > 0) {
+            body_remaining -= r;
             buf[r] = '\0';
             cJSON *root = cJSON_Parse(buf);
             if (root) {
@@ -1129,12 +1154,14 @@ esp_err_t timetable_show_http_handler(httpd_req_t *req)
 
     /* drain remaining body */
     char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
+    while (body_remaining > 0) {
+        int to_recv = body_remaining < (int)sizeof(tmp) ? body_remaining : (int)sizeof(tmp);
+        int r = httpd_req_recv(req, tmp, to_recv);
         if (r <= 0) break;
+        body_remaining -= r;
     }
 
-    display_policy_set_manual_screen_active(true);
+    display_policy_begin_manual_display();
 
     esp_err_t err;
     if (show_day >= 0 && show_day < TT_DAYS)

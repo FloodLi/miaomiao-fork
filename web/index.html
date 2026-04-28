@@ -315,10 +315,15 @@ function log(s,cls){const el=document.getElementById('log'); el.className='log'+
 
 async function refresh(){
   try{
-    const r=await fetch('/status'); const j=await r.json();
+    const r=await fetch('/status',epdFetchOpts()); const j=await r.json();
     document.getElementById('u_sz').textContent=j.upload_bytes>=0?fmt(j.upload_bytes):'未找到';
     document.getElementById('r_sz').textContent=j.raw_bytes>=0?fmt(j.raw_bytes):'未找到';
-    if(j.spiffs_total>0){
+    if(j.spiffs_ok===false){
+      document.getElementById('sp_txt').textContent='文件系统异常';
+      const bar=document.getElementById('sp_bar');
+      bar.style.width='100%';
+      bar.style.background='var(--er)';
+    }else if(j.spiffs_total>0){
       const pct=((j.spiffs_used/j.spiffs_total)*100).toFixed(1);
       document.getElementById('sp_txt').textContent=fmt(j.spiffs_used)+' / '+fmt(j.spiffs_total)+' ('+pct+'%)';
       const bar=document.getElementById('sp_bar');
@@ -393,21 +398,34 @@ async function delImg(name){
 async function loadGallery(){
   const g=document.getElementById('gallery');
   try{
-    const r=await fetch('/images'); const j=await r.json();
+    const r=await fetch('/images',epdFetchOpts()); const j=await r.json();
     if(!j.items||j.items.length===0){g.innerHTML='<div class="empty">暂无图片，上传一张试试。</div>';return;}
     g.innerHTML=j.items.map(i=>`<div class="gcard">
-      <img src="/image?name=${encodeURIComponent(i.name)}" loading="lazy" alt="${i.name}">
+      <img data-name="${i.name}" loading="lazy" alt="${i.name}">
       <div class="ginfo"><span class="gname" title="${i.name}">${i.name}</span><span class="gsz">${fmt(i.bytes)}</span></div>
       <div class="gactions">
         <button class="btn sm" onclick="showImg('${i.name}')">显示</button>
         <button class="btn ghost sm" onclick="delImg('${i.name}')">删除</button>
       </div></div>`).join('');
+    await loadGalleryThumbs(g);
   }catch(e){g.innerHTML='<div class="empty bad">画廊加载失败</div>';}
 }
 
+async function loadGalleryThumbs(root){
+  const imgs=root.querySelectorAll('img[data-name]');
+  imgs.forEach(async img=>{
+    try{
+      const name=img.getAttribute('data-name');
+      const r=await fetch('/image?name='+encodeURIComponent(name),epdFetchOpts());
+      if(!r.ok) return;
+      const blob=await r.blob();
+      img.src=URL.createObjectURL(blob);
+    }catch(e){}
+  });
+}
 async function loadNetInfo(){
   try{
-    const r=await fetch('/wifi_status');const j=await r.json();
+    const r=await fetch('/wifi_status',epdFetchOpts());const j=await r.json();
     const p=document.getElementById('netPill');
     const dn=document.getElementById('d_net');
     if(j.sta_connected){p.textContent='STA: '+j.sta_ip;dn.textContent=j.sta_ssid||j.sta_ip;}
@@ -416,10 +434,12 @@ async function loadNetInfo(){
 }
 async function loadDashboard(){
   try{
-    const [sr,pr]=await Promise.all([fetch('/status'),fetch('/power_config')]);
+    const [sr,pr]=await Promise.all([fetch('/status',epdFetchOpts()),fetch('/power_config',epdFetchOpts())]);
     const s=await sr.json(),p=await pr.json();
     document.getElementById('d_time').textContent=s.time_synced?s.time.slice(11,16):'未同步';
-    if(s.spiffs_total>0){
+    if(s.spiffs_ok===false){
+      document.getElementById('d_storage').textContent='异常';
+    }else if(s.spiffs_total>0){
       const pct=((s.spiffs_used/s.spiffs_total)*100).toFixed(0);
       document.getElementById('d_storage').textContent=pct+'%';
     }

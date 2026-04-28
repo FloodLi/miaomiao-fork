@@ -88,17 +88,18 @@ static void timer_cb(void *arg)
 
 static void setup_chg_pin(void)
 {
-    if (BAT_MON_CHG_GPIO == GPIO_NUM_NC)
+    gpio_num_t chg_gpio = BAT_MON_CHG_GPIO;
+    if (chg_gpio == GPIO_NUM_NC)
         return;
     gpio_config_t io = {
-        .pin_bit_mask = 1ULL << BAT_MON_CHG_GPIO,
+        .pin_bit_mask = 1ULL << (uint32_t)chg_gpio,
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = 1,
         .pull_down_en = 0,
         .intr_type    = GPIO_INTR_DISABLE,
     };
     gpio_config(&io);
-    ESP_LOGI(TAG, "Charge sense GPIO %d (low=charging)", (int)BAT_MON_CHG_GPIO);
+    ESP_LOGI(TAG, "Charge sense GPIO %d (low=charging)", (int)chg_gpio);
 }
 
 esp_err_t battery_mon_init(void)

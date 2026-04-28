@@ -16,6 +16,10 @@
 
 static const char *TAG = "img";
 
+#define JPEG_FS_BAND_ROWS       16
+#define PNG_MAX_DECODE_PIXELS   (1000u * 1000u)
+#define PNG_MAX_SIDE_PIXELS     4096u
+
 /* ── Bayer 8x8 matrix (fallback when F-S allocation fails) ────────── */
 
 static const uint8_t bayer8[8][8] = {
@@ -380,6 +384,12 @@ static UINT jpeg_outfunc_fs(JDEC *jd, void *bitmap, JRECT *rect)
     int bh  = (int)(rect->bottom - rect->top  + 1);
     int top = (int)rect->top;
 
+    if (bw <= 0 || bh <= 0 || bh > o->band_h) {
+        ESP_LOGE(TAG, "JPEG block too large for band: %dx%d (band_h=%d)",
+                 bw, bh, o->band_h);
+        return 0;
+    }
+
     if (o->band_top < 0) {
         o->band_top  = top;
         o->band_rows = bh;
@@ -461,6 +471,12 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         free(pool);
         return ESP_FAIL;
     }
+    if (jd.width == 0 || jd.height == 0) {
+        ESP_LOGE(TAG, "invalid JPEG dimensions: %ux%u",
+                 (unsigned)jd.width, (unsigned)jd.height);
+        free(pool);
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     uint8_t *black = (uint8_t *)malloc(EC);
     uint8_t *red   = (uint8_t *)malloc(EC);
@@ -486,7 +502,7 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     };
 
     /* Try red-first Floyd-Steinberg; fall back to Bayer if OOM */
-    int bh = 8;
+    int bh = JPEG_FS_BAND_ROWS;
     size_t bsz = (size_t)bh * decoded_w * 3;
     ctx->out.band    = (uint8_t *)malloc(bsz);
     ctx->out.rgb_row = (uint8_t *)malloc((size_t)EW * 3);
@@ -532,10 +548,16 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         free(black); free(red);
         return ESP_FAIL;
     }
-    fwrite(black, 1, EC, f);
-    if (epd_has_red())
-        fwrite(red, 1, EC, f);
+    bool wrote = (fwrite(black, 1, EC, f) == (size_t)EC);
+    if (wrote && epd_has_red())
+        wrote = (fwrite(red, 1, EC, f) == (size_t)EC);
     fclose(f);
+    if (!wrote) {
+        ESP_LOGE(TAG, "write raw failed: %s", out_path);
+        remove(out_path);
+        free(black); free(red);
+        return ESP_FAIL;
+    }
 
     ESP_LOGI(TAG, "Converted JPEG -> %s (%u bytes, %s, stretch)",
              out_path, (unsigned)EC, use_fs ? "red-first F-S" : "Bayer");
@@ -568,7 +590,7 @@ static esp_err_t jpeg_convert_from_file(const char *input_path, const char *out_
 /* ── PNG conversion (stretch-to-fill, red-first F-S) ──────────────── */
 
 static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph,
-                                    const char *out_path)
+                                     const char *out_path)
 {
     const int EW = epd_width();
     const int EH = epd_height();
@@ -637,10 +659,17 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
 
     FILE *f = fopen(out_path, "wb");
     if (!f) { ESP_LOGE(TAG, "open out failed: %s", out_path); free(black); free(red); return ESP_FAIL; }
-    fwrite(black, 1, EC, f);
-    if (has_red)
-        fwrite(red, 1, EC, f);
+    bool wrote = (fwrite(black, 1, EC, f) == (size_t)EC);
+    if (wrote && has_red)
+        wrote = (fwrite(red, 1, EC, f) == (size_t)EC);
     fclose(f);
+    if (!wrote) {
+        ESP_LOGE(TAG, "write raw failed: %s", out_path);
+        remove(out_path);
+        free(black);
+        free(red);
+        return ESP_FAIL;
+    }
 
     ESP_LOGI(TAG, "Converted PNG -> %s (%u bytes, %s, stretch)",
              out_path, (unsigned)EC, use_fs ? "red-first F-S" : "Bayer");
@@ -653,6 +682,20 @@ esp_err_t image_convert_png_to_epd_raw(const uint8_t *png, size_t png_len,
                                         const char *out_path)
 {
     if (!png || png_len == 0 || !out_path) return ESP_ERR_INVALID_ARG;
+
+    if (png_len >= 24) {
+        unsigned pw_hdr = ((unsigned)png[16] << 24) | ((unsigned)png[17] << 16) |
+                          ((unsigned)png[18] << 8)  | (unsigned)png[19];
+        unsigned ph_hdr = ((unsigned)png[20] << 24) | ((unsigned)png[21] << 16) |
+                          ((unsigned)png[22] << 8)  | (unsigned)png[23];
+        if (pw_hdr == 0 || ph_hdr == 0 ||
+            pw_hdr > PNG_MAX_SIDE_PIXELS || ph_hdr > PNG_MAX_SIDE_PIXELS ||
+            (uint64_t)pw_hdr * (uint64_t)ph_hdr > PNG_MAX_DECODE_PIXELS) {
+            ESP_LOGE(TAG, "PNG dimensions rejected before decode: %ux%u",
+                     pw_hdr, ph_hdr);
+            return ESP_ERR_INVALID_SIZE;
+        }
+    }
 
     unsigned char *rgba = NULL;
     unsigned pw = 0, ph = 0;
@@ -805,10 +848,17 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
 
     FILE *f = fopen(out_path, "wb");
     if (!f) { ESP_LOGE(TAG, "open out failed: %s", out_path); free(black); free(red); return ESP_FAIL; }
-    fwrite(black, 1, EC, f);
-    if (has_red_bmp)
-        fwrite(red, 1, EC, f);
+    bool wrote = (fwrite(black, 1, EC, f) == (size_t)EC);
+    if (wrote && has_red_bmp)
+        wrote = (fwrite(red, 1, EC, f) == (size_t)EC);
     fclose(f);
+    if (!wrote) {
+        ESP_LOGE(TAG, "write raw failed: %s", out_path);
+        remove(out_path);
+        free(black);
+        free(red);
+        return ESP_FAIL;
+    }
 
     ESP_LOGI(TAG, "Converted BMP -> %s (%u bytes, %s, stretch)",
              out_path, (unsigned)EC, use_fs ? "red-first F-S" : "Bayer");
@@ -876,6 +926,21 @@ esp_err_t image_convert_file_to_epd_raw(const char *input_path, const char *out_
         if (!pf) { free(buf); return ESP_FAIL; }
         size_t got = fread(buf, 1, (size_t)st.st_size, pf);
         fclose(pf);
+
+        if (got >= 24) {
+            unsigned pw_hdr = ((unsigned)buf[16] << 24) | ((unsigned)buf[17] << 16) |
+                              ((unsigned)buf[18] << 8)  | (unsigned)buf[19];
+            unsigned ph_hdr = ((unsigned)buf[20] << 24) | ((unsigned)buf[21] << 16) |
+                              ((unsigned)buf[22] << 8)  | (unsigned)buf[23];
+            if (pw_hdr == 0 || ph_hdr == 0 ||
+                pw_hdr > PNG_MAX_SIDE_PIXELS || ph_hdr > PNG_MAX_SIDE_PIXELS ||
+                (uint64_t)pw_hdr * (uint64_t)ph_hdr > PNG_MAX_DECODE_PIXELS) {
+                ESP_LOGE(TAG, "PNG dimensions rejected before decode: %ux%u",
+                         pw_hdr, ph_hdr);
+                free(buf);
+                return ESP_ERR_INVALID_SIZE;
+            }
+        }
 
         unsigned char *rgba = NULL;
         unsigned pw = 0, ph = 0;

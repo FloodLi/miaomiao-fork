@@ -64,6 +64,7 @@ esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path);
  * 从当前布局渲染并推送到墨水屏（异步任务）。
  */
 esp_err_t canvas_board_show(void);
+esp_err_t canvas_board_show_queued(unsigned *out_epoch);
 
 /**
  * 等待当前渲染任务完成（阻塞）。

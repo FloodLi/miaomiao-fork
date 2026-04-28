@@ -105,7 +105,12 @@ static void render_welcome_screen(void)
         fb_utf8_scaled(fb, pad, y, line, COLOR_BLACK, sc);
         y += ln + gap;
     }
-    fb_utf8_scaled(fb, pad, y, " 密码: 12345678", COLOR_BLACK, sc); y += ln + gap;
+    {
+        char line[80];
+        snprintf(line, sizeof(line), " 密码: %s", device_identity_get_ap_password());
+        fb_utf8_scaled(fb, pad, y, line, COLOR_BLACK, sc);
+        y += ln + gap;
+    }
     fb_utf8_scaled(fb, pad, y, " AP: 192.168.4.1", COLOR_BLACK, sc); y += ln + gap * 2;
 
     battery_mon_draw_on_fb(fb, pad, y, COLOR_BLACK, sc);
@@ -150,6 +155,92 @@ static void render_welcome_screen(void)
     ESP_LOGI(TAG, "Welcome screen displayed");
 }
 
+static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
+{
+    fb_t *fb = fb_create();
+    if (!fb) {
+        ESP_LOGE(TAG, "SPIFFS recovery FB alloc failed");
+        return ESP_ERR_NO_MEM;
+    }
+    fb_clear(fb);
+
+    int W = fb->width;
+    int H = fb->height;
+    int sc = (W >= 600) ? 2 : 1;
+    int ln = 16 * sc;
+    int gap = 3 * sc;
+    int pad = 6 * sc;
+    int y = 0;
+
+    int bar_h = ln + 4 * sc;
+    fb_fill_rect(fb, 0, 0, W, bar_h, COLOR_BLACK);
+    {
+        const char *title = "文件系统恢复";
+        int tw = 6 * 16 * sc;
+        fb_utf8_scaled(fb, (W - tw) / 2, 2 * sc, title, COLOR_WHITE, sc);
+    }
+    y = bar_h + 6 * sc;
+
+    fb_utf8_scaled(fb, pad, y, "文件系统挂载失败", COLOR_BLACK, sc);
+    y += ln + gap;
+    fb_utf8_scaled(fb, pad, y, "用户数据未被格式化", COLOR_BLACK, sc);
+    y += ln + gap * 2;
+
+    {
+        char line[96];
+        snprintf(line, sizeof(line), "热点: %s", device_identity_get_ap_ssid());
+        fb_utf8_scaled(fb, pad, y, line, COLOR_BLACK, sc);
+        y += ln + gap;
+        snprintf(line, sizeof(line), "密码: %s", device_identity_get_ap_password());
+        fb_utf8_scaled(fb, pad, y, line, COLOR_BLACK, sc);
+        y += ln + gap;
+    }
+
+    fb_utf8_scaled(fb, pad, y, "打开网页: 192.168.4.1/config", COLOR_BLACK, sc);
+    y += ln + gap * 2;
+    fb_utf8_scaled(fb, pad, y, "1.先点重试文件系统", COLOR_BLACK, sc);
+    y += ln + gap;
+    fb_utf8_scaled(fb, pad, y, "2.确认不要图片后再格式化", COLOR_BLACK, sc);
+    y += ln + gap;
+    fb_utf8_scaled(fb, pad, y, "确认词: FORMAT_SPIFFS", COLOR_BLACK, sc);
+
+    {
+        char info[80];
+        snprintf(info, sizeof(info), "错误:%s | 密码12345678",
+                 esp_err_to_name(spiffs_err));
+        int bot_h = ln + 2 * sc;
+        fb_fill_rect(fb, 0, H - bot_h, W, bot_h, COLOR_BLACK);
+        fb_utf8_scaled_maxw(fb, pad, H - bot_h + sc, info, COLOR_WHITE, sc,
+                            W - pad * 2);
+    }
+
+    return epd_display_fb_free(fb);
+}
+
+static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
+{
+    ESP_LOGW(TAG, "SPIFFS diagnostic: trying to show recovery screen");
+
+    fb_reserve_planes_early();
+    esp_err_t epd_err = epd_init();
+    if (epd_err != ESP_OK) {
+        ESP_LOGW(TAG, "SPIFFS diagnostic display skipped: EPD init failed (%s)",
+                 esp_err_to_name(epd_err));
+        fb_release_reserved_planes();
+        return;
+    }
+
+    (void)display_policy_begin_manual_display();
+    esp_err_t disp_err = render_spiffs_recovery_screen(spiffs_err);
+    if (disp_err == ESP_OK) {
+        ESP_LOGI(TAG, "SPIFFS recovery screen displayed");
+    } else {
+        ESP_LOGW(TAG, "SPIFFS recovery screen failed: %s",
+                 esp_err_to_name(disp_err));
+    }
+    fb_release_reserved_planes();
+}
+
 static void boot_display_route(void)
 {
     ESP_LOGI(TAG, "boot_display_route: starting");
@@ -173,6 +264,8 @@ static void boot_display_route(void)
     ESP_LOGI(TAG, "boot_display_route: switching to mode %d (%s)",
              mode, display_mode_name(mode));
     esp_err_t err = display_mode_show(mode);
+    if (err == ESP_OK && mode == DISPLAY_MODE_CALENDAR)
+        calendar_display_wait_render_idle();
     if (display_policy_display_epoch() != boot_epoch) {
         ESP_LOGI(TAG, "boot_display_route: mode restore canceled by newer display request");
         return;
@@ -215,13 +308,20 @@ static void quick_refresh_and_sleep(void)
     ESP_LOGI(TAG, "Quick-refresh path: timer wake-up");
     int mode = power_mgr_load_mode();
 
-    ESP_ERROR_CHECK(spiffs_mount_init());
+    esp_err_t spiffs_err = spiffs_mount_init();
+    if (spiffs_err != ESP_OK) {
+        ESP_LOGE(TAG, "Quick-refresh: SPIFFS unavailable (%s), sleeping instead of rebooting",
+                 esp_err_to_name(spiffs_err));
+        power_mgr_enter_sleep();
+        return;
+    }
     display_policy_init();
     display_policy_set_quick_refresh_active(true);
     device_identity_init();
 
     /* STA-only WiFi (no AP, no mDNS, no HTTP) */
-    ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(), "12345678"));
+    ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(),
+                                      device_identity_get_ap_password()));
 
     if (wifi_manager_sta_connected()) {
         time_sync_init();
@@ -235,7 +335,13 @@ static void quick_refresh_and_sleep(void)
 
     epd_load_panel_from_nvs();
     fb_reserve_planes_early();
-    ESP_ERROR_CHECK(epd_init());
+    esp_err_t epd_err = epd_init();
+    if (epd_err != ESP_OK) {
+        ESP_LOGE(TAG, "Quick-refresh: EPD init failed (%s), sleeping instead of rebooting",
+                 esp_err_to_name(epd_err));
+        power_mgr_enter_sleep();
+        return;
+    }
 
     /* Init content modules (they load NVS config) */
     ESP_ERROR_CHECK(scheduler_init());
@@ -312,11 +418,17 @@ static void quick_refresh_and_sleep(void)
 
 static void full_boot(void)
 {
-    ESP_ERROR_CHECK(spiffs_mount_init());
+    esp_err_t spiffs_err = spiffs_mount_init();
+    const bool spiffs_ok = (spiffs_err == ESP_OK);
+    if (!spiffs_ok) {
+        ESP_LOGE(TAG, "SPIFFS unavailable (%s); booting AP/Web diagnostics without formatting",
+                 esp_err_to_name(spiffs_err));
+    }
     display_policy_init();
     device_identity_init();
 
-    ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(), "12345678"));
+    ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(),
+                                      device_identity_get_ap_password()));
     wifi_manager_set_sta_hostname(device_identity_get_mdns_hostname());
     start_mdns();
 
@@ -327,7 +439,7 @@ static void full_boot(void)
                  device_identity_get_mdns_hostname(), wifi_manager_get_sta_ip());
         time_sync_init();
     } else {
-        ESP_LOGI(TAG, "AP-only: connect to SSID \"%s\" (password 12345678)",
+        ESP_LOGI(TAG, "AP-only: connect to SSID \"%s\" (default AP password)",
                  wifi_manager_get_ap_ssid());
     }
 
@@ -335,8 +447,11 @@ static void full_boot(void)
     epd_load_panel_from_nvs();
     ESP_LOGI(TAG, "NVS panel preset: %d (%dx%d) — open /config.html if hardware differs",
              (int)epd_get_panel(), epd_width(), epd_height());
-    /* 在 httpd/WiFi 之前占住双平面连续堆，避免 5.83" 启动后碎片导致 largest<38880 */
-    fb_reserve_planes_early();
+    /* Reserve display planes only when the filesystem is usable; diagnostic
+     * mode keeps RAM available for HTTP and recovery actions. */
+    if (spiffs_ok) {
+        fb_reserve_planes_early();
+    }
 
     http_app_config_t cfg = {
         .mount_path = "/spiffs",
@@ -344,7 +459,29 @@ static void full_boot(void)
     };
     ESP_ERROR_CHECK(http_app_start(&cfg));
 
-    ESP_ERROR_CHECK(epd_init());
+    if (!spiffs_ok) {
+        display_policy_set_manual_screen_active(true);
+        try_show_spiffs_recovery_screen(spiffs_err);
+        if (scheduler_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: scheduler unavailable");
+        if (weather_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: weather unavailable");
+        if (clock_display_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: clock unavailable");
+        if (message_board_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: message board unavailable");
+        if (canvas_board_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: canvas unavailable");
+        if (calendar_display_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: calendar unavailable");
+        if (timetable_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: timetable unavailable");
+        if (todo_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: todo unavailable");
+        if (countdown_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: countdown unavailable");
+        ESP_LOGW(TAG, "SPIFFS diagnostic mode: content display and sleep arming are disabled");
+        ESP_LOGI(TAG, "Ready. http://%s.local/ or http://192.168.4.1/",
+                 device_identity_get_mdns_hostname());
+        return;
+    }
+
+    esp_err_t epd_err = epd_init();
+    if (epd_err != ESP_OK) {
+        ESP_LOGE(TAG, "EPD init failed (%s); keeping AP/Web online for diagnostics",
+                 esp_err_to_name(epd_err));
+    }
 
     display_policy_set_manual_screen_active(true);
 
@@ -366,7 +503,11 @@ static void full_boot(void)
     display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
     display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
 
-    boot_display_route();
+    if (epd_err == ESP_OK) {
+        boot_display_route();
+    } else {
+        ESP_LOGW(TAG, "Skipping boot display because EPD is not ready");
+    }
     scheduler_boot_complete();
 
     ESP_ERROR_CHECK(button_init());

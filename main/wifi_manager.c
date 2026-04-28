@@ -193,8 +193,28 @@ static void configure_ap(void)
 
 /* ── Internal: attempt STA connection ─────────────────────────── */
 
+static esp_err_t validate_sta_credentials(const char *ssid, const char *pass)
+{
+    size_t ssid_len = ssid ? strlen(ssid) : 0;
+    size_t pass_len = pass ? strlen(pass) : 0;
+    if (ssid_len == 0 || ssid_len > 32)
+        return ESP_ERR_INVALID_ARG;
+    if (pass_len > 0 && pass_len < 8)
+        return ESP_ERR_INVALID_ARG;
+    if (pass_len > 64)
+        return ESP_ERR_INVALID_ARG;
+    return ESP_OK;
+}
+
 static bool try_sta_connect(const char *ssid, const char *pass)
 {
+    if (validate_sta_credentials(ssid, pass) != ESP_OK) {
+        ESP_LOGW(TAG, "Invalid STA credentials (ssid_len=%u, pass_len=%u)",
+                 (unsigned)(ssid ? strlen(ssid) : 0),
+                 (unsigned)(pass ? strlen(pass) : 0));
+        return false;
+    }
+
     s_retry_count = 0;
     portENTER_CRITICAL(&s_sta_mux);
     s_sta_connected = false;
@@ -209,12 +229,24 @@ static bool try_sta_connect(const char *ssid, const char *pass)
     wifi_config_t sta_cfg = {0};
     strlcpy((char *)sta_cfg.sta.ssid, ssid, sizeof(sta_cfg.sta.ssid));
     strlcpy((char *)sta_cfg.sta.password, pass, sizeof(sta_cfg.sta.password));
-    sta_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    sta_cfg.sta.threshold.authmode = pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     sta_cfg.sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_set_config(STA) failed: %s", esp_err_to_name(err));
+        s_sta_connecting = false;
+        s_mode = WIFI_MGR_MODE_AP;
+        return false;
+    }
 
     s_sta_connecting = true;
-    esp_wifi_connect();
+    err = esp_wifi_connect();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_connect failed: %s", esp_err_to_name(err));
+        s_sta_connecting = false;
+        s_mode = WIFI_MGR_MODE_AP;
+        return false;
+    }
 
     ESP_LOGI(TAG, "Connecting to \"%s\" ...", ssid);
 
@@ -397,14 +429,22 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
     if (!ssid || ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
     const char *pass = password ? password : "";
 
-    esp_err_t err = nvs_save_credentials(ssid, pass);
+    esp_err_t err = validate_sta_credentials(ssid, pass);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to save credentials: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "Rejected invalid WiFi credentials");
         return err;
     }
 
     bool ok = try_sta_connect(ssid, pass);
-    return ok ? ESP_OK : ESP_FAIL;
+    if (!ok)
+        return ESP_FAIL;
+
+    err = nvs_save_credentials(ssid, pass);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Connected but failed to save credentials: %s", esp_err_to_name(err));
+        return err;
+    }
+    return ESP_OK;
 }
 
 esp_err_t wifi_manager_forget(void)

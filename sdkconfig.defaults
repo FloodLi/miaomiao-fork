@@ -6,6 +6,9 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 
+# OTA safety: boot the new app once in pending-verify state and roll back if it fails.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
 # Flash size (your chip is 16MB)
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
@@ -29,4 +32,3 @@ CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=8192
 CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
 # Simpler TCP RX path (fewer tcp_seg/pbuf edges in tcp_free_acked_segments)
 # CONFIG_LWIP_TCP_QUEUE_OOSEQ is not set
-

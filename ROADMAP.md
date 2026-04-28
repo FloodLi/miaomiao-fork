@@ -1,15 +1,28 @@
 # 水墨屏产品开发规划方案
 
+<!-- release-sync-2026-04-28 -->
+## 上市前冲刺状态（2026-04-28，本轮修复后）
+
+功能主线已经基本完成，路线图进入“上市前质量收口”阶段。本轮已完成第一批拦截项：全局显示 epoch 仲裁、日历/画布/留言异步显示语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 不自动格式化与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、天气后台策略收紧、EPD 初始化失败降级和 AP 密码日志脱敏。
+
+下一步优先级：OTA 成功/失败/回滚全流程、低功耗定时唤醒、轮播+天气 24 小时稳定性测试、连续上传/按键/网页推屏抢占回归、图片算法可配置与网页预览。完整显示队列可作为后续架构升级，不再阻塞本轮第一批上市修复验收。详细放行门槛见：[上市前审查与整改清单](RELEASE_AUDIT_2026-04-28.md)。
+<!-- /release-sync-2026-04-28 -->
 > 项目代号：epaper_uploader  
 > 硬件平台：ESP32-S3 + 三色墨水屏（4.2" 400×300 SSD1619 / 5.83" 648×480 UC8179）  
 > 技术栈：ESP-IDF（**最低 v5.5.1**；5.5.x 可） / C / SPI / WiFi SoftAP / HTTP  
-> 固件版本：v2.3.0（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-04-15
+> 固件版本：v2.3.0（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-04-28
 
 ---
 
 ## 更新记录（已完成）
 
 > 说明：下面是从 v1.0 规划落地后的**实际完成项/关键修复**汇总（含多次迭代的经验性修复）。
+
+### 2026-04-28（上市前质量收口）
+
+- 新增 `RELEASE_AUDIT_2026-04-28.md`，把上市前风险、整改优先级、功能回归矩阵和放行门槛集中到一份可执行清单。
+- 明确当前阶段优先级从新增功能切换为质量闭环：全局显示仲裁、GET 数据/媒体接口 Basic Auth、异步显示语义收紧、SPIFFS 用户数据保护与挂载失败降级启动、配置备份排除 Basic Auth、面板切换重启生效、EPD 初始化失败降级、OTA/低功耗/轮播长稳测试。
+- 修正文档同步状态：HTTP 路由按当前注册表/日志更新为约 60 条；图片上传、按键/HTTP 手动显示、天气/课程/待办/倒计时等关键入口已接入 display epoch 仲裁，日历/画布/留言 HTTP 推屏改为等待完成或返回取消。
 
 ### 2026-04-26（v2.3.x — EPD 局部刷新 / 启动回落 / 渲染修复）
 
@@ -92,11 +105,11 @@
 ### 2026-04（v2.2.0）
 
 - **文档与工程对齐**：
-  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由约 57 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
+  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由约 60 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
   - 工程技术文档补充 **§4.4 低功耗与功能**、**§4.5 HTTP Basic Auth**（含前端 `localStorage` 凭据与天气 Key 脱敏说明）。
 - **HTTP 安全加固（固件 + Web）**（与审计一致时）：
   - 敏感推屏/配置类 **POST** 走 `http_check_basic_auth`；`GET /weather_config` 不透传明文 API Key。
-  - `web/config.html`、`index.html`、`timetable.html`、`todo.html`、`countdown.html`、`board.html`：`epdFetchOpts` + `epd_auth_*`；配置导出/导入携带鉴权头。
+  - `web/config.html`、`index.html`、`timetable.html`、`todo.html`、`countdown.html`、`board.html`：`epdFetchOpts` + `epd_auth_*`；配置导出/导入携带鉴权头，但备份内容不包含 Basic Auth 密码。
 - **课程表功能重写**：
   - 7×12 网格课程模型（grid[day][period]），取代旧的 slots 模型。
   - 学期周次追踪（semester_start 时间戳 + 周次位掩码 weeks bitmask）。
@@ -141,7 +154,7 @@
 - **协议与开源规范对齐**：
   - 全局更换为 PolyForm Noncommercial License 1.0.0。
   - Web UI（`/index`, `/timetable` 等）底部加入统一页脚版权声明（`<div class="epd-credit">Made with ❤️ by 喵喵</div>`）。
-  - HTTP 路由注册：增加返回值检查 + 错误日志，`max_uri_handlers` 扩大至 60。
+  - HTTP 路由注册：增加返回值检查 + 错误日志，`max_uri_handlers` 扩大至 64。
   - `timetable` 与 `todo` 模块新增 `SemaphoreHandle_t s_cfg_mutex` 保护配置读写。
   - `time_sync` / `message_board` / `display_policy` 使用 C11 `atomic_bool` 替代 `volatile bool`。
   - WiFi STA 认证支持 WPA3 SAE（`sae_pwe_h2e = WPA3_SAE_PWE_BOTH`）。
@@ -168,7 +181,7 @@
 
 ### 2026-03
 
-- **双屏支持（4.2" / 5.83"）**：运行时可切换面板类型，尺寸/红色能力动态适配，配置持久化到 NVS。
+- **双屏支持（4.2" / 5.83"）**：早期支持运行时切换面板类型；上市收口版已改为配置持久化到 NVS 后重启生效，避免热切屏竞态。
 - **UC8179 5.83" 三色（BWR）适配完成**：
   - 修复 BUSY 极性差异、初始化序列（Panel Setting BWR 模式、VCOM/Data Interval 2 字节等）。
   - 修复红色极性与平面组合逻辑（红色像素要求 black plane=0, red plane=1）。
@@ -198,12 +211,12 @@
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | EPD 驱动 | 已完成 | SSD1619(4.2") + UC8179(5.83")，三色(BWR)支持，BUSY 极性自适配，DMA 分块发送 |
-| 双屏切换 | 已完成 | Web UI 选择面板，NVS 持久化，尺寸/能力动态适配 |
+| 双屏切换 | 已完成 | Web UI 选择面板，NVS 持久化；上市收口版保存后重启生效，避免热切换竞态 |
 | WiFi 热点/配网 | 已完成 | SoftAP + STA 配网（APSTA），失败回退 AP，NVS 持久化 |
 | HTTP 服务器 | 已完成 | Web UI + API：上传/画廊/显示/删除/状态/配网/OTA/日历等 |
 | 图片解码 | 已完成 | JPEG(TJpgDec) + PNG(LodePNG) + BMP，自动缩放与“铺满屏幕”居中裁剪 |
 | 三色量化与抖动 | 已完成 | 黑白 8×8 Bayer 抖动 + HSV 红色识别 + 红色抖动（black+red 双平面输出） |
-| 文件存储 | 已完成 | SPIFFS 画廊持久化，健康检测与自动修复 |
+| 文件存储 | 已完成 | SPIFFS 画廊持久化，健康检测；挂载失败不自动格式化用户数据，完整启动降级保留 AP/Web，配置页提供重试和确认格式化 |
 | 字体渲染 | 已完成 | UTF-8 字符串渲染（ASCII + 16×16 中文点阵），支持缩放与加粗效果 |
 | 内容模块 | 已完成 | 天气、时钟表盘、留言板、万年历（月视图+农历/节气/节日） |
 | Web 前端 | 已完成 | 主题切换（Loopy/Kitty/草莓熊）+ 屏幕选择/配网/OTA/日历等页面 |
@@ -267,8 +280,8 @@
 
 - **现状**：前端仅有上传/删除，无法预览已存储图片
 - **方案**：
-  - 后端新增 `GET /images/<name>` 端点，返回原始 JPEG 缩略图
-  - 前端增加画廊网格视图，支持点击预览、选择显示、单张删除
+  - 后端新增 `GET /image?name=...` 端点，返回画廊原始图片用于缩略图预览
+  - 前端增加画廊网格视图，启用 Basic Auth 后通过带认证 `fetch()` 转 Blob URL 预览，支持点击显示、单张删除
   - 显示 SPIFFS 剩余空间
 - **涉及文件**：`http_app.c`（前端 HTML + 后端路由）
 - **实现**：8 个 HTTP 端点（`/`, `/upload`, `/status`, `/images`, `/image`, `/show`, `/delete_image`, `/delete`）；画廊网格 + SPIFFS 用量条
@@ -290,7 +303,7 @@
 
 #### ✅ P1-额外 SPIFFS 自动损坏检测与修复（超出原规划）
 
-- **方案**：启动时快速写读测试，失败则自动格式化重新挂载
+- **当前方案**：启动时快速写读测试；挂载失败不自动格式化，避免误清空用户图库/画布素材；完整启动保留 AP/Web 诊断入口，快速刷新路径回睡；配置页可重试挂载，格式化必须输入确认口令。
 - **收益**：避免 SPIFFS 损坏导致设备不可用
 
 #### ✅ P1-额外 JPEG 文件流式解码（超出原规划）
@@ -449,7 +462,7 @@ msp/
 │   ├── app_main.c                 # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h        # EPD 驱动（SSD1619 4.2" + UC8179 5.83"，SPI DMA）
 │   ├── image_convert.c/h         # JPEG/PNG/BMP → EPD 帧缓冲（Floyd-Steinberg 抖色）
-│   ├── http_app.c/h              # HTTP 服务 + 约 57 条 API 路由 + Basic Auth + OTA
+│   ├── http_app.c/h              # HTTP 服务 + 约 60 条 API 路由 + Basic Auth + OTA
 │   ├── wifi_manager.c/h          # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h             # 画廊轮播调度器
 │   ├── weather.c/h               # 和风天气 HTTPS 拉取与渲染
@@ -470,7 +483,7 @@ msp/
 │   ├── display_policy.c/h        # 显示策略协调（互斥 + 手动屏标记）
 │   ├── device_identity.c/h       # 设备标识（MAC → AP SSID / mDNS）
 │   ├── time_sync.c/h             # SNTP 时间同步
-│   ├── spiffs_mount.c/h          # SPIFFS 挂载 + 自动修复
+│   ├── spiffs_mount.c/h          # SPIFFS 挂载 + 健康检查（不自动格式化用户数据）
 │   ├── lodepng.c/h               # LodePNG 第三方 PNG 解码库
 │   └── CMakeLists.txt
 ├── web/                           # Web UI（构建时嵌入固件）
@@ -553,9 +566,10 @@ Week 1          Week 2          Week 3          Week 4          Week 5          
 
 ```csv
 # Name,      Type, SubType,  Offset,    Size
-nvs,         data, nvs,      0x9000,    0x6000      # 24KB
-otadata,     data, ota,      0xF000,    0x2000      # 8KB — OTA 启动选择
-phy_init,    data, phy,      0x11000,   0x1000      # 4KB
+
+nvs,         data, nvs,      0x9000,    0xC000      # 48KB
+otadata,     data, ota,      0x15000,   0x2000      # 8KB — OTA 启动选择
+phy_init,    data, phy,      0x17000,   0x1000      # 4KB
 factory,     app,  factory,  0x20000,   0x200000    # 2MB — 出厂固件 (回滚保护)
 ota_0,       app,  ota_0,    0x220000,  0x200000    # 2MB — OTA 分区 A
 ota_1,       app,  ota_1,    0x420000,  0x200000    # 2MB — OTA 分区 B
@@ -618,6 +632,11 @@ spiffs,      data, spiffs,   0x620000,  0x9E0000    # ~10MB — 图片存储
 - [x] WiFi 断线自动重连（指数退避）已完成
 - [x] P3-3 深度睡眠与低功耗（独立闲置监控任务 + EXT1 唤醒 + 双启动路径 + 模式记忆）已完成
 - [x] HTTP Basic Auth 认证已完成
+- [x] GET 数据/媒体接口鉴权覆盖已完成
+- [x] 显示 epoch 仲裁与异步显示取消语义已完成
+- [x] SPIFFS 挂载失败不自动格式化与降级启动已完成
+- [x] 配置备份排除 Basic Auth 已完成
+- [x] EPD 初始化失败降级诊断已完成
 
 ---
 

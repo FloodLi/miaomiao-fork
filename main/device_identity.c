@@ -8,6 +8,8 @@
 
 static const char *TAG = "dev_id";
 
+#define DEFAULT_AP_PASSWORD "12345678"
+
 static char s_id6_lower[7];
 static char s_id6_upper[7];
 static char s_ap_ssid[33];
@@ -35,13 +37,23 @@ void device_identity_init(void)
     snprintf(s_instance, sizeof(s_instance), "EPaper-%s", s_id6_upper);
 
     s_inited = true;
-    ESP_LOGI(TAG, "Device id: AP SSID=%s, mDNS=%s.local, STA MAC …%s",
+    ESP_LOGI(TAG, "Device id: AP SSID=%s, mDNS=%s.local, STA MAC ...%s",
              s_ap_ssid, s_mdns_host, s_id6_upper);
 }
 
 const char *device_identity_get_ap_ssid(void)
 {
     return s_ap_ssid[0] ? s_ap_ssid : "ESP32_EPD";
+}
+
+const char *device_identity_get_ap_password(void)
+{
+    return DEFAULT_AP_PASSWORD;
+}
+
+bool device_identity_recovery_ap_mode(void)
+{
+    return false;
 }
 
 const char *device_identity_get_mdns_hostname(void)

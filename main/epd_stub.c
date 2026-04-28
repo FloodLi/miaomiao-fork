@@ -76,6 +76,30 @@ int  epd_plane_bytes(void) { return s_specs[s_panel].w * s_specs[s_panel].h / 8;
 bool epd_has_red(void)     { return s_specs[s_panel].has_red; }
 epd_panel_t epd_get_panel(void) { return s_panel; }
 
+esp_err_t epd_save_panel_config(epd_panel_t panel, int busy_idle)
+{
+    if (panel != EPD_PANEL_42_BWR && panel != EPD_PANEL_583_BWR)
+        return ESP_ERR_INVALID_ARG;
+    if (busy_idle != 0 && busy_idle != 1)
+        return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t e = nvs_open("epd", NVS_READWRITE, &h);
+    if (e != ESP_OK)
+        return e;
+    e = nvs_set_u8(h, "panel", (uint8_t)panel);
+    if (e == ESP_OK)
+        e = nvs_set_u8(h, "busy_idle", (uint8_t)busy_idle);
+    if (e == ESP_OK)
+        e = nvs_commit(h);
+    nvs_close(h);
+    if (e == ESP_OK) {
+        ESP_LOGI(TAG, "Panel config saved for next boot: %s, busy_idle=%d",
+                 s_specs[panel].name, busy_idle);
+    }
+    return e;
+}
+
 esp_err_t epd_set_panel(epd_panel_t panel)
 {
     if (panel != EPD_PANEL_42_BWR && panel != EPD_PANEL_583_BWR)
@@ -632,18 +656,29 @@ esp_err_t epd_init(void)
 {
     s_epd_ready = false;
 
+    if (!s_epd_mutex) {
+        s_epd_mutex = xSemaphoreCreateMutex();
+        if (!s_epd_mutex)
+            return ESP_ERR_NO_MEM;
+    }
+    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+
     gpio_config_t out = {
         .pin_bit_mask = (1ULL << PIN_EPD_DC) | (1ULL << PIN_EPD_CS) | (1ULL << PIN_EPD_RST),
         .mode = GPIO_MODE_OUTPUT,
     };
-    ESP_ERROR_CHECK(gpio_config(&out));
+    esp_err_t err = gpio_config(&out);
+    if (err != ESP_OK)
+        goto fail;
 
     gpio_config_t in = {
         .pin_bit_mask = (1ULL << PIN_EPD_BUSY),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = 1,
     };
-    ESP_ERROR_CHECK(gpio_config(&in));
+    err = gpio_config(&in);
+    if (err != ESP_OK)
+        goto fail;
 
     spi_bus_config_t buscfg = {
         .sclk_io_num = PIN_EPD_SCK,
@@ -653,7 +688,9 @@ esp_err_t epd_init(void)
         .quadhd_io_num = -1,
         .max_transfer_sz = EPD_SPI_MAX_TX,
     };
-    ESP_ERROR_CHECK(spi_bus_initialize(EPD_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
+    err = spi_bus_initialize(EPD_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK)
+        goto fail;
 
     spi_device_interface_config_t devcfg = {
         .clock_speed_hz = EPD_SPI_HZ,
@@ -661,23 +698,27 @@ esp_err_t epd_init(void)
         .spics_io_num = PIN_EPD_CS,
         .queue_size = 1,
     };
-    ESP_ERROR_CHECK(spi_bus_add_device(EPD_SPI_HOST, &devcfg, &s_spi));
-
-    s_epd_mutex = xSemaphoreCreateMutex();
-    assert(s_epd_mutex);
+    err = spi_bus_add_device(EPD_SPI_HOST, &devcfg, &s_spi);
+    if (err != ESP_OK)
+        goto fail;
 
     nvs_load_panel();
 
     ESP_LOGI(TAG, "EPD start: %s %dx%d, BUSY idle_level=%d (4.2\" default 0=Waveshare; NVS busy_idle=1 if GDE idle-high)",
-             s_specs[s_panel].name, epd_width(), epd_height(), busy_idle_effective());
+              s_specs[s_panel].name, epd_width(), epd_height(), busy_idle_effective());
 
     panel_run_full_init();
-    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
     epd_clear_to_white_locked();
-    xSemaphoreGive(s_epd_mutex);
 
     s_epd_ready = true;
+    xSemaphoreGive(s_epd_mutex);
+
     return ESP_OK;
+
+fail:
+    ESP_LOGE(TAG, "EPD init failed: %s", esp_err_to_name(err));
+    xSemaphoreGive(s_epd_mutex);
+    return err;
 }
 
 esp_err_t epd_clear_screen(void)

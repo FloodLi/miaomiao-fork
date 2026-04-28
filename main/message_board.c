@@ -1,6 +1,7 @@
 #include "message_board.h"
 
 #include <stdatomic.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -107,7 +108,7 @@ static int utf8_char_width(int cp, int scale)
 #define MARGIN_X  20
 #define MARGIN_Y  16
 
-static void render_message(void)
+static void render_message(unsigned epoch)
 {
     fb_t *fb = fb_create();
     if (!fb) {
@@ -219,13 +220,25 @@ static void render_message(void)
             fb_utf8(fb, (fb->width - 3 * 8) / 2, hint_y, "...", COLOR_BLACK);
     }
 
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        ESP_LOGI(TAG, "skip stale message render");
+        return;
+    }
+
     /* export and display */
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        fb_raw_file_unlock();
+        ESP_LOGI(TAG, "skip stale message render before export");
+        return;
+    }
     esp_err_t err = fb_export(fb, raw_path);
     fb_destroy(fb);
 
-    if (err == ESP_OK && epd_is_ready()) {
+    if (err == ESP_OK && epd_is_ready() && display_policy_epoch_is_current(epoch)) {
         ESP_LOGI(TAG, "FB exported, sending to EPD (%d lines, scale=%d)...", line_count, scale);
         esp_err_t disp_err = epd_display_from_file(raw_path);
         if (disp_err == ESP_OK) {
@@ -265,6 +278,7 @@ esp_err_t message_board_set_config(const msg_config_t *cfg)
 
 static SemaphoreHandle_t s_render_mutex;
 static atomic_bool       s_pending;
+static atomic_uint       s_pending_epoch;
 
 esp_err_t message_board_init(void)
 {
@@ -281,24 +295,25 @@ esp_err_t message_board_init(void)
 
 static void render_task(void *arg)
 {
-    (void)arg;
+    unsigned epoch = (unsigned)(uintptr_t)arg;
     for (;;) {
-        s_pending = false;
+        atomic_store(&s_pending, false);
         ESP_LOGI(TAG, "Render task started");
-        render_message();
+        render_message(epoch);
         ESP_LOGI(TAG, "Render task done");
 
         portENTER_CRITICAL(&s_cfg_mux);
         bool has_text = (s_cfg.text[0] != '\0');
         portEXIT_CRITICAL(&s_cfg_mux);
-        if (!s_pending || !has_text) break;
+        if (!atomic_load(&s_pending) || !has_text) break;
+        epoch = atomic_load(&s_pending_epoch);
     }
 
     xSemaphoreGive(s_render_mutex);
     vTaskDelete(NULL);
 }
 
-esp_err_t message_board_show(void)
+esp_err_t message_board_show_queued(unsigned *out_epoch)
 {
     if (s_cfg.text[0] == '\0') {
         ESP_LOGW(TAG, "No message text set");
@@ -308,13 +323,19 @@ esp_err_t message_board_show(void)
     if (!s_render_mutex)
         return ESP_ERR_INVALID_STATE;
 
+    unsigned epoch = display_policy_begin_manual_display();
+    if (out_epoch)
+        *out_epoch = epoch;
+
     if (xSemaphoreTake(s_render_mutex, 0) != pdTRUE) {
-        s_pending = true;
+        atomic_store(&s_pending_epoch, epoch);
+        atomic_store(&s_pending, true);
         ESP_LOGI(TAG, "Render queued (will re-render after current finishes)");
         return ESP_OK;
     }
 
-    BaseType_t ret = xTaskCreate(render_task, "msg_render", 8192, NULL, 5, NULL);
+    BaseType_t ret = xTaskCreate(render_task, "msg_render", 8192,
+                                 (void *)(uintptr_t)epoch, 5, NULL);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create render task");
         xSemaphoreGive(s_render_mutex);
@@ -322,4 +343,17 @@ esp_err_t message_board_show(void)
     }
 
     return ESP_OK;
+}
+
+esp_err_t message_board_show(void)
+{
+    return message_board_show_queued(NULL);
+}
+
+void message_board_wait_idle(void)
+{
+    if (!s_render_mutex)
+        return;
+    xSemaphoreTake(s_render_mutex, portMAX_DELAY);
+    xSemaphoreGive(s_render_mutex);
 }

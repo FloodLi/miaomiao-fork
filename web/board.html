@@ -684,7 +684,7 @@ function loadTemplate(idx) {
 
 async function init() {
     try {
-        const r = await fetch('/panel_config');
+        const r = await fetch('/panel_config',epdFetchOpts());
         const d = await r.json();
         EPD_W = d.width  || 400;
         EPD_H = d.height || 300;

@@ -52,6 +52,12 @@ static unsigned gallery_upload_epoch(void)
     return atomic_load(&s_upload_epoch);
 }
 
+static void gallery_restore_manual_if_current(bool was_manual, unsigned display_epoch)
+{
+    if (!was_manual && display_policy_epoch_is_current(display_epoch))
+        display_policy_set_manual_screen_active(false);
+}
+
 /** 追加 JSON 片段；*len 为已用长度（不含 '\\0'），cap 为 buf 总容量 */
 static bool gallery_json_append(char *buf, size_t cap, size_t *len, const char *fmt, ...)
 {
@@ -75,6 +81,9 @@ static bool gallery_json_append(char *buf, size_t cap, size_t *len, const char *
 static bool is_safe_filename(const char *name)
 {
     if (!name || name[0] == '\0') return false;
+    size_t len = strlen(name);
+    if (len > 60 || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        return false;
     for (const char *p = name; *p; p++) {
         char c = *p;
         if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
@@ -84,14 +93,16 @@ static bool is_safe_filename(const char *name)
     return true;
 }
 
-/** 以图片为主页时关闭全页天气定时拉取；若时钟已开且要天气摘要，则保留 API 供嵌入式拉取 */
+/** Image focus is transient. Display policy pauses background weather without rewriting NVS. */
 static void weather_disable_if_enabled_for_image_focus(void)
 {
-    /* Image focus is transient state; do not rewrite the user's weather config. */
+    /* Kept as a call-site marker; do not disable the user's weather configuration here. */
 }
 
 esp_err_t gallery_images_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     DIR *dir = opendir(http_images_dir);
     if (!dir) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "目录读取失败");
@@ -153,6 +164,8 @@ esp_err_t gallery_images_get_handler(httpd_req_t *req)
 
 esp_err_t gallery_image_get_handler(httpd_req_t *req)
 {
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
     char name[64];
     if (!http_get_query_param(req, "name", name, sizeof(name))) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "缺少文件名");
@@ -223,13 +236,12 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     }
 
     bool was_manual = display_policy_manual_screen_active();
-    display_policy_set_manual_screen_active(true);
-    display_policy_bump_display_epoch();
-    scheduler_notify_manual_show();
+    unsigned display_epoch = display_policy_begin_manual_display();
 
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
-    if (gallery_upload_busy() || gallery_upload_epoch() != upload_epoch) {
+    if (gallery_upload_busy() || gallery_upload_epoch() != upload_epoch ||
+        !display_policy_epoch_is_current(display_epoch)) {
         fb_raw_file_unlock();
         ESP_LOGI(TAG, "Discard stale gallery show '%s' after upload request", name);
         httpd_resp_set_status(req, "409 Conflict");
@@ -238,23 +250,33 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     }
     esp_err_t cerr = image_convert_file_to_epd_raw(jpeg_path, raw_path);
     esp_err_t derr = ESP_OK;
-    if (cerr == ESP_OK)
+    if (cerr == ESP_OK && display_policy_epoch_is_current(display_epoch))
         derr = epd_display_from_file(raw_path);
     fb_raw_file_unlock();
     if (cerr != ESP_OK) {
-        if (!was_manual)
-            display_policy_set_manual_screen_active(false);
+            gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "图片转换失败");
         return ESP_OK;
     }
+    if (!display_policy_epoch_is_current(display_epoch)) {
+        ESP_LOGI(TAG, "Discard stale gallery show '%s' before display", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "stale gallery show skipped");
+        return ESP_OK;
+    }
     if (derr != ESP_OK) {
-        if (!was_manual)
-            display_policy_set_manual_screen_active(false);
+            gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "墨水屏刷新失败");
         return ESP_OK;
     }
+    if (!display_policy_epoch_is_current(display_epoch)) {
+        ESP_LOGI(TAG, "Gallery show '%s' completed but was superseded", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "gallery show superseded");
+        return ESP_OK;
+    }
     scheduler_set_current_image_name(name);
-    /* 禁止时钟/天气摘要任务继续写 image.bin 抢屏，直到用户点「立即显示时钟」 */
+    /* 手动画面由 display_policy 控制，避免后台天气/时钟继续写 image.bin 抢屏。 */
     weather_disable_if_enabled_for_image_focus();
     scheduler_notify_manual_show();
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
@@ -290,10 +312,12 @@ esp_err_t gallery_delete_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char tmp[64];
-    while (req->content_len > 0) {
-        int r = httpd_req_recv(req, tmp, sizeof(tmp));
+    int remain = req->content_len;
+    while (remain > 0) {
+        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
+        int r = httpd_req_recv(req, tmp, to_recv);
         if (r <= 0) break;
-        req->content_len -= r;
+        remain -= r;
     }
 
     int ok1 = (remove(http_app_cfg.upload_path)  == 0) ? 1 : 0;
@@ -325,18 +349,15 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    bool was_manual = display_policy_manual_screen_active();
-    display_policy_set_manual_screen_active(true);
-    display_policy_bump_display_epoch();
-    scheduler_notify_manual_show();
     unsigned upload_epoch = gallery_upload_begin();
+    bool was_manual = display_policy_manual_screen_active();
+    unsigned display_epoch = display_policy_begin_manual_display();
 
     FILE *f = fopen(http_app_cfg.upload_path, "wb");
     if (!f) {
         ESP_LOGE(TAG, "fopen(%s) failed: errno=%d", http_app_cfg.upload_path, errno);
         gallery_upload_end(upload_epoch);
-        if (!was_manual)
-            display_policy_set_manual_screen_active(false);
+            gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "文件打开失败");
         return ESP_OK;
     }
@@ -353,8 +374,7 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
             fclose(f);
             remove(http_app_cfg.upload_path);
             gallery_upload_end(upload_epoch);
-            if (!was_manual)
-                display_policy_set_manual_screen_active(false);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收数据失败");
             return ESP_OK;
         }
@@ -362,8 +382,7 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
             fclose(f);
             remove(http_app_cfg.upload_path);
             gallery_upload_end(upload_epoch);
-            if (!was_manual)
-                display_policy_set_manual_screen_active(false);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "客户端断开连接");
             return ESP_OK;
         }
@@ -378,8 +397,7 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
             fclose(f);
             remove(http_app_cfg.upload_path);
             gallery_upload_end(upload_epoch);
-            if (!was_manual)
-                display_policy_set_manual_screen_active(false);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "写入失败");
             return ESP_OK;
         }
@@ -445,8 +463,7 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
     if (!copy_ok) {
         remove(final_path);
         gallery_upload_end(upload_epoch);
-        if (!was_manual)
-            display_policy_set_manual_screen_active(false);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "图库保存失败");
         return ESP_OK;
     }
@@ -456,19 +473,27 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
 
     if (!http_require_epd_ready(req)) {
         gallery_upload_end(upload_epoch);
-        if (!was_manual)
-            display_policy_set_manual_screen_active(false);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
         return ESP_OK;
     }
 
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
+    if (!display_policy_epoch_is_current(display_epoch) ||
+        gallery_upload_epoch() != upload_epoch) {
+        fb_raw_file_unlock();
+        gallery_upload_end(upload_epoch);
+        ESP_LOGI(TAG, "Upload '%s' display skipped: newer request owns display", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "upload saved, display skipped by newer request");
+        return ESP_OK;
+    }
     esp_err_t cerr = image_convert_file_to_epd_raw(http_app_cfg.upload_path, raw_path);
     if (cerr != ESP_OK) {
         fb_raw_file_unlock();
+        remove(final_path);
         gallery_upload_end(upload_epoch);
-        if (!was_manual)
-            display_policy_set_manual_screen_active(false);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                             "图片转换失败：请上传标准的 JPEG、PNG 或 BMP 图片");
         return ESP_OK;
@@ -477,18 +502,35 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Raw ready at %s, free heap: %lu",
              raw_path, (unsigned long)esp_get_free_heap_size());
 
+    if (!display_policy_epoch_is_current(display_epoch) ||
+        gallery_upload_epoch() != upload_epoch) {
+        fb_raw_file_unlock();
+        gallery_upload_end(upload_epoch);
+        ESP_LOGI(TAG, "Upload '%s' display skipped after convert: newer request owns display", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "upload saved, display skipped by newer request");
+        return ESP_OK;
+    }
+
     esp_err_t derr = epd_display_from_file(raw_path);
     fb_raw_file_unlock();
     if (derr != ESP_OK) {
         ESP_LOGW(TAG, "EPD display failed: %s", esp_err_to_name(derr));
         gallery_upload_end(upload_epoch);
-        if (!was_manual)
-            display_policy_set_manual_screen_active(false);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                             "图片已转换但墨水屏刷新失败");
         return ESP_OK;
     }
 
+    if (!display_policy_epoch_is_current(display_epoch) ||
+        gallery_upload_epoch() != upload_epoch) {
+        gallery_upload_end(upload_epoch);
+        ESP_LOGI(TAG, "Upload '%s' display completed but was superseded", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "upload display superseded");
+        return ESP_OK;
+    }
     scheduler_set_current_image_name(name);
     weather_disable_if_enabled_for_image_focus();
     scheduler_notify_manual_show();

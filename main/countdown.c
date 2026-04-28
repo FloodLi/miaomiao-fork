@@ -324,6 +324,8 @@ esp_err_t countdown_show(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    unsigned epoch = display_policy_display_epoch();
+
     fb_t *fb = fb_create();
     if (!fb) return ESP_ERR_NO_MEM;
     fb_clear(fb);
@@ -360,12 +362,23 @@ esp_err_t countdown_show(void)
     }
 
     fb_raw_file_lock();
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        fb_raw_file_unlock();
+        ESP_LOGI(TAG, "Countdown display skipped: stale request");
+        return ESP_ERR_INVALID_STATE;
+    }
     esp_err_t exp_err = fb_export(fb, "/spiffs/image.bin");
     fb_destroy(fb);
     if (exp_err != ESP_OK) {
         fb_raw_file_unlock();
         ESP_LOGE(TAG, "fb_export failed: %s", esp_err_to_name(exp_err));
         return exp_err;
+    }
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_raw_file_unlock();
+        ESP_LOGI(TAG, "Countdown display skipped before EPD refresh");
+        return ESP_ERR_INVALID_STATE;
     }
     esp_err_t disp_err = epd_display_from_file("/spiffs/image.bin");
     fb_raw_file_unlock();

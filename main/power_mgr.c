@@ -215,8 +215,16 @@ esp_err_t power_mgr_arm(void)
 
 void power_mgr_enter_sleep(void)
 {
-    uint64_t sleep_us = (uint64_t)s_cfg.interval_min * 60ULL * 1000000ULL;
-    esp_sleep_enable_timer_wakeup(sleep_us);
+    power_config_t cfg;
+    power_mgr_get_config(&cfg);
+
+    uint64_t sleep_us = (uint64_t)cfg.interval_min * 60ULL * 1000000ULL;
+    esp_err_t terr = esp_sleep_enable_timer_wakeup(sleep_us);
+    if (terr != ESP_OK) {
+        ESP_LOGE(TAG, "timer wakeup config failed: %s", esp_err_to_name(terr));
+        power_mgr_reset_activity();
+        return;
+    }
 
     uint64_t gpio_mask =
         (1ULL << WAKE_GPIO_SW3) | (1ULL << WAKE_GPIO_SW5);
@@ -228,7 +236,7 @@ void power_mgr_enter_sleep(void)
 
     ESP_LOGI(TAG,
              "Entering deep sleep for %d min (EXT1: GPIO %d/%d only; SW4 not on RTC)",
-             s_cfg.interval_min, WAKE_GPIO_SW5, WAKE_GPIO_SW3);
+             cfg.interval_min, WAKE_GPIO_SW5, WAKE_GPIO_SW3);
 
     /* Do not sleep while an EPD transfer/refresh still owns the display mutex. */
     if (epd_is_ready() && !epd_wait_idle(70000)) {

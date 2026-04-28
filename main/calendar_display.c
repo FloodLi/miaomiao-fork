@@ -371,7 +371,7 @@ static void cal_render_month(fb_t *fb, int year, int month,
     }
 }
 
-static void cal_run_render(int year, int month)
+static void cal_run_render(int year, int month, unsigned epoch)
 {
     fb_t *fb = fb_create();
     if (!fb) {
@@ -383,6 +383,12 @@ static void cal_run_render(int year, int month)
     cal_today_ymd(&ty, &tm, &td);
 
     cal_render_month(fb, year, month, ty, tm, td);
+
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        ESP_LOGI(TAG, "skip stale calendar render %d-%02d", year, month);
+        return;
+    }
 
     esp_err_t err = epd_display_fb_free(fb);
 
@@ -401,12 +407,13 @@ static void cal_run_render(int year, int month)
 typedef struct {
     int year;
     int month;
+    unsigned epoch;
 } cal_task_arg_t;
 
 static void calendar_task(void *arg)
 {
     cal_task_arg_t *a = (cal_task_arg_t *)arg;
-    cal_run_render(a->year, a->month);
+    cal_run_render(a->year, a->month, a->epoch);
     free(a);
     xSemaphoreGive(s_mutex);
     vTaskDelete(NULL);
@@ -446,6 +453,8 @@ esp_err_t calendar_display_show(int year, int month)
         return ESP_ERR_INVALID_STATE;
     }
 
+    unsigned epoch = display_policy_display_epoch();
+
     if (xSemaphoreTake(s_mutex, 0) != pdTRUE) {
         ESP_LOGW(TAG, "render already in progress");
         return ESP_ERR_INVALID_STATE;
@@ -458,6 +467,7 @@ esp_err_t calendar_display_show(int year, int month)
     }
     a->year = year;
     a->month = month;
+    a->epoch = epoch;
 
     if (xTaskCreate(calendar_task, "cal_render", 8192, a, 5, NULL) != pdPASS) {
         free(a);

@@ -38,6 +38,7 @@ esp_err_t    epd_display_test_pattern(void);
 
 epd_panel_t  epd_get_panel(void);
 esp_err_t    epd_set_panel(epd_panel_t panel);
+esp_err_t    epd_save_panel_config(epd_panel_t panel, int busy_idle);
 
 /** 当前 BUSY 空闲电平：0=空闲时低，1=空闲时高（与 NVS epd/busy_idle 一致） */
 int          epd_busy_idle_level(void);
