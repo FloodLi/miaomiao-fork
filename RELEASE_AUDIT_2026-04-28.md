@@ -272,7 +272,7 @@ bool display_policy_epoch_is_current(unsigned epoch);
 
 ### 画布编辑器
 
-- 保存布局采用临时文件校验后替换。
+- 保存布局采用临时文件接收、JSON 校验、加锁写入正式布局文件；针对当前 SPIFFS `rename()` 返回 `errno=5` 的真机行为，已改为直接覆盖写入并保留旧布局备份恢复路径。
 - 上传图标/图片后列表刷新正常。
 - 画布显示任务必须参与全局显示 epoch。
 - 启用认证后所有 canvas 数据接口都要校验。
