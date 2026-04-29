@@ -158,35 +158,33 @@ git clone https://gitee.com/gxp666111/miaomiao.git
 cd miaomiao   # 或你本地的 msp 目录名
 ```
 
-### 3. 编译固件
+### 3. 编译与烧录
 
 ```powershell
-# 设置目标芯片
+# 首次配置目标芯片，只需要执行一次
 
 idf.py set-target esp32s3
 
-# 编译（首次编译约 3-5 分钟）
+# 编译、烧录并打开串口日志
 
-idf.py build
+idf.py -p COM3 build flash monitor
 ```
 
-### 4. 烧录固件
+> 将 `COM3` 替换为你电脑上的实际串口号。日常升级和新芯片首次烧录都使用这条命令，不需要先执行 `erase-flash`。
+
+### 4. 关于 erase-flash
 
 ```powershell
-# 首次烧录需先擦除 Flash
+# 仅在 Flash 内容混乱、分区表切换或需要完全恢复出厂状态时使用
 
 idf.py -p COM3 erase-flash
 
-# 烧录固件
+# 擦除后重新烧录
 
-idf.py -p COM3 flash
-
-# 查看串口日志
-
-idf.py -p COM3 monitor
+idf.py -p COM3 build flash monitor
 ```
 
-> 💡 将 `COM3` 替换为你电脑上的实际串口号。
+> 注意：`erase-flash` 会清空整颗 Flash，包括 WiFi 配置、NVS 设置、SPIFFS 里的图片和布局。新芯片本来就是空的，不需要先擦除。若擦除后首次启动提示 SPIFFS 未挂载，请连接设备热点进入网页恢复/格式化文件系统。
 
 ### 5. 首次使用
 
