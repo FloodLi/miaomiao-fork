@@ -1,12 +1,11 @@
 # ESP32-S3 三色墨水屏图片上传显示系统 — 实现文档
 
-<!-- release-sync-2026-04-28 -->
-## 实现状态快照（2026-04-28，本轮修复后）
+## 实现状态快照（2026-04-28）
 
-当前实现已经覆盖图片转换、图库、轮播、天气、时钟、课程表、待办、倒计时、留言板、画布、OTA 和低功耗。本轮重点完成上市前质量修复：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容，挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；AP 默认密码固定为 `12345678`，屏幕不可用时仍可进入网页恢复配置，快速刷新回睡，并提供 `/spiffs_remount` 与需要确认口令的 `/spiffs_format`；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志。
+当前实现已经覆盖图片转换、图库、轮播、天气、时钟、课程表、待办、倒计时、留言板、画布、OTA 和低功耗。本轮重点完成稳定性修复：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容；挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志。
 
-后续实现重点：OTA 与低功耗长稳测试、图片算法参数化和网页预览、以及把当前 epoch 仲裁进一步演进成统一显示队列。完整整改清单见：[上市前审查与整改清单](RELEASE_AUDIT_2026-04-28.md)。
-<!-- /release-sync-2026-04-28 -->
+后续实现重点：OTA 与低功耗长稳测试、图片算法参数化和网页预览、以及把当前 epoch 仲裁进一步演进成统一显示队列。
+
 > 项目代号：**epaper_uploader**
 > 硬件平台：ESP32-S3 + SSD1619(4.2" 400×300) / UC8179(5.83" 648×480) 三色墨水屏
 > 技术栈：ESP-IDF（**最低 v5.5.1**）/ C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
@@ -161,7 +160,7 @@ msp/
 
 ### 3.2.1 显示请求仲裁与异步语义
 
-上市收口版把“谁有资格最终刷屏”收敛到 `display_policy`：用户主动触发的显示入口先调用 `display_policy_begin_manual_display()` 获取 epoch，并在最终 `epd_display_*()` 前调用 `display_policy_epoch_is_current(epoch)`。如果用户又上传图片、点画布、按键切换或触发其它显示，新请求会 bump epoch，旧任务在刷屏前退出，避免旧画面反盖新画面。
+当前版本把“谁有资格最终刷屏”收敛到 `display_policy`：用户主动触发的显示入口先调用 `display_policy_begin_manual_display()` 获取 epoch，并在最终 `epd_display_*()` 前调用 `display_policy_epoch_is_current(epoch)`。如果用户又上传图片、点画布、按键切换或触发其它显示，新请求会 bump epoch，旧任务在刷屏前退出，避免旧画面反盖新画面。
 
 日历、画布、留言板仍使用内部渲染任务以免阻塞 HTTP 服务器过久，但 HTTP 层已经不再把“任务创建成功”当作“屏幕显示成功”：`/calendar_show`、`/canvas_show`、`/msg_show` 会等待对应渲染任务结束，被新请求抢占时返回 `canceled=true`。后续若做统一 display queue，应保持同样的 epoch 和取消语义。
 ### 3.3 数据流详解
@@ -681,7 +680,7 @@ SPIFFS 使用率进度条颜色自适应：<70% 绿色、70~90% 黄色、>90% �
 ```
 
 - 使用快速的写读验证替代耗时的 `esp_spiffs_check()`（后者可能花费数十秒）
-- 当前上市收口版已改为 `format_if_mount_failed=false`；配置页提供“重试文件系统”和“格式化 SPIFFS”入口，格式化必须输入确认口令，避免误清空图库和画布素材
+- 当前版本已改为 `format_if_mount_failed=false`；配置页提供“重试文件系统”和“格式化 SPIFFS”入口，格式化必须输入确认口令，避免误清空图库和画布素材
 - 挂载失败的完整启动路径会先启动 HTTP，再尝试初始化 EPD；若屏幕可用，会显示中文 `文件系统恢复` 页面，包含 AP 热点名、默认密码 `12345678`、`192.168.4.1/config` 和 `FORMAT_SPIFFS` 确认词，避免用户在诊断模式下找不到恢复入口
 - 若屏幕型号错误或屏幕完全不显示，用户仍可直接连接 `ESP32_EPD_xxxxxx` 热点，默认密码为 `12345678`，用于进入网页切换面板或恢复配置
 - 挂载成功后自动创建画廊目录 `/spiffs/images`
@@ -868,7 +867,7 @@ idf.py -p COMx erase-flash
 idf.py -p COMx flash
 ```
 
-**原因**：SPIFFS 分区中可能存在旧的文件系统数据，与新固件的分区布局不兼容，会导致挂载失败或数据损坏。擦除后 SPIFFS 区域为全 `0xFF`，当前上市收口版 `format_if_mount_failed=false`，只建议在出厂/用户确认恢复出厂时格式化。
+**原因**：SPIFFS 分区中可能存在旧的文件系统数据，与新固件的分区布局不兼容，会导致挂载失败或数据损坏。擦除后 SPIFFS 区域为全 `0xFF`，当前版本 `format_if_mount_failed=false`，只建议在出厂/用户确认恢复出厂时格式化。
 
 ---
 

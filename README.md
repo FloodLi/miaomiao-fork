@@ -75,7 +75,7 @@
 
 ## 🔧 硬件要求
 
-主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。两种屏幕二选一；固件可保存面板配置，上市版建议**保存后重启生效**，避免热切换期间 framebuffer/raw cache 尺寸不一致。
+主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；墨水屏可选 **4.2" SSD1619（400×300 BWR）** 或 **5.83" UC8179（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。两种屏幕二选一；固件可保存面板配置，建议**保存后重启生效**，避免热切换期间 framebuffer/raw cache 尺寸不一致。
 
 以下为复刻时常用器件的**示意配图**（文件名与下图一致）；**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
 
@@ -299,7 +299,6 @@ msp/
 | 文档 | 说明 | 适用人群 |
 |------|------|---------|
 | [文档索引.md](文档索引.md) | 全部文档导航与按角色检索 | 所有人 |
-| [RELEASE_AUDIT_2026-04-28.md](RELEASE_AUDIT_2026-04-28.md) | 上市前风险、整改顺序、测试矩阵与放行门槛 | 开发 / 测试 / 生产 / 售后 |
 | [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) | 工程技术文档（架构/API/模块）⭐ | 开发者 |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
 | [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |
