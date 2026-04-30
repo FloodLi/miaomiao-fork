@@ -1,12 +1,10 @@
 # epaper_uploader — ESP32-S3 智能墨水屏终端
 
-<!-- release-sync-2026-04-28 -->
-## 上市前状态（2026-04-28，本轮修复后）
+## 项目状态（2026-04-28）
 
-当前固件已完成第一轮上市前 P1/P2 收口：显示请求统一接入 display epoch 仲裁，旧渲染/旧图库请求在刷屏前会被拦截；`/calendar_show`、`/canvas_show`、`/msg_show` 会等待本次渲染结束再返回，若被更新的显示请求抢占会返回 `canceled=true`；API/配置/媒体类 GET 接口已补齐 Basic Auth；面板配置改为保存到 NVS 后重启生效；SPIFFS 挂载失败不再自动格式化用户数据，完整启动会保留 AP/Web 诊断入口，配置页提供重试挂载和确认格式化入口，若屏幕可用还会显示 `文件系统恢复` 恢复页（热点名、默认密码与恢复地址），屏幕不可用时也可直接用默认热点密码 `12345678` 进入网页；配置备份/恢复不包含 Basic Auth，避免误关闭认证；图库坏图转换失败会清理入库文件；正常启动时 EPD 初始化失败会保留 AP/Web 诊断入口；串口日志不再输出 AP 密码。本轮已通过本地 `idf.py build`。
+本项目是一个面向复刻和二次开发的开源 ESP32-S3 墨水屏终端固件。当前版本已完成一轮稳定性整理，重点增强了显示任务仲裁、Web 接口鉴权、SPIFFS 异常恢复、面板配置持久化、低功耗唤醒和 OTA 相关流程；本地已通过 `idf.py build`。
 
-上市前仍建议重点回归：OTA 成功/失败/回滚、低功耗定时唤醒、轮播+天气 24 小时稳定性、连续上传抢占场景、认证开启后的手机端访问，以及图片算法参数化与网页预览。详细风险、测试矩阵和整改记录见：[上市前审查与整改清单](RELEASE_AUDIT_2026-04-28.md)。
-<!-- /release-sync-2026-04-28 -->
+不同批次的屏幕、驱动 IC、BUSY 电平、供电方案和外壳结构可能存在差异。首次复刻建议先按本文档完成基础烧录与网页配置，再根据实际硬件在配置页选择屏幕型号、确认 BUSY 电平和刷屏效果。欢迎提交 Issue、改进建议或适配更多屏幕型号。
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
 [![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)]()
