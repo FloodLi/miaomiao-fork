@@ -29,3 +29,11 @@ __pycache__/
 
 # Local reference clones (not part of firmware)
 otto-robot/
+E-Paper_ESP32_Driver_Board_Code/
+
+# Local original media/reference files. Public README uses docs/images/.
+复刻所需物料图/
+水墨屏内部图/
+水墨屏原理图/
+水墨屏实物展示/
+网页效果展示图片/
