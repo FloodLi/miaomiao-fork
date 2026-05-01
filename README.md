@@ -7,7 +7,7 @@
 不同批次的屏幕、驱动 IC、BUSY 电平、供电方案和外壳结构可能存在差异。首次复刻建议先按本文档完成基础烧录与网页配置，再根据实际硬件在配置页选择屏幕型号、确认 BUSY 电平和刷屏效果。欢迎提交 Issue、改进建议或适配更多屏幕型号。
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
 [![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
-[![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)]()
+[![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)](#-硬件要求)
 
 > 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。  
 > **发布版本：v2.3.1**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
@@ -322,4 +322,4 @@ msp/
 
 ---
 
-> 💡 **复刻提示**：PCB 和外壳文件将在后续单独发布，请关注仓库更新。
+> 💡 **复刻提示**：当前仓库公开固件、Web、硬件接线提要和展示素材；若你需要 PCB、外壳或采购级 BOM，请通过 Issue / 交流群确认最新发布状态。
