@@ -11,6 +11,7 @@
 - 画布属性面板改为分组折叠，并增强图层列表、选中框、控制点、对齐辅助线和发送前确认预览。
 - 新增 Gitee 二维码名片模板，默认指向 `https://gitee.com/gxp666111/miaomiao`。
 - 新增 `CONTRIBUTING.md`、Gitee Issue 模板、PR 模板和 Release 草案。
+- README 和工程文档补充微雪移植面板支持状态，区分主测、已验证和待实机验证。
 
 ### 修复
 

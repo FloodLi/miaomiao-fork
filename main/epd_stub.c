@@ -1,5 +1,5 @@
 /**
- * EPD 驱动 — SSD1619（4.2" 400×300 BWR）与 UC8179（5.83" 648×480 BWR）
+ * EPD 驱动 — 主测 SSD1619 / UC8179，并接入多款 Waveshare 面板配置
  *
  * 引脚与工程原理图一致：SCK=4 MOSI=5 DC=7 CS=15 RST=6 BUSY=16，SPI2，Mode0，2MHz。
  * BUSY：Waveshare SSD1619 4.2 B（epd4in2b_V2 ReadBusy，flag=新）为「忙=高、空闲=低」，默认 idle=0。
