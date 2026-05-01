@@ -1,6 +1,6 @@
 # 课程表功能使用说明
 
-## 当前状态（2026-04-28）
+## 当前状态（2026-05-02）
 
 课程表功能已接入多模式显示、网页配置、Basic Auth 和 display epoch 仲裁。启用认证后，`GET /timetable.json`、`POST /timetable`、`POST /timetable_show` 均需授权；手动显示课程表时会参与全局显示仲裁，避免旧显示任务覆盖用户新操作。
 

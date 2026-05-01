@@ -210,6 +210,19 @@ static char *gunzip(const char *src, int src_len)
 #define WEATHER_HTTP_TIMEOUT_MS 25000
 #define WEATHER_HTTP_RETRIES    3
 
+static void redact_weather_url(const char *url, char *out, size_t out_len)
+{
+    if (!url || !out || out_len == 0) return;
+    snprintf(out, out_len, "%s", url);
+    char *key = strstr(out, "key=");
+    if (!key) return;
+    key += 4;
+    char *end = strchr(key, '&');
+    char suffix[96] = {0};
+    if (end) snprintf(suffix, sizeof(suffix), "%s", end);
+    snprintf(key, (size_t)(out + out_len - key), "<redacted>%s", suffix);
+}
+
 static char *http_get(const char *url)
 {
     resp_buf_t rb = {
@@ -242,7 +255,9 @@ static char *http_get(const char *url)
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
         if (!client) {
-            ESP_LOGE(TAG, "esp_http_client_init failed for %s", url);
+            char safe_url[256];
+            redact_weather_url(url, safe_url, sizeof(safe_url));
+            ESP_LOGE(TAG, "esp_http_client_init failed for %s", safe_url);
             free(rb.buf);
             return NULL;
         }
@@ -258,7 +273,9 @@ static char *http_get(const char *url)
     }
 
     if (err != ESP_OK || status != 200) {
-        ESP_LOGW(TAG, "HTTP GET %s failed after %d tries: err=%s status=%d", url,
+        char safe_url[256];
+        redact_weather_url(url, safe_url, sizeof(safe_url));
+        ESP_LOGW(TAG, "HTTP GET %s failed after %d tries: err=%s status=%d", safe_url,
                  WEATHER_HTTP_RETRIES, esp_err_to_name(err), status);
         free(rb.buf);
         return NULL;

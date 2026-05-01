@@ -1,8 +1,8 @@
 # epaper_uploader — ESP32-S3 智能墨水屏终端
 
-## 项目状态（2026-04-28）
+## 项目状态（v2.3.1 / 2026-05-02）
 
-本项目是一个面向复刻和二次开发的开源 ESP32-S3 墨水屏终端固件。当前版本已完成一轮稳定性整理，重点增强了显示任务仲裁、Web 接口鉴权、SPIFFS 异常恢复、面板配置持久化、低功耗唤醒和 OTA 相关流程；本地已通过 `idf.py build`。
+本项目是一个面向复刻和二次开发的开源 ESP32-S3 墨水屏终端固件。当前版本已完成公开发布整理：支持 4.2"/5.83" BWR 屏幕配置，完成 PSRAM 友好的图片转换与画板渲染优化，增强画板素材、模板、图层和二维码名片能力，并清理了外部参考包与重复原始素材目录；核心固件本地已通过 `idf.py build` 和真机刷屏验证。
 
 不同批次的屏幕、驱动 IC、BUSY 电平、供电方案和外壳结构可能存在差异。首次复刻建议先按本文档完成基础烧录与网页配置，再根据实际硬件在配置页选择屏幕型号、确认 BUSY 电平和刷屏效果。欢迎提交 Issue、改进建议或适配更多屏幕型号。
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
@@ -10,7 +10,7 @@
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)]()
 
 > 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。  
-> **发布版本：v2.3.0**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。  
+> **发布版本：v2.3.1**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 > **构建环境**：**ESP-IDF 最低要求 v5.5.1**；同大版本内更高发行版（如 5.5.4）一般可直接使用，若遇兼容问题以 5.5.1 为对照。
 
 ## 💬 交流群（QQ）
@@ -276,7 +276,7 @@ msp/
 | 画布留言板 | `/board`, `/canvas_layout`, `/canvas_show`, `/canvas_icon_upload` | WYSIWYG 画板与素材管理 |
 | 系统 | `/status`, `/version`, `/ota`, `/auth_config`, `/power_config` | 系统管理 |
 
-> 📖 完整 API 文档见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md#六-api-接口文档)
+> 📖 完整 API 文档见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 的“六、API 接口文档”；完整路由以 `main/http_app.c` 注册表为准。
 
 ## ⚡ 低功耗模式
 
@@ -299,6 +299,8 @@ msp/
 | [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) | 工程技术文档（架构/API/模块）⭐ | 开发者 |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
 | [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本更新记录 | 用户 / 维护者 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
 | [hardware/BOM.md](hardware/BOM.md) | 硬件与固件对齐提要（无采购表） | 复刻者 |
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
 
@@ -306,11 +308,7 @@ msp/
 
 ## 🤝 参与贡献
 
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/xxx`)
-3. 提交更改 (`git commit -m 'Add xxx'`)
-4. 推送到分支 (`git push origin feature/xxx`)
-5. 提交 Pull Request
+欢迎提交屏幕适配、网页体验、文档和排障反馈。提交前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，并尽量附带屏幕型号、驱动 IC、BUSY 电平、ESP-IDF 版本、串口日志和复现步骤。
 
 ## 📄 许可证
 

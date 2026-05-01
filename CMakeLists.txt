@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "2.3.0")
+set(PROJECT_VER "2.3.1")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(epaper_uploader)
