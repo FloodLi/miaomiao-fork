@@ -1,3 +1,9 @@
+if(NOT IDF_TARGET STREQUAL "esp32s3")
+    message(FATAL_ERROR
+        "This firmware targets ESP32-S3 only. Current IDF_TARGET='${IDF_TARGET}'. "
+        "Run: idf.py fullclean && idf.py set-target esp32s3")
+endif()
+
 idf_component_register(
     SRCS
         "app_main.c"

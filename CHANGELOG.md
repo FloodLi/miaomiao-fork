@@ -20,6 +20,7 @@
 - 修复二维码模板在小屏上模块过小、矩阵不可靠导致手机扫码失败的问题。
 - 修复 README 中 API 章节锚点在 Gitee 上无法正确跳转的问题。
 - 天气请求失败日志对 URL 中的 `key=` 参数做脱敏，降低 API Key 泄露风险。
+- 固定新下载源码的默认 ESP-IDF target 为 `esp32s3`，并在误设为 `esp32` 时给出明确 CMake 错误，避免 `GPIO_NUM_46` / USB Serial JTAG 头文件误报。
 
 ### 仓库整理
 

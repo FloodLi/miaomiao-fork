@@ -188,6 +188,16 @@ idf.py -p COM3 build flash monitor
 
 > 将 `COM3` 替换为你电脑上的实际串口号。日常升级和新芯片首次烧录都使用这条命令，不需要先执行 `erase-flash`。
 
+如果你是从 Gitee 下载 ZIP 后直接编译，或之前在同一目录生成过 `esp32` 的 `sdkconfig`，请先清理并重新设置目标：
+
+```powershell
+idf.py fullclean
+idf.py set-target esp32s3
+idf.py -p COM3 build flash monitor
+```
+
+典型错误特征是日志出现 `Building ESP-IDF components for target esp32`、`GPIO_NUM_46 undeclared` 或 `hal/usb_serial_jtag_ll.h: No such file or directory`。这些都表示当前按普通 ESP32 编译了本 ESP32-S3 固件。
+
 ### 4. 关于 erase-flash
 
 ```powershell
@@ -217,7 +227,7 @@ idf.py -p COM3 build flash monitor
 msp/
 ├── main/                        # 固件源码（C 模块，含 HTTP / EPD / 业务）
 │   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
-│   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179，SPI DMA）
+│   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179 / 微雪移植面板，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
 │   ├── http_app.c/h             # HTTP 服务（约 60 条 URI + Basic Auth + OTA）
 │   ├── http_gallery.c           # 画廊相关路由
