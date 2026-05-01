@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <sys/stat.h>
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -59,26 +60,93 @@ static int s_busy_idle_level = -1;
 
 static int busy_idle_effective(void);
 
-/* ── 面板规格 ─────────────────────────────────────────────────────── */
+/* ── 面板规格 / 回调 ─────────────────────────────────────────────── */
 
-static const struct {
-    int w, h;
+typedef enum {
+    EPD_CMD_DATA_24_26,          /* black:0x24, red:0x26, red bit 1 = red */
+    EPD_CMD_DATA_10_13,          /* black:0x10, red:0x13, red bit 1 = red */
+    EPD_CMD_DATA_10_92_13,       /* black:0x10, 0x92, red:0x13, red bit 1 = red */
+    EPD_CMD_DATA_10_13_INV_BW,   /* black:0x10, second pass is inverted BW */
+    EPD_CMD_DATA_10_13_INV_RED,  /* black:0x10, red:0x13, red bit 0 = red */
+} epd_data_mode_t;
+
+typedef struct epd_panel_desc {
+    int w;
+    int h;
     bool has_red;
+    int default_busy_idle;
+    bool busy_probe_0x71;
+    epd_data_mode_t data_mode;
     const char *name;
-} s_specs[] = {
-    [EPD_PANEL_42_BWR]  = { 400, 300, true, "SSD1619 4.2\" BWR"  },
-    [EPD_PANEL_583_BWR] = { 648, 480, true, "UC8179 5.83\" BWR" },
+    void (*init)(void);
+    void (*refresh)(void);
+    void (*cursor_home)(void);
+} epd_panel_desc_t;
+
+static void ssd1619_init_sequence(void);
+static void ssd1619_refresh(void);
+static void ssd1619_cursor_home(void);
+static void uc8179_init_sequence(void);
+static void uc8179_refresh(void);
+static void ws_29_bw_init(void);
+static void ws_29_bwr_init(void);
+static void ws_266_bw_init(void);
+static void ws_266_bwr_init(void);
+static void ws_27_bw_init(void);
+static void ws_27_bwr_init(void);
+static void ws_426_bw_init(void);
+static void ws_583_bw_init(void);
+static void ws_583_bwr_init(void);
+static void ws_75_bw_init(void);
+static void ws_75_bwr_init(void);
+static void ws_42_uc8176_bwr_init(void);
+static void refresh_0x20(void);
+static void refresh_22_f7_20(void);
+static void refresh_12(void);
+static void cursor_x8_y16_home(void);
+static void cursor_x8_y9_home(void);
+static void cursor_x8_y9_x1_home(void);
+static void cursor_x16_y16_home(void);
+static void cursor_none(void);
+
+static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
+    [EPD_PANEL_42_BWR]     = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26,         "SSD1619 4.2\" BWR",         ssd1619_init_sequence, ssd1619_refresh, cursor_none },
+    [EPD_PANEL_583_BWR]    = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "UC8179 5.83\" BWR",         uc8179_init_sequence,  uc8179_refresh,  cursor_none },
+    [EPD_PANEL_WS_29_BW]   = { 128, 296, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.9\" BW V2",     ws_29_bw_init,        refresh_22_f7_20, cursor_x8_y16_home },
+    [EPD_PANEL_WS_29_BWR]  = { 128, 296, true,  0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.9\" BWR B V4",  ws_29_bwr_init,       refresh_22_f7_20, cursor_x8_y16_home },
+    [EPD_PANEL_WS_266_BW]  = { 152, 296, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.66\" BW",       ws_266_bw_init,       refresh_0x20,     cursor_x8_y9_x1_home },
+    [EPD_PANEL_WS_266_BWR] = { 152, 296, true,  0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.66\" BWR",      ws_266_bwr_init,      refresh_0x20,     cursor_x8_y9_home },
+    [EPD_PANEL_WS_27_BW]   = { 176, 264, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.7\" BW V2",     ws_27_bw_init,        refresh_22_f7_20, cursor_x8_y16_home },
+    [EPD_PANEL_WS_27_BWR]  = { 176, 264, true,  0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.7\" BWR B V2",  ws_27_bwr_init,       refresh_0x20,     cursor_x8_y16_home },
+    [EPD_PANEL_WS_426_BW]  = { 800, 480, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 4.26\" BW",       ws_426_bw_init,       refresh_22_f7_20, cursor_x16_y16_home },
+    [EPD_PANEL_WS_583_BW]  = { 648, 480, false, 1, false, EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BW V2",    ws_583_bw_init,       refresh_12,       cursor_none },
+    [EPD_PANEL_WS_583_BWR] = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BWR B V2", ws_583_bwr_init,      refresh_12,       cursor_none },
+    [EPD_PANEL_WS_75_BW]   = { 800, 480, false, 1, false, EPD_CMD_DATA_10_13_INV_BW,  "Waveshare 7.5\" BW V2",     ws_75_bw_init,        refresh_12,       cursor_none },
+    [EPD_PANEL_WS_75_BWR]  = { 800, 480, true,  1, true,  EPD_CMD_DATA_10_92_13,      "Waveshare 7.5\" BWR B V2",  ws_75_bwr_init,       refresh_12,       cursor_none },
+    [EPD_PANEL_WS_42_BWR_UC8176] = { 400, 300, true, 1, false, EPD_CMD_DATA_10_13_INV_RED, "Waveshare 4.2\" BWR UC8176", ws_42_uc8176_bwr_init, refresh_12, cursor_none },
 };
 
-int  epd_width(void)       { return s_specs[s_panel].w; }
-int  epd_height(void)      { return s_specs[s_panel].h; }
-int  epd_plane_bytes(void) { return s_specs[s_panel].w * s_specs[s_panel].h / 8; }
-bool epd_has_red(void)     { return s_specs[s_panel].has_red; }
+static bool panel_valid(epd_panel_t panel)
+{
+    return panel >= 0 && panel < EPD_PANEL_COUNT && s_specs[panel].name != NULL;
+}
+
+static const epd_panel_desc_t *panel_desc(void)
+{
+    if (!panel_valid(s_panel))
+        s_panel = EPD_PANEL_42_BWR;
+    return &s_specs[s_panel];
+}
+
+int  epd_width(void)       { return panel_desc()->w; }
+int  epd_height(void)      { return panel_desc()->h; }
+int  epd_plane_bytes(void) { return panel_desc()->w * panel_desc()->h / 8; }
+bool epd_has_red(void)     { return panel_desc()->has_red; }
 epd_panel_t epd_get_panel(void) { return s_panel; }
 
 esp_err_t epd_save_panel_config(epd_panel_t panel, int busy_idle)
 {
-    if (panel != EPD_PANEL_42_BWR && panel != EPD_PANEL_583_BWR)
+    if (!panel_valid(panel))
         return ESP_ERR_INVALID_ARG;
     if (busy_idle != 0 && busy_idle != 1)
         return ESP_ERR_INVALID_ARG;
@@ -102,7 +170,7 @@ esp_err_t epd_save_panel_config(epd_panel_t panel, int busy_idle)
 
 esp_err_t epd_set_panel(epd_panel_t panel)
 {
-    if (panel != EPD_PANEL_42_BWR && panel != EPD_PANEL_583_BWR)
+    if (!panel_valid(panel))
         return ESP_ERR_INVALID_ARG;
 
     if (s_epd_mutex)
@@ -136,6 +204,13 @@ int epd_busy_idle_level(void)
     return busy_idle_effective();
 }
 
+int epd_panel_default_busy_idle(epd_panel_t panel)
+{
+    if (!panel_valid(panel))
+        return -1;
+    return s_specs[panel].default_busy_idle;
+}
+
 esp_err_t epd_set_busy_idle(int level)
 {
     if (level != 0 && level != 1)
@@ -161,10 +236,8 @@ static void nvs_load_panel(void)
     nvs_handle_t h;
     if (nvs_open("epd", NVS_READONLY, &h) == ESP_OK) {
         uint8_t v;
-        if (nvs_get_u8(h, "panel", &v) == ESP_OK) {
-            if (v == EPD_PANEL_42_BWR || v == EPD_PANEL_583_BWR)
-                s_panel = (epd_panel_t)v;
-        }
+        if (nvs_get_u8(h, "panel", &v) == ESP_OK && panel_valid((epd_panel_t)v))
+            s_panel = (epd_panel_t)v;
         uint8_t bi;
         if (nvs_get_u8(h, "busy_idle", &bi) == ESP_OK && bi <= 1)
             s_busy_idle_level = (int)bi;
@@ -181,10 +254,7 @@ static int busy_idle_effective(void)
 {
     if (s_busy_idle_level == 0 || s_busy_idle_level == 1)
         return s_busy_idle_level;
-    /* Waveshare epd4in2b_V2：新 SSD1619 在 ReadBusy 里 while(busy==1) 即忙为高、就绪为低 */
-    if (s_panel == EPD_PANEL_42_BWR)
-        return 0;
-    return 1;
+    return panel_desc()->default_busy_idle;
 }
 
 /* ── 延时 / SPI 底层 ──────────────────────────────────────────────── */
@@ -294,10 +364,10 @@ static void epd_hw_reset(void)
 static void epd_wait_ready(bool after_update_cmd)
 {
     delay_ms(10);
-    const bool is_uc8179 = (s_panel == EPD_PANEL_583_BWR);
+    const bool probe_0x71 = panel_desc()->busy_probe_0x71;
     const int idle = busy_idle_effective();
 
-    if (is_uc8179)
+    if (probe_0x71)
         epd_cmd(0x71);
 
     /* 阶段 1：等到离开空闲态（进入忙），避免刷新命令刚发出时仍读到空闲 */
@@ -307,7 +377,7 @@ static void epd_wait_ready(bool after_update_cmd)
         while (gpio_get_level(PIN_EPD_BUSY) == idle && phase1 < phase1_max_ms) {
             delay_ms(20);
             phase1 += 20;
-            if (is_uc8179)
+            if (probe_0x71)
                 epd_cmd(0x71);
         }
         if (phase1 >= phase1_max_ms)
@@ -319,7 +389,7 @@ static void epd_wait_ready(bool after_update_cmd)
     int waited = 0;
     bool timed_out = false;
     while (gpio_get_level(PIN_EPD_BUSY) != idle) {
-        if (is_uc8179)
+        if (probe_0x71)
             epd_cmd(0x71);
         delay_ms(200);
         waited += 200;
@@ -333,6 +403,506 @@ static void epd_wait_ready(bool after_update_cmd)
     }
     if (!timed_out && waited > 200)
         ESP_LOGI(TAG, "ready after %d ms", waited);
+}
+
+/* ── Waveshare-style helpers ───────────────────────────────────────── */
+
+static void cmd1(uint8_t c, uint8_t v1)
+{
+    epd_cmd(c);
+    epd_dat(v1);
+}
+
+static void cmd2(uint8_t c, uint8_t v1, uint8_t v2)
+{
+    epd_cmd(c);
+    epd_dat(v1);
+    epd_dat(v2);
+}
+
+static void cmd3(uint8_t c, uint8_t v1, uint8_t v2, uint8_t v3)
+{
+    epd_cmd(c);
+    epd_dat(v1);
+    epd_dat(v2);
+    epd_dat(v3);
+}
+
+static void cmd4(uint8_t c, uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4)
+{
+    epd_cmd(c);
+    epd_dat(v1);
+    epd_dat(v2);
+    epd_dat(v3);
+    epd_dat(v4);
+}
+
+static void cmd5(uint8_t c, uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4, uint8_t v5)
+{
+    epd_cmd(c);
+    epd_dat(v1);
+    epd_dat(v2);
+    epd_dat(v3);
+    epd_dat(v4);
+    epd_dat(v5);
+}
+
+static void cursor_none(void)
+{
+}
+
+static void cursor_x8_y16_home(void)
+{
+    epd_cmd(0x4E);
+    epd_dat(0x00);
+    epd_cmd(0x4F);
+    epd_dat(0x00);
+    epd_dat(0x00);
+}
+
+static void cursor_x8_y9_home(void)
+{
+    epd_cmd(0x4E);
+    epd_dat(0x00);
+    epd_cmd(0x4F);
+    epd_dat(0x00);
+    epd_dat(0x00);
+}
+
+static void cursor_x8_y9_x1_home(void)
+{
+    epd_cmd(0x4E);
+    epd_dat(0x01);
+    epd_cmd(0x4F);
+    epd_dat(0x00);
+    epd_dat(0x00);
+}
+
+static void cursor_x16_y16_home(void)
+{
+    epd_cmd(0x4E);
+    epd_dat(0x00);
+    epd_dat(0x00);
+    epd_cmd(0x4F);
+    epd_dat(0x00);
+    epd_dat(0x00);
+}
+
+static void refresh_0x20(void)
+{
+    epd_cmd(0x20);
+    epd_wait_ready(true);
+    delay_ms(200);
+}
+
+static void refresh_22_f7_20(void)
+{
+    cmd1(0x22, 0xF7);
+    epd_cmd(0x20);
+    epd_wait_ready(true);
+    delay_ms(200);
+}
+
+static void refresh_12(void)
+{
+    epd_cmd(0x12);
+    delay_ms(100);
+    epd_wait_ready(true);
+    delay_ms(200);
+}
+
+static void panel_write_plane(uint8_t cmd, const uint8_t *data, uint8_t fill, bool invert, int pb)
+{
+    epd_cmd(cmd);
+    if (data && !invert) {
+        epd_bulk(data, (size_t)pb);
+        return;
+    }
+    if (!data) {
+        epd_fill(fill, (size_t)pb);
+        return;
+    }
+
+    uint8_t *buf = heap_caps_malloc(EPD_FILL_CHUNK, MALLOC_CAP_DMA);
+    if (!buf) {
+        ESP_LOGE(TAG, "invert plane: DMA malloc failed");
+        return;
+    }
+    size_t offset = 0;
+    while (offset < (size_t)pb) {
+        size_t n = ((size_t)pb - offset > EPD_FILL_CHUNK) ? EPD_FILL_CHUNK : ((size_t)pb - offset);
+        for (size_t i = 0; i < n; i++)
+            buf[i] = (uint8_t)~data[offset + i];
+        epd_bulk(buf, n);
+        offset += n;
+    }
+    free(buf);
+}
+
+static void panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, int pb)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    if (d->cursor_home)
+        d->cursor_home();
+
+    switch (d->data_mode) {
+    case EPD_CMD_DATA_24_26:
+        panel_write_plane(0x24, bw, 0xFF, false, pb);
+        if (d->has_red) {
+            if (d->cursor_home)
+                d->cursor_home();
+            panel_write_plane(0x26, red, 0x00, false, pb);
+        }
+        break;
+    case EPD_CMD_DATA_10_13:
+        panel_write_plane(0x10, bw, 0xFF, false, pb);
+        panel_write_plane(0x13, d->has_red ? red : bw, d->has_red ? 0x00 : 0xFF, false, pb);
+        break;
+    case EPD_CMD_DATA_10_92_13:
+        panel_write_plane(0x10, bw, 0xFF, false, pb);
+        epd_cmd(0x92);
+        panel_write_plane(0x13, red, 0x00, false, pb);
+        break;
+    case EPD_CMD_DATA_10_13_INV_BW:
+        panel_write_plane(0x10, bw, 0xFF, false, pb);
+        panel_write_plane(0x13, bw, 0x00, true, pb);
+        break;
+    case EPD_CMD_DATA_10_13_INV_RED:
+        panel_write_plane(0x10, bw, 0xFF, false, pb);
+        panel_write_plane(0x13, red, 0xFF, true, pb);
+        break;
+    }
+}
+
+static void panel_write_bw_red(const uint8_t *bw, const uint8_t *red, int pb)
+{
+    panel_write_bw_red_data(bw, red, pb);
+    panel_desc()->refresh();
+}
+
+static esp_err_t file_send_plane(FILE *f, int pb, bool invert)
+{
+    uint8_t *buf = heap_caps_malloc(EPD_FILL_CHUNK, MALLOC_CAP_DMA);
+    if (!buf) {
+        ESP_LOGE(TAG, "file plane DMA malloc failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    gpio_set_level(PIN_EPD_DC, 1);
+    size_t sent = 0;
+    esp_err_t ret = ESP_OK;
+    while (sent < (size_t)pb) {
+        size_t n = ((size_t)pb - sent > EPD_FILL_CHUNK) ? EPD_FILL_CHUNK : ((size_t)pb - sent);
+        size_t got = fread(buf, 1, n, f);
+        if (got != n) {
+            ESP_LOGE(TAG, "file plane short: %u / %u", (unsigned)got, (unsigned)n);
+            ret = ESP_ERR_INVALID_SIZE;
+            break;
+        }
+        if (invert) {
+            for (size_t i = 0; i < n; i++)
+                buf[i] = (uint8_t)~buf[i];
+        }
+        ret = spi_tx(buf, n);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "file plane spi err %s", esp_err_to_name(ret));
+            break;
+        }
+        sent += n;
+    }
+
+    free(buf);
+    return ret;
+}
+
+static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    esp_err_t ret = ESP_OK;
+    if (d->cursor_home)
+        d->cursor_home();
+
+    switch (d->data_mode) {
+    case EPD_CMD_DATA_24_26:
+        epd_cmd(0x24);
+        ret = file_send_plane(f, pb, false);
+        if (ret != ESP_OK)
+            return ret;
+        if (d->has_red) {
+            if (d->cursor_home)
+                d->cursor_home();
+            epd_cmd(0x26);
+            ret = has_red_file ? file_send_plane(f, pb, false)
+                               : (epd_fill(0x00, (size_t)pb), ESP_OK);
+        }
+        break;
+    case EPD_CMD_DATA_10_13:
+        epd_cmd(0x10);
+        ret = file_send_plane(f, pb, false);
+        if (ret != ESP_OK)
+            return ret;
+        epd_cmd(0x13);
+        if (d->has_red) {
+            ret = has_red_file ? file_send_plane(f, pb, false)
+                               : (epd_fill(0x00, (size_t)pb), ESP_OK);
+        } else {
+            if (fseek(f, 0, SEEK_SET) != 0)
+                return ESP_FAIL;
+            ret = file_send_plane(f, pb, false);
+        }
+        break;
+    case EPD_CMD_DATA_10_92_13:
+        epd_cmd(0x10);
+        ret = file_send_plane(f, pb, false);
+        if (ret != ESP_OK)
+            return ret;
+        epd_cmd(0x92);
+        epd_cmd(0x13);
+        ret = has_red_file ? file_send_plane(f, pb, false)
+                           : (epd_fill(0x00, (size_t)pb), ESP_OK);
+        break;
+    case EPD_CMD_DATA_10_13_INV_BW:
+        epd_cmd(0x10);
+        ret = file_send_plane(f, pb, false);
+        if (ret != ESP_OK)
+            return ret;
+        if (fseek(f, 0, SEEK_SET) != 0)
+            return ESP_FAIL;
+        epd_cmd(0x13);
+        ret = file_send_plane(f, pb, true);
+        break;
+    case EPD_CMD_DATA_10_13_INV_RED:
+        epd_cmd(0x10);
+        ret = file_send_plane(f, pb, false);
+        if (ret != ESP_OK)
+            return ret;
+        epd_cmd(0x13);
+        if (has_red_file)
+            ret = file_send_plane(f, pb, true);
+        else
+            ret = (epd_fill(0xFF, (size_t)pb), ESP_OK);
+        break;
+    }
+
+    if (ret == ESP_OK)
+        d->refresh();
+    return ret;
+}
+
+static void panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    if (d->cursor_home)
+        d->cursor_home();
+
+    switch (d->data_mode) {
+    case EPD_CMD_DATA_24_26:
+        panel_write_plane(0x24, NULL, bw_byte, false, pb);
+        if (d->has_red) {
+            if (d->cursor_home)
+                d->cursor_home();
+            panel_write_plane(0x26, NULL, red_byte, false, pb);
+        }
+        break;
+    case EPD_CMD_DATA_10_13:
+        panel_write_plane(0x10, NULL, bw_byte, false, pb);
+        panel_write_plane(0x13, NULL, d->has_red ? red_byte : bw_byte, false, pb);
+        break;
+    case EPD_CMD_DATA_10_92_13:
+        panel_write_plane(0x10, NULL, bw_byte, false, pb);
+        epd_cmd(0x92);
+        panel_write_plane(0x13, NULL, red_byte, false, pb);
+        break;
+    case EPD_CMD_DATA_10_13_INV_BW:
+        panel_write_plane(0x10, NULL, bw_byte, false, pb);
+        panel_write_plane(0x13, NULL, (uint8_t)~bw_byte, false, pb);
+        break;
+    case EPD_CMD_DATA_10_13_INV_RED:
+        panel_write_plane(0x10, NULL, bw_byte, false, pb);
+        panel_write_plane(0x13, NULL, (uint8_t)~red_byte, false, pb);
+        break;
+    }
+
+    d->refresh();
+}
+
+static void ws_common_2in9_bw_address(void)
+{
+    cmd3(0x01, 0x27, 0x01, 0x00);
+    cmd1(0x11, 0x03);
+    cmd2(0x44, 0x00, 0x0F);
+    cmd4(0x45, 0x00, 0x00, 0x27, 0x01);
+    cmd2(0x21, 0x00, 0x80);
+    cursor_x8_y16_home();
+}
+
+static void ws_common_2in9_bwr_address(void)
+{
+    ws_common_2in9_bw_address();
+    cmd1(0x3C, 0x05);
+    cmd1(0x18, 0x80);
+}
+
+static void ws_29_bw_init(void)
+{
+    epd_hw_reset();
+    epd_wait_ready(false);
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+    ws_common_2in9_bw_address();
+    ESP_LOGI(TAG, "Waveshare 2.9 BW V2 init OK");
+}
+
+static void ws_29_bwr_init(void)
+{
+    epd_hw_reset();
+    epd_wait_ready(false);
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+    ws_common_2in9_bwr_address();
+    ESP_LOGI(TAG, "Waveshare 2.9 BWR B V4 init OK");
+}
+
+static void ws_266_bw_init(void)
+{
+    epd_hw_reset();
+    epd_wait_ready(false);
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+    cmd1(0x11, 0x03);
+    cmd2(0x44, 0x01, 0x13);
+    cmd4(0x45, 0x00, 0x00, 0x28, 0x01);
+    cursor_x8_y9_x1_home();
+    ESP_LOGI(TAG, "Waveshare 2.66 BW init OK");
+}
+
+static void ws_266_bwr_init(void)
+{
+    epd_hw_reset();
+    epd_wait_ready(false);
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+    cmd1(0x11, 0x03);
+    cmd2(0x44, 0x00, 0x12);
+    cmd4(0x45, 0x00, 0x00, 0x27, 0x01);
+    cmd2(0x21, 0x00, 0x80);
+    cursor_x8_y9_home();
+    ESP_LOGI(TAG, "Waveshare 2.66 BWR init OK");
+}
+
+static void ws_27_bw_init(void)
+{
+    epd_hw_reset();
+    epd_wait_ready(false);
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+    cmd4(0x45, 0x00, 0x00, 0x07, 0x01);
+    cmd2(0x4F, 0x00, 0x00);
+    cmd1(0x11, 0x03);
+    ESP_LOGI(TAG, "Waveshare 2.7 BW V2 init OK");
+}
+
+static void ws_27_bwr_init(void)
+{
+    epd_hw_reset();
+    epd_wait_ready(false);
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+    cmd3(0x00, 0x27, 0x01, 0x00);
+    cmd1(0x11, 0x03);
+    cmd2(0x44, 0x00, 0x15);
+    cmd4(0x45, 0x00, 0x00, 0x07, 0x01);
+    cursor_x8_y16_home();
+    ESP_LOGI(TAG, "Waveshare 2.7 BWR B V2 init OK");
+}
+
+static void ws_426_bw_init(void)
+{
+    epd_hw_reset();
+    delay_ms(100);
+    epd_wait_ready(false);
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+    cmd1(0x18, 0x80);
+    cmd5(0x0C, 0xAE, 0xC7, 0xC3, 0xC0, 0x80);
+    cmd3(0x01, 0xDF, 0x01, 0x02);
+    cmd1(0x3C, 0x01);
+    cmd1(0x11, 0x01);
+    epd_cmd(0x44);
+    epd_dat(0x00); epd_dat(0x00); epd_dat(0x1F); epd_dat(0x03);
+    epd_cmd(0x45);
+    epd_dat(0xDF); epd_dat(0x01); epd_dat(0x00); epd_dat(0x00);
+    cursor_x16_y16_home();
+    ESP_LOGI(TAG, "Waveshare 4.26 BW init OK");
+}
+
+static void ws_583_bw_init(void)
+{
+    epd_hw_reset();
+    cmd1(0x00, 0x1F);
+    cmd2(0x50, 0x21, 0x07);
+    epd_cmd(0x04);
+    delay_ms(100);
+    epd_wait_ready(false);
+    ESP_LOGI(TAG, "Waveshare 5.83 BW V2 init OK");
+}
+
+static void ws_583_bwr_init(void)
+{
+    epd_hw_reset();
+    cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
+    epd_cmd(0x04);
+    delay_ms(100);
+    epd_wait_ready(false);
+    cmd1(0x00, 0x0F);
+    cmd4(0x61, 0x02, 0x88, 0x01, 0xE0);
+    cmd1(0x15, 0x00);
+    cmd2(0x50, 0x11, 0x07);
+    cmd1(0x60, 0x22);
+    ESP_LOGI(TAG, "Waveshare 5.83 BWR B V2 init OK");
+}
+
+static void ws_75_bw_init(void)
+{
+    epd_hw_reset();
+    cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
+    cmd4(0x06, 0x17, 0x17, 0x28, 0x17);
+    epd_cmd(0x04);
+    delay_ms(100);
+    epd_wait_ready(false);
+    cmd1(0x00, 0x1F);
+    cmd4(0x61, 0x03, 0x20, 0x01, 0xE0);
+    cmd1(0x15, 0x00);
+    cmd2(0x50, 0x10, 0x07);
+    cmd1(0x60, 0x22);
+    ESP_LOGI(TAG, "Waveshare 7.5 BW V2 init OK");
+}
+
+static void ws_75_bwr_init(void)
+{
+    epd_hw_reset();
+    cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
+    epd_cmd(0x04);
+    delay_ms(100);
+    epd_wait_ready(false);
+    cmd1(0x00, 0x0F);
+    cmd4(0x61, 0x03, 0x20, 0x01, 0xE0);
+    cmd1(0x15, 0x00);
+    cmd2(0x50, 0x11, 0x07);
+    cmd1(0x60, 0x22);
+    epd_cmd(0x65);
+    epd_dat(0x00); epd_dat(0x00); epd_dat(0x00); epd_dat(0x00);
+    ESP_LOGI(TAG, "Waveshare 7.5 BWR B V2 init OK");
+}
+
+static void ws_42_uc8176_bwr_init(void)
+{
+    epd_hw_reset();
+    cmd3(0x06, 0x17, 0x17, 0x17);
+    epd_cmd(0x04);
+    epd_wait_ready(false);
+    cmd1(0x00, 0x0F);
+    ESP_LOGI(TAG, "Waveshare 4.2 BWR UC8176 init OK");
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -496,31 +1066,7 @@ static void ssd1619_refresh_fast(void)
     ESP_LOGI(TAG, "fast refresh done in %u ms", (unsigned)elapsed_ms);
 }
 
-static void ssd1619_write_bw_then_red(const uint8_t *bw, const uint8_t *red, int pb)
-{
-    ssd1619_cursor_home();
-    epd_cmd(0x24);
-    epd_bulk(bw, (size_t)pb);
 
-    ssd1619_cursor_home();
-    epd_cmd(0x26);
-    epd_bulk(red, (size_t)pb);
-
-    ssd1619_refresh();
-}
-
-static void ssd1619_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
-{
-    ssd1619_cursor_home();
-    epd_cmd(0x24);
-    epd_fill(bw_byte, (size_t)pb);
-
-    ssd1619_cursor_home();
-    epd_cmd(0x26);
-    epd_fill(red_byte, (size_t)pb);
-
-    ssd1619_refresh();
-}
 
 /* ═══════════════════════════════════════════════════════════════════
  * UC8179 — 5.83" 648×480 BWR（参考 Waveshare 5.83 BWR）
@@ -568,44 +1114,13 @@ static void uc8179_refresh(void)
     epd_wait_ready(true);
 }
 
-static void uc8179_write_dtm12(const uint8_t *dtm1, const uint8_t *dtm2, int pb)
-{
-    epd_cmd(0x10);
-    delay_ms(2);
-    epd_bulk(dtm1, (size_t)pb);
-    delay_ms(2);
 
-    epd_cmd(0x13);
-    delay_ms(2);
-    epd_bulk(dtm2, (size_t)pb);
-    delay_ms(2);
-
-    uc8179_refresh();
-}
-
-static void uc8179_fill_dtm12(uint8_t dtm1, uint8_t dtm2, int pb)
-{
-    epd_cmd(0x10);
-    delay_ms(2);
-    epd_fill(dtm1, (size_t)pb);
-    delay_ms(2);
-
-    epd_cmd(0x13);
-    delay_ms(2);
-    epd_fill(dtm2, (size_t)pb);
-    delay_ms(2);
-
-    uc8179_refresh();
-}
 
 /* ── 完整初始化（每面板一次；换面板或 NVS 覆盖后需重跑） ───────────── */
 
 static void panel_run_full_init(void)
 {
-    if (s_panel == EPD_PANEL_42_BWR)
-        ssd1619_init_sequence();
-    else
-        uc8179_init_sequence();
+    panel_desc()->init();
     s_panel_seq_done = true;
 }
 
@@ -619,11 +1134,7 @@ static void panel_ensure_ready(void)
 static void epd_clear_to_white_locked(void)
 {
     panel_ensure_ready();
-    int pb = epd_plane_bytes();
-    if (s_panel == EPD_PANEL_42_BWR)
-        ssd1619_fill_bw_red(0xFF, 0x00, pb);
-    else
-        uc8179_fill_dtm12(0xFF, 0x00, pb);
+    panel_fill_bw_red(0xFF, 0x00, epd_plane_bytes());
 }
 
 bool epd_is_ready(void)
@@ -782,11 +1293,7 @@ esp_err_t epd_display_test_pattern(void)
 
     panel_ensure_ready();
 
-    if (s_panel == EPD_PANEL_42_BWR) {
-        ssd1619_write_bw_then_red(buf, red, pb);
-    } else {
-        uc8179_write_dtm12(buf, red, pb);
-    }
+    panel_write_bw_red(buf, red, pb);
 
     free(red);
     free(buf);
@@ -809,75 +1316,31 @@ esp_err_t epd_display_from_file(const char *path)
         return ESP_FAIL;
     }
 
-    uint8_t *buf = heap_caps_malloc((size_t)pb, MALLOC_CAP_DMA);
-    if (!buf) {
-        fclose(f);
-        return ESP_ERR_NO_MEM;
-    }
-
-    size_t r1 = fread(buf, 1, (size_t)pb, f);
-    if (r1 != (size_t)pb) {
-        ESP_LOGE(TAG, "file too small: %u / %u", (unsigned)r1, (unsigned)pb);
-        free(buf);
+    struct stat st;
+    bool have_size = (stat(path, &st) == 0);
+    if (have_size && st.st_size < pb) {
+        ESP_LOGE(TAG, "file too small: %ld / %u", (long)st.st_size, (unsigned)pb);
         fclose(f);
         return ESP_ERR_INVALID_SIZE;
     }
+    bool has_red_file = have_size && st.st_size >= (off_t)pb * 2;
+    if (epd_has_red() && !has_red_file)
+        ESP_LOGW(TAG, "red plane missing, zero fill");
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
     if (pb != epd_plane_bytes()) {
         ESP_LOGE(TAG, "file/panel mismatch: file plane=%d current=%d",
                  pb, epd_plane_bytes());
         xSemaphoreGive(s_epd_mutex);
-        free(buf);
         fclose(f);
         return ESP_ERR_INVALID_SIZE;
     }
     panel_ensure_ready();
-
-    if (s_panel == EPD_PANEL_42_BWR) {
-        ssd1619_cursor_home();
-        epd_cmd(0x24);
-        epd_bulk(buf, (size_t)pb);
-
-        size_t r2 = fread(buf, 1, (size_t)pb, f);
-        if (r2 != (size_t)pb)
-            memset(buf, 0x00, (size_t)pb);
-
-        ssd1619_cursor_home();
-        epd_cmd(0x26);
-        epd_bulk(buf, (size_t)pb);
-
-        fclose(f); f = NULL;
-        free(buf); buf = NULL;
-        ssd1619_refresh();
-    } else {
-        epd_cmd(0x10);
-        delay_ms(2);
-        epd_bulk(buf, (size_t)pb);
-        delay_ms(2);
-
-        if (epd_has_red()) {
-            size_t r2 = fread(buf, 1, (size_t)pb, f);
-            if (r2 != (size_t)pb) {
-                ESP_LOGW(TAG, "red plane short, zero fill");
-                memset(buf, 0x00, (size_t)pb);
-            }
-        } else {
-            memset(buf, 0x00, (size_t)pb);
-        }
-        epd_cmd(0x13);
-        delay_ms(2);
-        epd_bulk(buf, (size_t)pb);
-        delay_ms(2);
-
-        fclose(f); f = NULL;
-        free(buf); buf = NULL;
-        uc8179_refresh();
-    }
-
+    esp_err_t ret = panel_write_bw_red_file(f, pb, has_red_file);
     xSemaphoreGive(s_epd_mutex);
-    if (f) fclose(f);
-    free(buf);
+    fclose(f);
+    if (ret != ESP_OK)
+        return ret;
 
     ESP_LOGI(TAG, "display from %s", path);
     return ESP_OK;
@@ -900,29 +1363,7 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
     int pb = epd_plane_bytes();
     panel_ensure_ready();
 
-    if (s_panel == EPD_PANEL_42_BWR) {
-        /* Black plane */
-        ssd1619_cursor_home();
-        epd_cmd(0x24);
-        epd_bulk(fb->black, (size_t)pb);
-
-        /* Red plane */
-        ssd1619_cursor_home();
-        epd_cmd(0x26);
-        epd_bulk(fb->red, (size_t)pb);
-        ssd1619_refresh();
-    } else {
-        epd_cmd(0x10);
-        delay_ms(2);
-        epd_bulk(fb->black, (size_t)pb);
-        delay_ms(2);
-
-        epd_cmd(0x13);
-        delay_ms(2);
-        epd_bulk(fb->red, (size_t)pb);
-        delay_ms(2);
-        uc8179_refresh();
-    }
+    panel_write_bw_red(fb->black, fb->red, pb);
 
     xSemaphoreGive(s_epd_mutex);
 
@@ -950,31 +1391,9 @@ esp_err_t epd_display_fb_free(fb_t *fb)
     int pb = epd_plane_bytes();
     panel_ensure_ready();
 
-    if (s_panel == EPD_PANEL_42_BWR) {
-        ssd1619_cursor_home();
-        epd_cmd(0x24);
-        epd_bulk(fb->black, (size_t)pb);
-
-        ssd1619_cursor_home();
-        epd_cmd(0x26);
-        epd_bulk(fb->red, (size_t)pb);
-
-        fb_destroy(fb);
-        ssd1619_refresh();
-    } else {
-        epd_cmd(0x10);
-        delay_ms(2);
-        epd_bulk(fb->black, (size_t)pb);
-        delay_ms(2);
-
-        epd_cmd(0x13);
-        delay_ms(2);
-        epd_bulk(fb->red, (size_t)pb);
-        delay_ms(2);
-
-        fb_destroy(fb);
-        uc8179_refresh();
-    }
+    panel_write_bw_red_data(fb->black, fb->red, pb);
+    fb_destroy(fb);
+    panel_desc()->refresh();
 
     xSemaphoreGive(s_epd_mutex);
 

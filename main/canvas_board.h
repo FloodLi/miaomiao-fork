@@ -98,9 +98,12 @@ esp_err_t canvas_board_delete_user_icon(const char *name);
 
 /* ── 图片管理 ───────────────────────────────────────────────────────── */
 
-/* 图片存储目录，格式：4 字节头(w u16le + h u16le) + 1-bit 行主序位图 */
+/* 图片存储目录：
+ * 旧格式：4 字节头(w u16le + h u16le) + 黑色 1-bit 行主序位图。
+ * 新格式：旧头 + "BW" + flags + reserved + 黑色平面 + 红色平面。
+ */
 #define CANVAS_IMAGES_DIR       "/spiffs/cimg"
-#define CANVAS_IMAGE_MAX_BYTES  50000   /* 支持最大 648×480 / 8 + header */
+#define CANVAS_IMAGE_MAX_BYTES  100000  /* 支持最大 800×480 黑/红双平面 + header */
 
 /**
  * 获取已上传图片名列表（JSON 数组，调用者提供缓冲区）。

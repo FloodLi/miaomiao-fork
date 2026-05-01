@@ -43,6 +43,8 @@
 static const char *TAG = "canvas";
 static SemaphoreHandle_t s_layout_file_mutex;
 
+#define CANVAS_RENDER_YIELD_ROWS 8
+
 static SemaphoreHandle_t layout_file_mutex(void)
 {
     if (!s_layout_file_mutex) {
@@ -107,12 +109,15 @@ static void draw_line_core(fb_t *fb, int x0, int y0, int x1, int y1, fb_color_t 
     int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
+    int steps = 0;
     for (;;) {
         fb_pixel(fb, x0, y0, c);
         if (x0 == x1 && y0 == y1) break;
         int e2 = 2 * err;
         if (e2 >= dy) { err += dy; x0 += sx; }
         if (e2 <= dx) { err += dx; y0 += sy; }
+        if ((++steps & 0x3F) == 0)
+            vTaskDelay(1);
     }
 }
 
@@ -464,24 +469,79 @@ static void render_element(fb_t *fb, cJSON *el)
         dh = clamp_dim(dh);
         if (dw <= 0 || dh <= 0) { fclose(f); return; }
         int stride = (img_w + 7) / 8;
-        uint8_t *row_buf = malloc((size_t)stride);
-        if (!row_buf) { fclose(f); return; }
-
-        int prev_sy = -1;
-        for (int ty = 0; ty < dh; ty++) {
-            int sy = ty * img_h / dh;
-            if (sy != prev_sy) {
-                if (fseek(f, 4 + (long)sy * stride, SEEK_SET) != 0) break;
-                if (fread(row_buf, 1, (size_t)stride, f) < (size_t)stride) break;
-                prev_sy = sy;
-            }
-            for (int tx = 0; tx < dw; tx++) {
-                int sx = tx * img_w / dw;
-                int bit = (row_buf[sx / 8] >> (7 - sx % 8)) & 1;
-                if (bit) fb_pixel(fb, x + tx, y + ty, color);
-            }
+        size_t bitmap_len = (size_t)stride * img_h;
+        bool has_red_plane = false;
+        long data_start = 4;
+        long file_size = 0;
+        if (fseek(f, 0, SEEK_END) == 0) {
+            file_size = ftell(f);
         }
-        free(row_buf);
+        fseek(f, 4, SEEK_SET);
+        uint8_t hdr[4];
+        if (fread(hdr, 1, sizeof(hdr), f) == sizeof(hdr)) {
+            if (hdr[0] == 'B' && hdr[1] == 'W' && (hdr[2] & 0x01) &&
+                file_size >= 8 + (long)bitmap_len * 2) {
+                has_red_plane = true;
+                data_start = 8;
+            } else {
+                fseek(f, 4, SEEK_SET);
+            }
+        } else {
+            fseek(f, 4, SEEK_SET);
+        }
+        size_t planes_len = bitmap_len * (has_red_plane ? 2 : 1);
+        uint8_t *bitmap = heap_caps_malloc(planes_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!bitmap)
+            bitmap = heap_caps_malloc(planes_len, MALLOC_CAP_8BIT);
+
+        if (bitmap) {
+            if (fread(bitmap, 1, planes_len, f) == planes_len) {
+                const uint8_t *red_plane = has_red_plane ? bitmap + bitmap_len : NULL;
+                for (int ty = 0; ty < dh; ty++) {
+                    int sy = ty * img_h / dh;
+                    const uint8_t *row = bitmap + (size_t)sy * stride;
+                    const uint8_t *red_row = red_plane ? red_plane + (size_t)sy * stride : NULL;
+                    for (int tx = 0; tx < dw; tx++) {
+                        int sx = tx * img_w / dw;
+                        int bit = (row[sx / 8] >> (7 - sx % 8)) & 1;
+                        int red_bit = red_row ? ((red_row[sx / 8] >> (7 - sx % 8)) & 1) : 0;
+                        if (red_bit) fb_pixel(fb, x + tx, y + ty, COLOR_RED);
+                        else if (bit) fb_pixel(fb, x + tx, y + ty,
+                                               has_red_plane ? COLOR_BLACK : color);
+                    }
+                    if ((ty & (CANVAS_RENDER_YIELD_ROWS - 1)) == 0)
+                        vTaskDelay(1);
+                }
+            }
+            free(bitmap);
+        } else {
+            fseek(f, data_start, SEEK_SET);
+            uint8_t *row_buf = malloc((size_t)stride);
+            if (!row_buf) { fclose(f); return; }
+
+            int prev_sy = -1;
+            bool stream_ok = true;
+            for (int ty = 0; ty < dh && stream_ok; ty++) {
+                int sy = ty * img_h / dh;
+                while (prev_sy < sy) {
+                    if (fread(row_buf, 1, (size_t)stride, f) < (size_t)stride) {
+                        stream_ok = false;
+                        break;
+                    }
+                    prev_sy++;
+                }
+                if (!stream_ok) break;
+                for (int tx = 0; tx < dw; tx++) {
+                    int sx = tx * img_w / dw;
+                    int bit = (row_buf[sx / 8] >> (7 - sx % 8)) & 1;
+                    if (bit) fb_pixel(fb, x + tx, y + ty,
+                                      has_red_plane ? COLOR_BLACK : color);
+                }
+                if ((ty & (CANVAS_RENDER_YIELD_ROWS - 1)) == 0)
+                    vTaskDelay(1);
+            }
+            free(row_buf);
+        }
         fclose(f);
         return;
     }
@@ -617,6 +677,7 @@ static void do_render(unsigned epoch)
     for (int i = 0; i < n; i++) {
         cJSON *el = cJSON_GetArrayItem(root, i);
         if (el) render_element(fb, el);
+        vTaskDelay(1);
     }
     cJSON_Delete(root);
 

@@ -6,8 +6,24 @@
 #include "fb_render.h"
 
 typedef enum {
-    EPD_PANEL_42_BWR   = 0,   /* 4.2" 400x300 BW+Red, SSD1619 */
-    EPD_PANEL_583_BWR  = 1,   /* 5.83" 648x480 BW+Red,UC8179 */
+    EPD_PANEL_42_BWR        = 0,  /* 4.2" 400x300 BW+Red, SSD1619 */
+    EPD_PANEL_583_BWR       = 1,  /* 5.83" 648x480 BW+Red, UC8179 */
+
+    /* Waveshare reference drivers ported from E-Paper_ESP32_Driver_Board_Code. */
+    EPD_PANEL_WS_29_BW      = 2,  /* 2.9" 128x296 BW V2 */
+    EPD_PANEL_WS_29_BWR     = 3,  /* 2.9" 128x296 BW+Red B V4 */
+    EPD_PANEL_WS_266_BW     = 4,  /* 2.66" 152x296 BW */
+    EPD_PANEL_WS_266_BWR    = 5,  /* 2.66" 152x296 BW+Red */
+    EPD_PANEL_WS_27_BW      = 6,  /* 2.7" 176x264 BW V2 */
+    EPD_PANEL_WS_27_BWR     = 7,  /* 2.7" 176x264 BW+Red B V2 */
+    EPD_PANEL_WS_426_BW     = 8,  /* 4.26" 800x480 BW */
+    EPD_PANEL_WS_583_BW     = 9,  /* 5.83" 648x480 BW V2 */
+    EPD_PANEL_WS_583_BWR    = 10, /* 5.83" 648x480 BW+Red B V2 */
+    EPD_PANEL_WS_75_BW      = 11, /* 7.5" 800x480 BW V2 */
+    EPD_PANEL_WS_75_BWR     = 12, /* 7.5" 800x480 BW+Red B V2 */
+    EPD_PANEL_WS_42_BWR_UC8176 = 13, /* 4.2" 400x300 BW+Red, UC8176 */
+
+    EPD_PANEL_COUNT
 } epd_panel_t;
 
 /**
@@ -42,6 +58,8 @@ esp_err_t    epd_save_panel_config(epd_panel_t panel, int busy_idle);
 
 /** 当前 BUSY 空闲电平：0=空闲时低，1=空闲时高（与 NVS epd/busy_idle 一致） */
 int          epd_busy_idle_level(void);
+/** 指定面板的默认 BUSY 空闲电平；非法面板返回 -1。 */
+int          epd_panel_default_busy_idle(epd_panel_t panel);
 esp_err_t    epd_set_busy_idle(int level); /* 0 或 1，写入 NVS 并立即生效 */
 
 int          epd_width(void);

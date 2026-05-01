@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define FB_MAX_WIDTH   648
+#define FB_MAX_WIDTH   800
 #define FB_MAX_HEIGHT  480
 #define FB_MAX_PLANE_BYTES  ((FB_MAX_WIDTH / 8) * FB_MAX_HEIGHT)
 

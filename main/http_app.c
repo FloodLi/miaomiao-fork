@@ -1085,6 +1085,10 @@ static esp_err_t panel_config_post_handler(httpd_req_t *req)
     cJSON *jb = cJSON_GetObjectItem(root, "busy_idle");
     if (cfg_err == ESP_OK && jb && cJSON_IsNumber(jb)) {
         pending_busy = jb->valueint;
+    } else if (jp && cJSON_IsNumber(jp)) {
+        int default_busy = epd_panel_default_busy_idle(pending_panel);
+        if (default_busy >= 0)
+            pending_busy = default_busy;
     }
     cfg_err = epd_save_panel_config(pending_panel, pending_busy);
     cJSON_Delete(root);

@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
+#include "sdkconfig.h"
 
 #include "rom/tjpgd.h"
 #include "lodepng.h"
@@ -19,6 +20,53 @@ static const char *TAG = "img";
 #define JPEG_FS_BAND_ROWS       16
 #define PNG_MAX_DECODE_PIXELS   (1000u * 1000u)
 #define PNG_MAX_SIDE_PIXELS     4096u
+
+static void log_heap_state(const char *label)
+{
+    ESP_LOGI(TAG, "%s heap: free8=%lu largest8=%lu internal=%lu/%lu psram=%lu/%lu",
+             label,
+             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned long)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+}
+
+static void *img_alloc(size_t size, const char *label)
+{
+    void *p = NULL;
+
+#ifdef CONFIG_SPIRAM
+    if (size >= 4096) {
+        p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (p)
+            return p;
+        ESP_LOGW(TAG, "%s PSRAM alloc(%u) failed", label, (unsigned)size);
+    }
+#endif
+
+    p = heap_caps_malloc(size, MALLOC_CAP_8BIT);
+    if (!p) {
+        ESP_LOGE(TAG, "%s alloc(%u) failed", label, (unsigned)size);
+        log_heap_state("alloc failed");
+    }
+    return p;
+}
+
+static void *img_calloc(size_t count, size_t size, const char *label)
+{
+    if (size != 0 && count > SIZE_MAX / size) {
+        ESP_LOGE(TAG, "%s calloc overflow", label);
+        return NULL;
+    }
+
+    size_t total = count * size;
+    void *p = img_alloc(total, label);
+    if (p)
+        memset(p, 0, total);
+    return p;
+}
 
 /* ── Bayer 8x8 matrix (fallback when F-S allocation fails) ────────── */
 
@@ -460,7 +508,9 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     const int EC = EW * EH / 8;
 
     static const UINT POOL_SIZE = 20 * 1024;
-    void *pool = malloc(POOL_SIZE);
+    log_heap_state("jpeg begin");
+
+    void *pool = img_alloc(POOL_SIZE, "jpeg pool");
     if (!pool) { ESP_LOGE(TAG, "pool alloc failed"); return ESP_ERR_NO_MEM; }
 
     JDEC jd = {0};
@@ -478,9 +528,11 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         return ESP_ERR_INVALID_SIZE;
     }
 
-    uint8_t *black = (uint8_t *)malloc(EC);
-    uint8_t *red   = (uint8_t *)malloc(EC);
+    uint8_t *black = (uint8_t *)img_alloc(EC, "jpeg black plane");
+    uint8_t *red   = (uint8_t *)img_alloc(EC, "jpeg red plane");
     if (!black || !red) {
+        ESP_LOGE(TAG, "jpeg plane alloc failed: plane=%u bytes, panel=%dx%d, red=%d",
+                 (unsigned)EC, EW, EH, epd_has_red() ? 1 : 0);
         free(pool); free(black); free(red);
         return ESP_ERR_NO_MEM;
     }
@@ -504,10 +556,10 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     /* Try red-first Floyd-Steinberg; fall back to Bayer if OOM */
     int bh = JPEG_FS_BAND_ROWS;
     size_t bsz = (size_t)bh * decoded_w * 3;
-    ctx->out.band    = (uint8_t *)malloc(bsz);
-    ctx->out.rgb_row = (uint8_t *)malloc((size_t)EW * 3);
-    ctx->out.ec      = (fs_err_t *)calloc((size_t)EW + 2, sizeof(fs_err_t));
-    ctx->out.en      = (fs_err_t *)calloc((size_t)EW + 2, sizeof(fs_err_t));
+    ctx->out.band    = (uint8_t *)img_alloc(bsz, "jpeg fs band");
+    ctx->out.rgb_row = (uint8_t *)img_alloc((size_t)EW * 3, "jpeg rgb row");
+    ctx->out.ec      = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "jpeg fs err cur");
+    ctx->out.en      = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "jpeg fs err next");
     bool use_fs = ctx->out.band && ctx->out.rgb_row &&
                   ctx->out.ec && ctx->out.en;
 
@@ -596,17 +648,23 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
     const int EH = epd_height();
     const int EC = EW * EH / 8;
 
-    uint8_t *black = (uint8_t *)malloc(EC);
-    uint8_t *red   = (uint8_t *)malloc(EC);
-    if (!black || !red) { free(black); free(red); free(rgba); return ESP_ERR_NO_MEM; }
+    log_heap_state("png begin");
+
+    uint8_t *black = (uint8_t *)img_alloc(EC, "png black plane");
+    uint8_t *red   = (uint8_t *)img_alloc(EC, "png red plane");
+    if (!black || !red) {
+        ESP_LOGE(TAG, "png plane alloc failed: plane=%u bytes, panel=%dx%d, red=%d",
+                 (unsigned)EC, EW, EH, epd_has_red() ? 1 : 0);
+        free(black); free(red); free(rgba); return ESP_ERR_NO_MEM;
+    }
     memset(black, 0xFF, EC);
     memset(red,   0x00, EC);
 
     ESP_LOGI(TAG, "PNG %ux%u -> stretch to %dx%d", pw, ph, EW, EH);
 
-    uint8_t  *rgb_row = (uint8_t *)malloc((size_t)EW * 3);
-    fs_err_t *ec = (fs_err_t *)calloc((size_t)EW + 2, sizeof(fs_err_t));
-    fs_err_t *en = (fs_err_t *)calloc((size_t)EW + 2, sizeof(fs_err_t));
+    uint8_t  *rgb_row = (uint8_t *)img_alloc((size_t)EW * 3, "png rgb row");
+    fs_err_t *ec = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "png fs err cur");
+    fs_err_t *en = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "png fs err next");
     bool use_fs = rgb_row && ec && en;
     bool has_red = epd_has_red();
 
@@ -765,10 +823,14 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     int bpp_bytes  = bpp / 8;
     int row_stride = ((w * bpp_bytes) + 3) & ~3;
 
-    uint8_t *black = (uint8_t *)malloc(EC);
-    uint8_t *red   = (uint8_t *)malloc(EC);
-    uint8_t *row   = (uint8_t *)malloc((size_t)row_stride);
+    log_heap_state("bmp begin");
+
+    uint8_t *black = (uint8_t *)img_alloc(EC, "bmp black plane");
+    uint8_t *red   = (uint8_t *)img_alloc(EC, "bmp red plane");
+    uint8_t *row   = (uint8_t *)img_alloc((size_t)row_stride, "bmp input row");
     if (!black || !red || !row) {
+        ESP_LOGE(TAG, "bmp alloc failed: plane=%u row=%u panel=%dx%d red=%d",
+                 (unsigned)EC, (unsigned)row_stride, EW, EH, epd_has_red() ? 1 : 0);
         free(black); free(red); free(row);
         return ESP_ERR_NO_MEM;
     }
@@ -778,9 +840,9 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     ESP_LOGI(TAG, "BMP %dx%d %u-bit -> stretch to %dx%d", w, h, (unsigned)bpp, EW, EH);
 
     bool has_red_bmp = epd_has_red();
-    uint8_t  *rgb_row = (uint8_t *)malloc((size_t)EW * 3);
-    fs_err_t *ec_b    = (fs_err_t *)calloc((size_t)EW + 2, sizeof(fs_err_t));
-    fs_err_t *en_b    = (fs_err_t *)calloc((size_t)EW + 2, sizeof(fs_err_t));
+    uint8_t  *rgb_row = (uint8_t *)img_alloc((size_t)EW * 3, "bmp rgb row");
+    fs_err_t *ec_b    = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "bmp fs err cur");
+    fs_err_t *en_b    = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "bmp fs err next");
     bool use_fs = rgb_row && ec_b && en_b;
 
     int last_br = -1;
@@ -920,7 +982,7 @@ esp_err_t image_convert_file_to_epd_raw(const char *input_path, const char *out_
                      (long)st.st_size);
             return ESP_ERR_NO_MEM;
         }
-        uint8_t *buf = (uint8_t *)malloc((size_t)st.st_size);
+        uint8_t *buf = (uint8_t *)img_alloc((size_t)st.st_size, "png file buffer");
         if (!buf) { ESP_LOGE(TAG, "PNG file malloc(%ld) failed", (long)st.st_size); return ESP_ERR_NO_MEM; }
         FILE *pf = fopen(input_path, "rb");
         if (!pf) { free(buf); return ESP_FAIL; }

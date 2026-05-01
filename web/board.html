@@ -72,7 +72,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;
 /* 右侧面板 */
 #sidebar{background:var(--cd);border-left:1px solid var(--cb);width:252px;min-width:252px;overflow-y:auto;display:flex;flex-direction:column}
 .panel{padding:10px 12px;border-bottom:1px solid var(--cb)}
-.panel h3{font-size:.68rem;text-transform:uppercase;color:var(--t2);margin-bottom:8px;letter-spacing:.08em;font-weight:700}
+.panel h3{font-size:.68rem;text-transform:uppercase;color:var(--t2);margin-bottom:8px;letter-spacing:.08em;font-weight:700;cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.panel h3::after{content:'▾';font-size:.72rem;color:var(--t2);opacity:.75}
+.panel.collapsed h3{margin-bottom:0}
+.panel.collapsed h3::after{content:'▸'}
+.panel.collapsed>:not(h3){display:none!important}
 label{display:block;font-size:.78rem;margin-bottom:3px;color:var(--t2)}
 input[type=number],input[type=text],select,textarea{
   width:100%;background:var(--sf);border:1px solid var(--sb);color:var(--tx);
@@ -108,7 +112,7 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
 .layer-item.sel{background:var(--tg);color:var(--tx)}
 .ltype{background:var(--tg);border-radius:4px;padding:1px 5px;font-size:.62rem;min-width:26px;text-align:center;flex-shrink:0;color:var(--ac);font-weight:700}
 .lname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px}
-.lbtn{color:var(--t2);padding:1px 4px;cursor:pointer;font-size:.9rem;line-height:1;flex-shrink:0;border-radius:3px}
+.lbtn{color:var(--t2);padding:1px 3px;cursor:pointer;font-size:.82rem;line-height:1;flex-shrink:0;border-radius:3px}
 .lbtn:hover{color:var(--tx);background:var(--hv)}
 .lbtn.del{color:var(--er)}
 .lbtn.del:hover{background:rgba(200,0,0,.08)}
@@ -153,7 +157,7 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
   <button class="tb-btn" id="btn-grid" onclick="toggleGrid()" title="网格吸附">⊞ 网格</button>
   <button class="tb-btn" onclick="showTemplates()" title="模板预设">📋 模板</button>
   <div class="tb-sep"></div>
-  <button class="tb-btn primary" onclick="showOnEPD()">🖨 发送到墨水屏</button>
+  <button class="tb-btn primary" id="btn-show-epd" onclick="showOnEPD()">🖨 发送到墨水屏</button>
 </div>
 
 <div id="app">
@@ -265,7 +269,23 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
       <button class="btn sml" onclick="deleteSelectedImage()">🗑 删除</button>
     </div>
     <input type="file" id="image-file-input" accept="image/*" style="display:none">
-    <div class="hint" style="margin-top:4px">PNG/JPG，自动转黑白抖动，点击画布放置</div>
+    <div class="hint" style="margin-top:4px">PNG/JPG，按下方参数转黑白抖动，点击画布放置</div>
+    <label>阈值 <b id="img-threshold-lbl" style="color:#e94560">128</b></label>
+    <input type="range" id="img-threshold" min="64" max="192" value="128">
+    <label>对比度 <b id="img-contrast-lbl" style="color:#e94560">1.20×</b></label>
+    <input type="range" id="img-contrast" min="50" max="220" value="120">
+    <label>红色敏感度 <b id="img-red-lbl" style="color:#e94560">0.35</b></label>
+    <input type="range" id="img-red" min="0" max="100" value="35">
+    <label>抖动强度 <b id="img-dither-lbl" style="color:#e94560">1.00×</b></label>
+    <input type="range" id="img-dither" min="0" max="160" value="100">
+    <label>适配方式</label>
+    <select id="img-fit">
+      <option value="contain">适应（完整保留）</option>
+      <option value="cover">裁剪（铺满屏幕）</option>
+      <option value="stretch">拉伸（铺满屏幕）</option>
+    </select>
+    <label style="margin-top:2px"><input type="checkbox" id="img-invert"> 反色</label>
+    <button class="btn sml" style="margin-top:4px" onclick="applyActiveImageParams()">应用当前参数</button>
     <div id="img-preview-wrap" style="display:none;margin-top:8px">
       <canvas id="img-preview" style="max-width:100%;image-rendering:pixelated;border:1px solid var(--cb);border-radius:4px;display:block"></canvas>
       <div class="hint" style="margin-top:2px">转换预览</div>
@@ -292,6 +312,24 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
 </div><!-- /sidebar -->
 </div><!-- /app -->
 <div id="toast"></div>
+
+<!-- 发送前预览 -->
+<div id="send-preview-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.50);z-index:300;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--cd);border:1px solid var(--cb);border-radius:14px;padding:16px;width:min(720px,96vw);max-height:92vh;overflow:auto;box-shadow:0 12px 48px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px">
+      <div>
+        <b style="font-size:1rem">发送到墨水屏前预览</b>
+        <div class="hint" id="send-preview-meta" style="margin-top:3px"></div>
+      </div>
+      <button class="tb-btn" onclick="closeSendPreview()">取消</button>
+    </div>
+    <canvas id="send-preview-canvas" style="width:100%;max-height:70vh;object-fit:contain;background:#fff;border:1px solid var(--cb);border-radius:6px;image-rendering:pixelated;display:block"></canvas>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="tb-btn" onclick="closeSendPreview()">返回修改</button>
+      <button class="tb-btn primary" id="btn-confirm-send" onclick="confirmSendOnEPD()">确认发送</button>
+    </div>
+  </div>
+</div>
 
 <!-- 模板选择对话框 -->
 <div id="tpl-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center" onclick="if(event.target===this)closeTpl()">
@@ -425,6 +463,9 @@ let color = 0;
 /* 历史（撤销/重做） */
 let history = [], histIdx = -1;
 let _autoSaveTimer = null;
+let _saveInFlight = null;
+let _saveQueued = false;
+let _lastSavedJson = null;
 
 /* 后端 CANVAS_LAYOUT_MAX_BYTES = 12288，留 256B 安全裕度 */
 const LAYOUT_LIMIT_BYTES = 12288;
@@ -443,6 +484,74 @@ function setSaveStatus(s) {
     el.style.color = sz >= LAYOUT_LIMIT_BYTES ? '#e33'
                    : sz >= LAYOUT_WARN_BYTES  ? '#e80'
                    : 'var(--t2)';
+}
+
+function currentLayoutJson() {
+    return JSON.stringify(elements);
+}
+
+function markSavedJson(json) {
+    _lastSavedJson = json ?? currentLayoutJson();
+}
+
+function prepareLayoutForSave() {
+    if (estimateSize() < LAYOUT_LIMIT_BYTES) return false;
+    compactAllPaths(LAYOUT_WARN_BYTES);
+    render(); updateLayerList();
+    toast('🪄 路径已自动化简以适配 12KB 上限');
+    return true;
+}
+
+async function persistLayout(opts) {
+    opts = opts || {};
+    clearTimeout(_autoSaveTimer);
+
+    if (_saveInFlight) {
+        _saveQueued = true;
+        await _saveInFlight;
+        if (opts.force || currentLayoutJson() !== _lastSavedJson) {
+            return persistLayout(opts);
+        }
+        return { ok:true, skipped:true, queued:true };
+    }
+
+    prepareLayoutForSave();
+    const json = currentLayoutJson();
+    if (!opts.force && json === _lastSavedJson) {
+        setSaveStatus('✓ 已保存');
+        return { ok:true, skipped:true };
+    }
+
+    setSaveStatus(opts.silent ? '自动保存中…' : '保存中…');
+    _saveQueued = false;
+    _saveInFlight = (async () => {
+        try {
+            const r = await fetch('/canvas_layout', epdFetchOpts({
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:json
+            }));
+            if (r.ok) {
+                markSavedJson(json);
+                setSaveStatus('✓ 已保存');
+                return { ok:true };
+            }
+            const msg = await r.text().catch(()=>String(r.status));
+            setSaveStatus(`⚠ ${r.status}`);
+            return { ok:false, status:r.status, msg };
+        } catch(e) {
+            setSaveStatus('⚠ 网络错误');
+            return { ok:false, msg:String(e && e.message ? e.message : e) };
+        }
+    })();
+
+    try {
+        const res = await _saveInFlight;
+        if (_saveQueued && currentLayoutJson() !== _lastSavedJson) scheduleAutoSave(1200);
+        return res;
+    } finally {
+        _saveInFlight = null;
+    }
 }
 
 /* Ramer–Douglas–Peucker 路径化简：tolerance 单位为像素。
@@ -501,21 +610,13 @@ function manualCompact() {
     }
 }
 
-function scheduleAutoSave() {
+function scheduleAutoSave(delayMs) {
     setSaveStatus('未保存…');
     clearTimeout(_autoSaveTimer);
     _autoSaveTimer = setTimeout(async () => {
-        setSaveStatus('保存中…');
-        if (estimateSize() >= LAYOUT_LIMIT_BYTES) {
-            compactAllPaths(LAYOUT_WARN_BYTES);
-            render(); updateLayerList();
-            toast('🪄 路径已自动化简以适配 12KB 上限');
-        }
-        try {
-            const r = await fetch('/canvas_layout',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)}));
-            setSaveStatus(r.ok ? '✓ 已保存' : `⚠ ${r.status}`);
-        } catch(e){ setSaveStatus('⚠ 网络错误'); }
-    }, 3000);
+        const res = await persistLayout({ silent:true });
+        if (!res.ok && res.msg) toast('自动保存失败: ' + res.msg);
+    }, delayMs || 1200);
 }
 function snapshot(noAutoSave) {
     history.splice(histIdx + 1);
@@ -560,9 +661,21 @@ let CANVAS_IMAGES = {};        // name -> {w,h,data:Uint8Array 1-bit}
 const BMP_CACHE = {};          // name -> offscreen canvas（drawBmpRaw 缓存）
 let userImageNames = [];       // 已上传图片名列表
 let selectedImageName = null;  // 当前选中图片名
+let activeImageSource = null;  // {name, file}，用于调参时从原图实时重算预览。
+let _imgPreviewTimer = null;
+let _imgPreviewBusy = false;
+let _imgPreviewQueued = false;
+
+const GITEE_QR_IMAGE_NAME = 'gitee_qr3';
+const GITEE_QR_IMAGE = {
+    w:37, h:37,
+    data:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,15,228,236,191,128,8,35,177,32,128,11,174,230,174,128,11,167,109,174,128,11,162,60,174,128,8,36,73,32,128,15,234,170,191,128,0,14,253,0,0,14,251,42,98,0,0,3,50,228,128,9,236,86,251,128,4,145,27,1,0,6,168,137,37,128,6,13,198,228,128,8,61,178,77,128,7,66,252,229,0,13,231,38,245,128,7,159,36,230,128,8,36,80,57,128,6,137,24,189,0,10,182,151,248,0,0,13,195,139,128,15,239,177,173,128,8,44,251,140,0,11,169,46,249,128,11,167,54,26,0,11,174,81,28,128,8,47,27,169,0,15,234,143,217,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    _cacheKey:'gitee_qr3'
+};
 
 let gridOn = false;
 const GRID_SIZE = 10;          // 吸附/网格单位（设备像素）
+let _sendConfirmed = false;
 function snapG(v) { return gridOn ? Math.round(v / GRID_SIZE) * GRID_SIZE : v; }
 function toggleGrid() {
     gridOn = !gridOn;
@@ -657,6 +770,66 @@ const TEMPLATES = [
       {type:'text', x:Math.round(W*0.52), y:Math.round(H*0.76), text:'email@example.com', scale:1, color:0},
     ]
   },
+  {
+    name: '课程表',
+    desc: '五天 × 六节课表格',
+    build: (W, H) => {
+      const x0=Math.round(W*0.08), y0=Math.round(H*0.16), cw=Math.round(W*0.16), rh=Math.round(H*0.11);
+      const els=[{type:'text',x:x0,y:Math.round(H*0.04),text:'本周课程表',scale:2,color:0}];
+      for(let c=0;c<=5;c++) els.push({type:'line',x1:x0+c*cw,y1:y0,x2:x0+c*cw,y2:y0+7*rh,sw:1,color:0});
+      for(let r=0;r<=7;r++) els.push({type:'line',x1:x0,y1:y0+r*rh,x2:x0+5*cw,y2:y0+r*rh,sw:1,color:0});
+      ['一','二','三','四','五'].forEach((d,i)=>els.push({type:'text',x:x0+i*cw+8,y:y0+6,text:d,scale:1,color:1}));
+      for(let r=1;r<=6;r++) els.push({type:'text',x:x0-24,y:y0+r*rh+6,text:String(r),scale:1,color:0});
+      return els;
+    }
+  },
+  {
+    name: '倒计时',
+    desc: '大数字 + 目标日期',
+    build: (W, H) => [
+      {type:'rect',x:8,y:8,w:W-16,h:H-16,fill:false,sw:3,color:0,radius:10},
+      {type:'text',x:Math.round(W*0.12),y:Math.round(H*0.12),text:'距离目标还有',scale:2,color:0},
+      {type:'text',x:Math.round(W*0.20),y:Math.round(H*0.36),text:'100',scale:6,color:1},
+      {type:'text',x:Math.round(W*0.62),y:Math.round(H*0.48),text:'天',scale:3,color:0},
+      {type:'line',x1:Math.round(W*0.12),y1:Math.round(H*0.76),x2:Math.round(W*0.88),y2:Math.round(H*0.76),sw:1,color:0},
+      {type:'text',x:Math.round(W*0.18),y:Math.round(H*0.82),text:'2026-12-31',scale:1,color:0},
+    ]
+  },
+  {
+    name: '图片相框',
+    desc: '留白相框 + 标题说明',
+    build: (W, H) => [
+      {type:'rect',x:Math.round(W*0.08),y:Math.round(H*0.08),w:Math.round(W*0.84),h:Math.round(H*0.68),fill:false,sw:4,color:0,radius:6},
+      {type:'rect',x:Math.round(W*0.11),y:Math.round(H*0.12),w:Math.round(W*0.78),h:Math.round(H*0.58),fill:false,sw:1,color:1,radius:0},
+      {type:'text',x:Math.round(W*0.12),y:Math.round(H*0.80),text:'把图片拖进这里',scale:2,color:0},
+    ]
+  },
+  {
+    name: '二维码名片',
+    desc: '二维码占位 + 联系信息',
+    build: (W, H) => {
+      const margin = Math.round(Math.min(W, H) * 0.08);
+      const qrModules = GITEE_QR_IMAGE.w;
+      const qrMaxByWidth = Math.floor((W * 0.48) / qrModules) * qrModules;
+      const qrMaxByHeight = Math.floor((H - margin * 2) / qrModules) * qrModules;
+      const qr = Math.max(qrModules * 3, Math.min(qrModules * 6, qrMaxByWidth, qrMaxByHeight));
+      const qx = margin;
+      const qy = Math.round((H - qr) / 2);
+      const tx = qx + qr + Math.round(W * 0.08);
+      const right = W - margin;
+      const titleScale = W < 500 ? 1 : 2;
+      return [
+        {type:'rect',x:8,y:8,w:W-16,h:H-16,fill:false,sw:2,color:0,radius:8},
+        {type:'image',x:qx,y:qy,name:GITEE_QR_IMAGE_NAME,dw:qr,dh:qr,color:0,label:'Gitee 二维码'},
+        {type:'text',x:tx,y:Math.round(H*0.16),text:'喵喵墨水屏',scale:titleScale,color:0},
+        {type:'text',x:tx,y:Math.round(H*0.36),text:'扫码查看文档',scale:1,color:0},
+        {type:'text',x:tx,y:Math.round(H*0.46),text:'和开源仓库',scale:1,color:0},
+        {type:'line',x1:tx,y1:Math.round(H*0.58),x2:right,y2:Math.round(H*0.58),sw:1,color:1},
+        {type:'text',x:tx,y:Math.round(H*0.68),text:'gitee.com/gxp666111',scale:1,color:0},
+        {type:'text',x:tx,y:Math.round(H*0.78),text:'/miaomiao',scale:1,color:0},
+      ];
+    }
+  },
 ];
 
 function showTemplates() {
@@ -673,9 +846,16 @@ function showTemplates() {
     document.getElementById('tpl-overlay').style.display = 'flex';
 }
 function closeTpl() { document.getElementById('tpl-overlay').style.display = 'none'; }
-function loadTemplate(idx) {
+async function ensureBuiltinTemplateAssets() {
+    CANVAS_IMAGES[GITEE_QR_IMAGE_NAME] = GITEE_QR_IMAGE;
+    invalidateImageCache(GITEE_QR_IMAGE_NAME);
+    if (!userImageNames.includes(GITEE_QR_IMAGE_NAME)) userImageNames.push(GITEE_QR_IMAGE_NAME);
+    try { await uploadCanvasImageData(GITEE_QR_IMAGE_NAME, GITEE_QR_IMAGE, true); } catch(e) {}
+}
+async function loadTemplate(idx) {
     if (!confirm('加载模板将替换当前画布，确认继续？')) return;
     closeTpl();
+    await ensureBuiltinTemplateAssets();
     elements = TEMPLATES[idx].build(EPD_W, EPD_H);
     selected = -1;
     render(); updateLayerList(); snapshot();
@@ -706,7 +886,17 @@ async function init() {
     render();
     updateLayerList();
     bindEvents();
+    bindPanelCollapse();
     updatePanels();
+}
+
+function bindPanelCollapse() {
+    document.querySelectorAll('#sidebar .panel h3').forEach(h => {
+        h.onclick = ev => {
+            if (ev.target.closest('button,input,select,textarea')) return;
+            h.parentElement.classList.toggle('collapsed');
+        };
+    });
 }
 
 /* ═══════════════════════════════════════════════
@@ -813,7 +1003,10 @@ async function deleteSelectedIcon() {
 /* ═══════════════════════════════════════════════
    图片：Floyd-Steinberg 抖动 + 1-bit 编码
 ═══════════════════════════════════════════════ */
-function floydSteinberg(gray, w, h) {
+function floydSteinberg(gray, w, h, opts) {
+    opts = opts || {};
+    const threshold = Math.max(0, Math.min(255, opts.threshold ?? 128));
+    const strength = Math.max(0, Math.min(2, opts.strength ?? 1));
     const buf = new Float32Array(gray);
     const stride = Math.ceil(w / 8);
     const result = new Uint8Array(stride * h);
@@ -821,9 +1014,9 @@ function floydSteinberg(gray, w, h) {
         for (let x = 0; x < w; x++) {
             const idx = y * w + x;
             const old = Math.max(0, Math.min(255, buf[idx]));
-            const nv  = old < 128 ? 0 : 255;
+            const nv  = old < threshold ? 0 : 255;
             buf[idx]  = nv;
-            const err = old - nv;
+            const err = (old - nv) * strength;
             if (x + 1 < w)           buf[idx + 1]     += err * 7 / 16;
             if (y + 1 < h) {
                 if (x > 0)            buf[idx + w - 1] += err * 3 / 16;
@@ -839,18 +1032,129 @@ function floydSteinberg(gray, w, h) {
     return result;
 }
 
+function packPlane(mask, w, h) {
+    const stride = Math.ceil(w / 8);
+    const out = new Uint8Array(stride * h);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            if (mask[y * w + x]) out[y * stride + (x >> 3)] |= (0x80 >> (x & 7));
+        }
+    }
+    return out;
+}
+
+function quantizeBwrFromImageData(id, w, h, opts) {
+    const threshold = Math.max(0, Math.min(255, opts.threshold ?? 128));
+    const strength = Math.max(0, Math.min(2, opts.strength ?? 1));
+    const contrast = Math.max(0.2, Math.min(3, opts.contrast ?? 1.2));
+    const redSensitivity = Math.max(0, Math.min(1, opts.redSensitivity ?? 0.35));
+    const invert = !!opts.invert;
+    const gray = new Float32Array(w * h);
+    const redScore = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+        let r = id.data[i*4], g = id.data[i*4+1], b = id.data[i*4+2];
+        if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+        let y = 0.299 * r + 0.587 * g + 0.114 * b;
+        y = Math.max(0, Math.min(255, (y - 128) * contrast + 128));
+        gray[i] = y;
+        const warm = r - Math.max(g, b) * (0.72 + redSensitivity * 0.18);
+        const saturation = r - Math.min(g, b);
+        redScore[i] = warm + saturation * 0.35;
+    }
+
+    const blackMask = new Uint8Array(w * h);
+    const redMask = new Uint8Array(w * h);
+    const redGate = 80 - redSensitivity * 55;
+    const redLightGate = 230 - redSensitivity * 80;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            const old = Math.max(0, Math.min(255, gray[idx]));
+            const isRed = redScore[idx] > redGate && old < redLightGate;
+            if (isRed) {
+                redMask[idx] = 1;
+                gray[idx] = 255; // 红色区域不再参与黑色抖动，避免红黑混杂。
+                continue;
+            }
+            const nv = old < threshold ? 0 : 255;
+            gray[idx] = nv;
+            if (nv === 0) blackMask[idx] = 1;
+            const err = (old - nv) * strength;
+            if (x + 1 < w) gray[idx + 1] += err * 7 / 16;
+            if (y + 1 < h) {
+                if (x > 0) gray[idx + w - 1] += err * 3 / 16;
+                gray[idx + w] += err * 5 / 16;
+                if (x + 1 < w) gray[idx + w + 1] += err * 1 / 16;
+            }
+        }
+    }
+    return { black:packPlane(blackMask, w, h), red:packPlane(redMask, w, h) };
+}
+
+function getImageConvertOptions() {
+    const threshold = +(document.getElementById('img-threshold')?.value || 128);
+    const contrast = (+(document.getElementById('img-contrast')?.value || 120)) / 100;
+    const strength = (+(document.getElementById('img-dither')?.value || 100)) / 100;
+    const redSensitivity = (+(document.getElementById('img-red')?.value || 35)) / 100;
+    const fit = document.getElementById('img-fit')?.value || 'contain';
+    const invert = !!document.getElementById('img-invert')?.checked;
+    return { threshold, contrast, strength, redSensitivity, fit, invert };
+}
+
+function saveImageConvertOptions() {
+    try {
+        localStorage.setItem('canvas_img_opts', JSON.stringify({
+            threshold: document.getElementById('img-threshold')?.value || '128',
+            contrast: document.getElementById('img-contrast')?.value || '120',
+            red: document.getElementById('img-red')?.value || '35',
+            dither: document.getElementById('img-dither')?.value || '100',
+            fit: document.getElementById('img-fit')?.value || 'contain',
+            invert: !!document.getElementById('img-invert')?.checked
+        }));
+    } catch(e) {}
+}
+
+function loadImageConvertOptions() {
+    try {
+        const opt = JSON.parse(localStorage.getItem('canvas_img_opts') || '{}');
+        if (opt.threshold != null) document.getElementById('img-threshold').value = opt.threshold;
+        if (opt.contrast != null) document.getElementById('img-contrast').value = opt.contrast;
+        if (opt.red != null) document.getElementById('img-red').value = opt.red;
+        if (opt.dither != null) document.getElementById('img-dither').value = opt.dither;
+        if (opt.fit != null) document.getElementById('img-fit').value = opt.fit;
+        if (opt.invert != null) document.getElementById('img-invert').checked = !!opt.invert;
+    } catch(e) {}
+}
+
 async function imageFileTo1bit(file, maxW, maxH) {
     return new Promise((resolve, reject) => {
         const url = URL.createObjectURL(file);
         const img = new Image();
         img.onload = () => {
             URL.revokeObjectURL(url);
+            const opt = getImageConvertOptions();
             let w = img.width, h = img.height;
-            const scaleW = maxW / w, scaleH = maxH / h;
-            if (scaleW < 1 || scaleH < 1) {
-                const sc = Math.min(scaleW, scaleH);
-                w = Math.max(1, Math.round(w * sc));
-                h = Math.max(1, Math.round(h * sc));
+            let sx = 0, sy = 0, sw = img.width, sh = img.height;
+            if (opt.fit === 'stretch') {
+                w = maxW; h = maxH;
+            } else if (opt.fit === 'cover') {
+                w = maxW; h = maxH;
+                const srcRatio = img.width / img.height;
+                const dstRatio = maxW / maxH;
+                if (srcRatio > dstRatio) {
+                    sw = Math.round(img.height * dstRatio);
+                    sx = Math.round((img.width - sw) / 2);
+                } else {
+                    sh = Math.round(img.width / dstRatio);
+                    sy = Math.round((img.height - sh) / 2);
+                }
+            } else {
+                const scaleW = maxW / w, scaleH = maxH / h;
+                if (scaleW < 1 || scaleH < 1) {
+                    const sc = Math.min(scaleW, scaleH);
+                    w = Math.max(1, Math.round(w * sc));
+                    h = Math.max(1, Math.round(h * sc));
+                }
             }
             const oc = document.createElement('canvas');
             oc.width = w; oc.height = h;
@@ -858,13 +1162,10 @@ async function imageFileTo1bit(file, maxW, maxH) {
             /* 关闭平滑：双线性插值会让中灰变多，1-bit 抖动后发糊、与设备端最近邻缩放观感不一致 */
             cx.imageSmoothingEnabled = false;
             cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h);
-            cx.drawImage(img, 0, 0, w, h);
+            cx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
             const id = cx.getImageData(0, 0, w, h);
-            const gray = new Float32Array(w * h);
-            for (let i = 0; i < w * h; i++) {
-                gray[i] = 0.299 * id.data[i*4] + 0.587 * id.data[i*4+1] + 0.114 * id.data[i*4+2];
-            }
-            resolve({ w, h, data: floydSteinberg(gray, w, h) });
+            const planes = quantizeBwrFromImageData(id, w, h, opt);
+            resolve({ w, h, data: planes.black, red: planes.red, bwr: true });
         };
         img.onerror = reject;
         img.src = url;
@@ -873,14 +1174,14 @@ async function imageFileTo1bit(file, maxW, maxH) {
 
 function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
     if (!imgData) return;
-    const {w, h, data, _cacheKey} = imgData;
+    const {w, h, data, red, _cacheKey} = imgData;
     const fg = fgColor || '#000';
-    const key = (_cacheKey || (w + 'x' + h)) + '_' + fg;
+    const key = (_cacheKey || (w + 'x' + h)) + '_' + fg + '_' + (red ? 'bwr' : 'bw');
     let oc = BMP_CACHE[key];
     if (!oc) {
         let fr=0,fg2=0,fb2=0;
-        if (fg==='#c0392b'||fg==='red'){fr=192;fg2=57;fb2=43;}
-        else if (fg==='#fff'||fg==='white'){fr=255;fg2=255;fb2=255;}
+        if (!red && (fg==='#c0392b'||fg==='red')){fr=192;fg2=57;fb2=43;}
+        else if (!red && (fg==='#fff'||fg==='white')){fr=255;fg2=255;fb2=255;}
         const stride = Math.ceil(w / 8);
         oc = document.createElement('canvas');
         oc.width = w; oc.height = h;
@@ -888,9 +1189,13 @@ function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
         const id = cx.createImageData(w, h);
         for (let row = 0; row < h; row++) {
             for (let col = 0; col < w; col++) {
-                const on = (data[row * stride + (col >> 3)] >> (7 - (col & 7))) & 1;
+                const byteIdx = row * stride + (col >> 3);
+                const bitMask = 7 - (col & 7);
+                const on = (data[byteIdx] >> bitMask) & 1;
+                const isRed = red ? ((red[byteIdx] >> bitMask) & 1) : 0;
                 const i = (row * w + col) * 4;
-                if (on) { id.data[i]=fr; id.data[i+1]=fg2; id.data[i+2]=fb2; id.data[i+3]=255; }
+                if (isRed) { id.data[i]=192; id.data[i+1]=57; id.data[i+2]=43; id.data[i+3]=255; }
+                else if (on) { id.data[i]=fr; id.data[i+1]=fg2; id.data[i+2]=fb2; id.data[i+3]=255; }
                 else    { id.data[i]=255; id.data[i+1]=255; id.data[i+2]=255; id.data[i+3]=255; }
             }
         }
@@ -918,8 +1223,17 @@ async function loadImageData(name) {
         if (buf.length < 5) return null;
         const w = buf[0] | (buf[1] << 8);
         const h = buf[2] | (buf[3] << 8);
-        const data = buf.slice(4);
-        CANVAS_IMAGES[name] = {w, h, data, _cacheKey: name};
+        const stride = Math.ceil(w / 8);
+        const planeLen = stride * h;
+        let flags = 0, off = 4;
+        if (buf.length >= 8 + planeLen * 2 &&
+            buf[4] === 0x42 && buf[5] === 0x57 && (buf[6] & 1)) {
+            flags = buf[6];
+            off = 8;
+        }
+        const data = buf.slice(off, off + planeLen);
+        const red = (flags & 1) ? buf.slice(off + planeLen, off + planeLen * 2) : null;
+        CANVAS_IMAGES[name] = {w, h, data, red, bwr:!!red, _cacheKey: name};
         Object.keys(BMP_CACHE).filter(k=>k.startsWith(name+'_')||k===name).forEach(k=>delete BMP_CACHE[k]);
         return CANVAS_IMAGES[name];
     } catch(e) { return null; }
@@ -965,6 +1279,7 @@ function buildImageGrid() {
             document.querySelectorAll('#image-list-grid .icon-item').forEach(e=>e.classList.remove('sel'));
             div.classList.add('sel');
             selectedImageName = name;
+            if (CANVAS_IMAGES[name]) showImagePreview(CANVAS_IMAGES[name]);
             if (selected >= 0 && selected < elements.length && elements[selected].type === 'image') {
                 elements[selected].name = name;
                 render(); updateProps(); snapshot();
@@ -976,6 +1291,94 @@ function buildImageGrid() {
 
 function uploadImageClick() { document.getElementById('image-file-input').click(); }
 
+function invalidateImageCache(name) {
+    Object.keys(BMP_CACHE).filter(k=>k.startsWith(name+'_')||k===name).forEach(k=>delete BMP_CACHE[k]);
+}
+
+function showImagePreview(imgData) {
+    const pw = document.getElementById('img-preview');
+    pw.width = imgData.w; pw.height = imgData.h;
+    drawBmpRaw(pw.getContext('2d'), imgData, 0, 0, imgData.w, imgData.h);
+    document.getElementById('img-preview-wrap').style.display = '';
+}
+
+async function uploadCanvasImageData(name, imgData, silent) {
+    const body = encodeCanvasImageBody(imgData);
+    const r = await fetch('/canvas_image_upload?name=' + encodeURIComponent(name), epdFetchOpts({
+        method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body
+    }));
+    if (!r.ok) throw new Error('上传失败: ' + r.status);
+    if (!userImageNames.includes(name)) userImageNames.push(name);
+    if (!silent) toast('图片已上传: ' + name);
+}
+
+async function refreshActiveImagePreview() {
+    if (!activeImageSource || !activeImageSource.file || !activeImageSource.name) return;
+    if (_imgPreviewBusy) { _imgPreviewQueued = true; return; }
+    _imgPreviewBusy = true;
+    try {
+        const name = activeImageSource.name;
+        const imgData = await imageFileTo1bit(activeImageSource.file, EPD_W, EPD_H);
+        imgData._cacheKey = name;
+        CANVAS_IMAGES[name] = imgData;
+        invalidateImageCache(name);
+        showImagePreview(imgData);
+        buildImageGrid();
+        render();
+    } catch(e) {
+        toast('实时预览失败: ' + e.message);
+    } finally {
+        _imgPreviewBusy = false;
+        if (_imgPreviewQueued) {
+            _imgPreviewQueued = false;
+            refreshActiveImagePreview();
+        }
+    }
+}
+
+function scheduleActiveImagePreview() {
+    saveImageConvertOptions();
+    if (!activeImageSource || activeImageSource.name !== selectedImageName) {
+        if (selectedImageName) toast('实时预览需要重新上传一次原图');
+        return;
+    }
+    clearTimeout(_imgPreviewTimer);
+    _imgPreviewTimer = setTimeout(() => refreshActiveImagePreview(), 80);
+}
+
+async function applyActiveImageParams() {
+    if (!activeImageSource || activeImageSource.name !== selectedImageName) {
+        toast('请先重新上传一次原图，再应用参数');
+        return;
+    }
+    await refreshActiveImagePreview();
+    const imgData = CANVAS_IMAGES[selectedImageName];
+    if (!imgData) return;
+    try {
+        await uploadCanvasImageData(selectedImageName, imgData, true);
+        toast('图片参数已应用到设备素材');
+    } catch(e) {
+        toast('应用失败: ' + e.message);
+    }
+}
+
+function encodeCanvasImageBody(imgData) {
+    const stride = Math.ceil(imgData.w / 8);
+    const planeLen = stride * imgData.h;
+    const hasRed = !!imgData.red;
+    const body = new Uint8Array((hasRed ? 8 : 4) + planeLen * (hasRed ? 2 : 1));
+    body[0] = imgData.w & 0xff; body[1] = (imgData.w >> 8) & 0xff;
+    body[2] = imgData.h & 0xff; body[3] = (imgData.h >> 8) & 0xff;
+    if (hasRed) {
+        body[4] = 0x42; body[5] = 0x57; body[6] = 1; body[7] = 0;
+        body.set(imgData.data, 8);
+        body.set(imgData.red, 8 + planeLen);
+    } else {
+        body.set(imgData.data, 4);
+    }
+    return body;
+}
+
 document.getElementById('image-file-input').onchange = async function() {
     const f = this.files[0]; if (!f) return;
     const defName = f.name.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 20);
@@ -986,28 +1389,13 @@ document.getElementById('image-file-input').onchange = async function() {
         const imgData = await imageFileTo1bit(f, EPD_W, EPD_H);
         imgData._cacheKey = name;
         CANVAS_IMAGES[name] = imgData;
-        Object.keys(BMP_CACHE).filter(k=>k.startsWith(name+'_')||k===name).forEach(k=>delete BMP_CACHE[k]);
+        activeImageSource = {name, file:f};
+        invalidateImageCache(name);
 
-        const pw = document.getElementById('img-preview');
-        pw.width = imgData.w; pw.height = imgData.h;
-        drawBmpRaw(pw.getContext('2d'), imgData, 0, 0, imgData.w, imgData.h);
-        document.getElementById('img-preview-wrap').style.display = '';
-
-        const stride = Math.ceil(imgData.w / 8);
-        const body = new Uint8Array(4 + stride * imgData.h);
-        body[0] = imgData.w & 0xff; body[1] = (imgData.w >> 8) & 0xff;
-        body[2] = imgData.h & 0xff; body[3] = (imgData.h >> 8) & 0xff;
-        body.set(imgData.data, 4);
-
-        const r = await fetch('/canvas_image_upload?name=' + encodeURIComponent(name), epdFetchOpts({
-            method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body
-        }));
-        if (r.ok) {
-            if (!userImageNames.includes(name)) userImageNames.push(name);
-            selectedImageName = name;
-            buildImageGrid();
-            toast('图片已上传: ' + name);
-        } else toast('上传失败: ' + r.status);
+        showImagePreview(imgData);
+        await uploadCanvasImageData(name, imgData, false);
+        selectedImageName = name;
+        buildImageGrid();
     } catch(e) { toast('处理失败: ' + e.message); }
     this.value = '';
 };
@@ -1070,9 +1458,48 @@ function renderOverlaySelection() {
         }
         octx.restore();
     }
+    octx.save();
+    octx.strokeStyle = 'rgba(229,57,53,.28)';
+    octx.lineWidth = 1;
+    octx.setLineDash([7,5]);
+    octx.beginPath(); octx.moveTo(EPD_W*SCALE/2, 0); octx.lineTo(EPD_W*SCALE/2, overlay.height); octx.stroke();
+    octx.beginPath(); octx.moveTo(0, EPD_H*SCALE/2); octx.lineTo(overlay.width, EPD_H*SCALE/2); octx.stroke();
+    octx.restore();
     if (selected >= 0 && selected < elements.length) {
+        drawAlignmentGuides(elements[selected]);
         drawSelectionBox(elements[selected]);
     }
+}
+
+function drawAlignmentGuides(el) {
+    if (!mouseDown || tool !== 'select' || !dragStart) return;
+    const b = getBounds(el);
+    const xs = [b.x, b.x + b.w / 2, b.x + b.w];
+    const ys = [b.y, b.y + b.h / 2, b.y + b.h];
+    const guidesX = [EPD_W / 2], guidesY = [EPD_H / 2];
+    elements.forEach(other => {
+        if (other === el || other.hidden) return;
+        const ob = getBounds(other);
+        guidesX.push(ob.x, ob.x + ob.w / 2, ob.x + ob.w);
+        guidesY.push(ob.y, ob.y + ob.h / 2, ob.y + ob.h);
+    });
+    octx.save();
+    octx.strokeStyle = 'rgba(46,158,82,.65)';
+    octx.lineWidth = 1;
+    octx.setLineDash([4,4]);
+    for (const gx of guidesX) {
+        if (xs.some(x => Math.abs(x - gx) <= 3)) {
+            const sx = Math.round(gx * SCALE) + 0.5;
+            octx.beginPath(); octx.moveTo(sx, 0); octx.lineTo(sx, overlay.height); octx.stroke();
+        }
+    }
+    for (const gy of guidesY) {
+        if (ys.some(y => Math.abs(y - gy) <= 3)) {
+            const sy = Math.round(gy * SCALE) + 0.5;
+            octx.beginPath(); octx.moveTo(0, sy); octx.lineTo(overlay.width, sy); octx.stroke();
+        }
+    }
+    octx.restore();
 }
 
 function renderElement(ctx2d, el, sc) {
@@ -1176,16 +1603,38 @@ function drawSelectionBox(el) {
     const b = getBounds(el);
     const s = SCALE;
     octx.save();
-    octx.setLineDash([4,3]);
-    octx.lineWidth = 1.5;
-    octx.strokeStyle = '#2980b9';
+    octx.setLineDash([6,3]);
+    octx.lineWidth = 2;
+    octx.strokeStyle = '#0b84ff';
     octx.strokeRect(b.x*s-4, b.y*s-4, b.w*s+8, b.h*s+8);
     octx.setLineDash([]);
+    octx.strokeStyle = 'rgba(255,255,255,.95)';
+    octx.lineWidth = 1;
+    octx.strokeRect(b.x*s-7, b.y*s-7, b.w*s+14, b.h*s+14);
+    const label = ({text:'文字',rect:'矩形',ellipse:'椭圆',line:'直线',path:'笔迹',icon:'图标',image:'图片'}[el.type] || el.type);
+    octx.font = 'bold 12px sans-serif';
+    const tw = octx.measureText(label).width + 14;
+    const lx = Math.max(2, b.x*s - 4);
+    const ly = Math.max(2, b.y*s - 24);
+    octx.fillStyle = '#0b84ff';
+    octx.fillRect(lx, ly, tw, 18);
+    octx.fillStyle = '#fff';
+    octx.fillText(label, lx + 7, ly + 13);
+    octx.fillStyle = '#e53935';
+    octx.beginPath();
+    octx.arc((b.x+b.w)*s + 12, b.y*s - 12, 8, 0, Math.PI*2);
+    octx.fill();
+    octx.fillStyle = '#fff';
+    octx.font = 'bold 14px sans-serif';
+    octx.fillText('×', (b.x+b.w)*s + 8, b.y*s - 7);
     // 手柄
     const hs = getHandles(el);
-    octx.fillStyle = '#2980b9';
     hs.forEach(h => {
-        octx.fillRect(h.cx*s - 4, h.cy*s - 4, 8, 8);
+        octx.fillStyle = '#fff';
+        octx.fillRect(h.cx*s - 5, h.cy*s - 5, 10, 10);
+        octx.strokeStyle = '#0b84ff';
+        octx.lineWidth = 2;
+        octx.strokeRect(h.cx*s - 5, h.cy*s - 5, 10, 10);
     });
     octx.restore();
 }
@@ -1363,6 +1812,24 @@ function bindEvents() {
         if (selected>=0&&elements[selected].type==='icon'){ elements[selected].scale=+this.value; render(); }
     };
     document.getElementById('icon-scale').onchange = () => { if(selected>=0) snapshot(); };
+
+    // 图片转换参数
+    const bindImgRange = (id, lbl, fmt) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const sync = () => { document.getElementById(lbl).textContent = fmt(+el.value); };
+        el.oninput = () => { sync(); scheduleActiveImagePreview(); };
+        sync();
+    };
+    loadImageConvertOptions();
+    bindImgRange('img-threshold', 'img-threshold-lbl', v => String(v));
+    bindImgRange('img-contrast', 'img-contrast-lbl', v => (v / 100).toFixed(2) + '×');
+    bindImgRange('img-red', 'img-red-lbl', v => (v / 100).toFixed(2));
+    bindImgRange('img-dither', 'img-dither-lbl', v => (v / 100).toFixed(2) + '×');
+    const imgInvert = document.getElementById('img-invert');
+    if (imgInvert) imgInvert.onchange = () => scheduleActiveImagePreview();
+    const imgFit = document.getElementById('img-fit');
+    if (imgFit) imgFit.onchange = () => scheduleActiveImagePreview();
 
     // 画布事件——mousedown 在 canvas，move/up 在 document（防止拖出丢失）
     canvas.addEventListener('mousedown',  onDown);
@@ -1708,7 +2175,7 @@ function updateLayerList() {
         div.appendChild(t);
 
         const nm = document.createElement('span'); nm.className='lname';
-        nm.textContent = el.text||el.name
+        nm.textContent = el.label||el.text||el.name
             ||(el.type==='line'?`(${el.x1},${el.y1})→(${el.x2},${el.y2})`:null)
             ||(el.type==='path'?`笔迹(${(el.pts||[]).length}点)`:null)
             ||`x${el.x||0} y${el.y||0}`;
@@ -1718,6 +2185,14 @@ function updateLayerList() {
         up.onclick=ev=>{ev.stopPropagation();if(i<elements.length-1){[elements[i],elements[i+1]]=[elements[i+1],elements[i]];if(selected===i)selected=i+1;else if(selected===i+1)selected=i;render();updateLayerList();snapshot();}};
         const dn=document.createElement('span'); dn.className='lbtn'; dn.title='下移'; dn.textContent='↓';
         dn.onclick=ev=>{ev.stopPropagation();if(i>0){[elements[i],elements[i-1]]=[elements[i-1],elements[i]];if(selected===i)selected=i-1;else if(selected===i-1)selected=i;render();updateLayerList();snapshot();}};
+        const top=document.createElement('span'); top.className='lbtn'; top.title='置顶'; top.textContent='⇡';
+        top.onclick=ev=>{ev.stopPropagation();if(i<elements.length-1){const [e]=elements.splice(i,1);elements.push(e);selected=elements.length-1;render();updateLayerList();snapshot();}};
+        const bot=document.createElement('span'); bot.className='lbtn'; bot.title='置底'; bot.textContent='⇣';
+        bot.onclick=ev=>{ev.stopPropagation();if(i>0){const [e]=elements.splice(i,1);elements.unshift(e);selected=0;render();updateLayerList();snapshot();}};
+        const cp=document.createElement('span'); cp.className='lbtn'; cp.title='复制'; cp.textContent='⧉';
+        cp.onclick=ev=>{ev.stopPropagation();selected=i;duplicateSelected();};
+        const rn=document.createElement('span'); rn.className='lbtn'; rn.title='重命名'; rn.textContent='✎';
+        rn.onclick=ev=>{ev.stopPropagation();const v=prompt('图层名称：', el.label||nm.textContent||'');if(v!=null){el.label=v.trim().slice(0,24);render();updateLayerList();snapshot();}};
 
         const ey=document.createElement('span'); ey.className='lbtn'; ey.title=el.hidden?'显示':'隐藏';
         ey.textContent=el.hidden?'🚫':'👁'; ey.style.opacity=el.hidden?'0.4':'1';
@@ -1730,7 +2205,8 @@ function updateLayerList() {
         const dl=document.createElement('span'); dl.className='lbtn del'; dl.title='删除'; dl.textContent='×';
         dl.onclick=ev=>{ev.stopPropagation();elements.splice(i,1);if(selected>=elements.length)selected=elements.length-1;render();updateLayerList();snapshot();};
 
-        div.appendChild(up); div.appendChild(dn); div.appendChild(ey); div.appendChild(lk); div.appendChild(dl);
+        div.appendChild(up); div.appendChild(dn); div.appendChild(top); div.appendChild(bot);
+        div.appendChild(cp); div.appendChild(rn); div.appendChild(ey); div.appendChild(lk); div.appendChild(dl);
         list.appendChild(div);
     });
 }
@@ -1880,24 +2356,9 @@ function clearAll() {
    布局持久化
 ═══════════════════════════════════════════════ */
 async function saveLayout() {
-    clearTimeout(_autoSaveTimer);
-    setSaveStatus('保存中…');
-    if (estimateSize() >= LAYOUT_LIMIT_BYTES) {
-        compactAllPaths(LAYOUT_WARN_BYTES);
-        render(); updateLayerList();
-        toast('🪄 路径已自动化简以适配 12KB 上限');
-    }
-    try {
-    const r = await fetch('/canvas_layout',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)}));
-        if (r.ok) {
-            setSaveStatus('✓ 已保存');
-            toast('💾 布局已保存');
-        } else {
-            const msg = await r.text().catch(()=>String(r.status));
-            setSaveStatus(`⚠ ${r.status}`);
-            toast('保存失败: ' + msg);
-        }
-    } catch(e){ setSaveStatus('⚠ 网络错误'); toast('保存失败'); }
+    const res = await persistLayout();
+    if (res.ok) toast(res.skipped ? '布局无变化' : '💾 布局已保存');
+    else toast('保存失败: ' + (res.msg || res.status || '网络错误'));
 }
 
 async function loadLayout() {
@@ -1909,29 +2370,55 @@ async function loadLayout() {
             elements=data; selected=-1;
             await ensureImagesForLayout();
             render(); updateLayerList(); setSaveStatus('✓ 已保存');
+            markSavedJson();
             snapshot(true); // 建初始撤销快照，不触发自动保存
         }
     } catch(e){}
 }
 
 async function showOnEPD() {
-    toast('正在保存并发送…');
-    if (estimateSize() >= LAYOUT_LIMIT_BYTES) {
-        compactAllPaths(LAYOUT_WARN_BYTES);
-        render(); updateLayerList();
-        toast('🪄 路径已自动化简以适配 12KB 上限');
+    if (!_sendConfirmed) {
+        openSendPreview();
+        return;
     }
+    _sendConfirmed = false;
+    const btn = document.getElementById('btn-show-epd');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    toast('正在保存并发送…');
     try {
-        const r1 = await fetch('/canvas_layout',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(elements)}));
+        const r1 = await persistLayout();
         if (!r1.ok){
-            const msg = await r1.text().catch(()=>String(r1.status));
-            toast('保存失败: ' + msg);
+            toast('保存失败: ' + (r1.msg || r1.status || '网络错误'));
             return;
         }
         const r2 = await fetch('/canvas_show',epdFetchOpts({method:'POST'}));
         if (r2.ok) toast('✅ 已发送到墨水屏！');
         else toast('发送失败: '+r2.status);
     } catch(e){ toast('发送失败'); }
+    finally { if (btn) btn.disabled = false; }
+}
+
+function openSendPreview() {
+    const pc = document.getElementById('send-preview-canvas');
+    pc.width = canvas.width;
+    pc.height = canvas.height;
+    const px = pc.getContext('2d');
+    px.clearRect(0,0,pc.width,pc.height);
+    px.drawImage(canvas, 0, 0);
+    const meta = document.getElementById('send-preview-meta');
+    meta.textContent = `当前面板 ${EPD_W}×${EPD_H} / 黑白红 / 预计刷新约 23 秒 / 元素 ${elements.length} 个`;
+    document.getElementById('send-preview-overlay').style.display = 'flex';
+}
+
+function closeSendPreview() {
+    document.getElementById('send-preview-overlay').style.display = 'none';
+}
+
+function confirmSendOnEPD() {
+    closeSendPreview();
+    _sendConfirmed = true;
+    showOnEPD();
 }
 
 /* ═══════════════════════════════════════════════

@@ -641,7 +641,7 @@ POST /show?name=img_20260101.jpg
 ```json
 {
   "sta_connected": true,
-  "ssid": "Xiaomi",
+  "ssid": "YourWiFi",
   "rssi": -45,
   "ip": "192.168.1.100",
   "ap_ssid": "ESP32_EPD_2E5C78"
@@ -655,7 +655,7 @@ POST /show?name=img_20260101.jpg
 **请求:**
 ```json
 {
-  "ssid": "Xiaomi",
+  "ssid": "YourWiFi",
   "password": "12345678"
 }
 ```
