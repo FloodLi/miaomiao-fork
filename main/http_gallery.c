@@ -21,6 +21,7 @@
 #include "fb_render.h"
 #include "image_convert.h"
 #include "scheduler.h"
+#include "spiffs_mount.h"
 #include "weather.h"
 #include "button.h"
 #include "display_mode.h"
@@ -28,6 +29,16 @@
 
 static const char *TAG = "http_gal";
 static atomic_bool s_upload_active;
+
+static esp_err_t gallery_send_empty(httpd_req_t *req, bool spiffs_ok)
+{
+    char json[48];
+    snprintf(json, sizeof(json), "{\"items\":[],\"spiffs_ok\":%s}",
+             spiffs_ok ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
 static atomic_uint s_upload_epoch;
 
 static unsigned gallery_upload_begin(void)
@@ -103,10 +114,17 @@ esp_err_t gallery_images_get_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
+    if (!spiffs_mount_is_mounted()) {
+        return gallery_send_empty(req, false);
+    }
+
     DIR *dir = opendir(http_images_dir);
     if (!dir) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "目录读取失败");
-        return ESP_OK;
+        (void)mkdir(http_images_dir, 0755);
+        dir = opendir(http_images_dir);
+    }
+    if (!dir) {
+        return gallery_send_empty(req, true);
     }
 
     size_t cap = 2048;

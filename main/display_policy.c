@@ -2,11 +2,17 @@
 
 #include <stdatomic.h>
 #include "scheduler.h"
-#include "clock_display.h"
+#include "display_mode.h"
+#include "epd.h"
 
 static atomic_bool s_manual_screen;
 static atomic_bool s_quick_refresh;
 static atomic_uint s_display_epoch;
+
+static bool weather_page_is_active(void)
+{
+    return display_mode_active() == DISPLAY_MODE_WEATHER;
+}
 
 void display_policy_init(void)
 {
@@ -27,22 +33,18 @@ bool display_policy_quick_refresh_active(void)
 
 bool display_policy_slideshow_owns_display(void)
 {
-    slideshow_config_t sc;
-    if (scheduler_get_config(&sc) != ESP_OK)
-        return false;
-    return sc.enabled;
+    return display_mode_active() == DISPLAY_MODE_SLIDESHOW;
 }
 
 bool display_policy_clock_may_auto_refresh(void)
 {
+    if (display_mode_active() != DISPLAY_MODE_CLOCK)
+        return false;
     if (atomic_load(&s_manual_screen))
         return false;
     if (display_policy_slideshow_owns_display())
         return false;
-    clock_config_t cc;
-    if (clock_display_get_config(&cc) != ESP_OK)
-        return false;
-    return cc.enabled;
+    return true;
 }
 
 bool display_policy_weather_use_full_page(bool user_explicit)
@@ -51,14 +53,15 @@ bool display_policy_weather_use_full_page(bool user_explicit)
         return true;
     if (atomic_load(&s_quick_refresh))
         return false;
-    if (atomic_load(&s_manual_screen))
-        return false;
     if (display_policy_slideshow_owns_display())
         return false;
-    clock_config_t cc;
-    if (clock_display_get_config(&cc) != ESP_OK)
+    if (weather_page_is_active())
         return true;
-    return !cc.enabled;
+    if (display_mode_active() == DISPLAY_MODE_CLOCK)
+        return false;
+    if (atomic_load(&s_manual_screen))
+        return false;
+    return true;
 }
 
 bool display_policy_weather_may_network_fetch(bool user_explicit)
@@ -67,9 +70,16 @@ bool display_policy_weather_may_network_fetch(bool user_explicit)
         return true;
     if (atomic_load(&s_quick_refresh))
         return false;
-    if (atomic_load(&s_manual_screen))
-        return false;
     return !display_policy_slideshow_owns_display();
+}
+
+bool display_policy_weather_may_render_full_page(void)
+{
+    if (atomic_load(&s_quick_refresh))
+        return false;
+    if (display_policy_slideshow_owns_display())
+        return false;
+    return weather_page_is_active();
 }
 
 void display_policy_set_manual_screen_active(bool active)
@@ -86,6 +96,7 @@ unsigned display_policy_begin_manual_display(void)
 {
     atomic_store(&s_manual_screen, true);
     unsigned epoch = atomic_fetch_add(&s_display_epoch, 1) + 1;
+    epd_request_full_refresh_next();
     scheduler_notify_manual_show();
     return epoch;
 }
@@ -98,6 +109,7 @@ bool display_policy_epoch_is_current(unsigned epoch)
 void display_policy_bump_display_epoch(void)
 {
     atomic_fetch_add(&s_display_epoch, 1);
+    epd_request_full_refresh_next();
 }
 
 unsigned display_policy_display_epoch(void)

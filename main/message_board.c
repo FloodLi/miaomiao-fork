@@ -16,6 +16,7 @@
 #include "epd.h"
 #include "scheduler.h"
 #include "display_policy.h"
+#include "ui_theme.h"
 
 static const char *TAG    = "msgboard";
 static const char *NVS_NS = "msgboard";
@@ -132,14 +133,20 @@ static void render_message(unsigned epoch)
     if (scale > 6) scale = 6;
     int char_h = 16 * scale;
     int line_h = char_h + 2 * scale;
-    int max_w  = fb->width - 2 * MARGIN_X;
+    int max_w  = fb->width - 2 * MARGIN_X - 16;
     fb_color_t color = (cfg.color == 1) ? COLOR_RED : COLOR_BLACK;
+    int page_s = ui_scale_for(fb);
+    int content_top = 34 * page_s;
+    int content_bottom = fb->height - 30 * page_s;
+    if (content_bottom <= content_top + line_h)
+        content_bottom = fb->height - 20 * page_s;
 
     ESP_LOGI(TAG, "Rendering: scale=%d, color=%d, align=%d, offset=(%d,%d), text_len=%d",
              scale, cfg.color, (int)cfg.align, cfg.x_offset, cfg.y_offset,
              (int)strlen(cfg.text));
 
-    fb_rect(fb, 6, 6, fb->width - 12, fb->height - 12, COLOR_BLACK);
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_header(fb, "\xe7\x95\x99\xe8\xa8\x80\xe6\x9d\xbf", "MESSAGE", true);
 
     /* first pass: calculate lines for vertical centering */
     typedef struct { const char *start; int len; int px_w; } line_t;
@@ -191,19 +198,22 @@ static void render_message(unsigned epoch)
     bool truncated = (*p != '\0' && line_count >= 32);
 
     int total_h = line_count * line_h;
-    int start_y = (fb->height - total_h) / 2 + cfg.y_offset;
-    if (start_y < 0) start_y = 0;
+    int content_h = content_bottom - content_top;
+    int start_y = content_top + (content_h - total_h) / 2 + cfg.y_offset;
+    if (start_y < content_top) start_y = content_top;
 
     for (int i = 0; i < line_count; i++) {
         int y = start_y + i * line_h;
-        if (y + char_h > fb->height) break;
+        if (y + char_h > content_bottom) break;
 
         int x;
         if (cfg.align == MSG_ALIGN_CENTER) {
             x = (fb->width - lines[i].px_w) / 2 + cfg.x_offset;
         } else {
-            x = MARGIN_X + cfg.x_offset;
+            x = MARGIN_X + 8 * page_s + cfg.x_offset;
         }
+        if (x < MARGIN_X)
+            x = MARGIN_X;
 
         char buf[MSG_MAX_LEN + 1];
         int copy_len = lines[i].len;
@@ -219,6 +229,8 @@ static void render_message(unsigned epoch)
         if (hint_y + 16 <= fb->height)
             fb_utf8(fb, (fb->width - 3 * 8) / 2, hint_y, "...", COLOR_BLACK);
     }
+
+    ui_draw_footer(fb, "MSG", cfg.align == MSG_ALIGN_CENTER ? "CENTER" : "LEFT");
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);

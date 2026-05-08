@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <sys/stat.h>
 
 #include "driver/gpio.h"
@@ -46,11 +47,24 @@ static spi_device_handle_t s_spi;
 static SemaphoreHandle_t   s_epd_mutex;
 static epd_panel_t         s_panel = EPD_PANEL_42_BWR;
 
+static uint8_t            *s_z08_prev_bw;
+static int                 s_z08_prev_pb;
+static bool                s_z08_prev_valid;
+
 /** 已为当前面板跑过完整上电初始化序列（避免每次刷屏都硬件复位） */
 static bool s_panel_seq_done;
 
 /** epd_init() 完全结束后再为 true，供 HTTP 与其它任务判断 */
 static bool s_epd_ready;
+
+/*
+ * If BUSY gets stuck because of a loose pull-up/pull-down or cable contact,
+ * do not keep trusting partial-refresh state.  The panel can often still draw
+ * with conservative fixed waits, but the previous-frame cache is no longer
+ * safe enough for fast BW refresh.
+ */
+static bool s_busy_line_unreliable;
+static atomic_bool s_force_full_refresh_next = ATOMIC_VAR_INIT(false);
 
 /**
  * NVS 键 busy_idle：0 = 空闲时 BUSY 为低；1 = 空闲时为高。
@@ -103,6 +117,9 @@ static void ws_42_uc8176_bwr_init(void);
 static void refresh_0x20(void);
 static void refresh_22_f7_20(void);
 static void refresh_12(void);
+static void z08_refresh_bw_area(int x, int y, int w, int h);
+static void z08_prev_cache_drop(void);
+static void panel_ensure_ready(void);
 static void cursor_x8_y16_home(void);
 static void cursor_x8_y9_home(void);
 static void cursor_x8_y9_x1_home(void);
@@ -122,7 +139,7 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_WS_583_BW]  = { 648, 480, false, 1, false, EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BW V2",    ws_583_bw_init,       refresh_12,       cursor_none },
     [EPD_PANEL_WS_583_BWR] = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BWR B V2", ws_583_bwr_init,      refresh_12,       cursor_none },
     [EPD_PANEL_WS_75_BW]   = { 800, 480, false, 1, false, EPD_CMD_DATA_10_13_INV_BW,  "Waveshare 7.5\" BW V2",     ws_75_bw_init,        refresh_12,       cursor_none },
-    [EPD_PANEL_WS_75_BWR]  = { 800, 480, true,  1, true,  EPD_CMD_DATA_10_92_13,      "Waveshare 7.5\" BWR B V2",  ws_75_bwr_init,       refresh_12,       cursor_none },
+    [EPD_PANEL_WS_75_BWR]  = { 800, 480, true,  1, true,  EPD_CMD_DATA_10_92_13,      "Waveshare/GDEW075Z08 7.5\" BWR UC8179", ws_75_bwr_init, refresh_12, cursor_none },
     [EPD_PANEL_WS_42_BWR_UC8176] = { 400, 300, true, 1, false, EPD_CMD_DATA_10_13_INV_RED, "Waveshare 4.2\" BWR UC8176", ws_42_uc8176_bwr_init, refresh_12, cursor_none },
 };
 
@@ -178,6 +195,7 @@ esp_err_t epd_set_panel(epd_panel_t panel)
 
     if (s_panel != panel) {
         fb_release_reserved_planes();
+        z08_prev_cache_drop();
         s_panel_seq_done = false;
         ESP_LOGW(TAG, "Panel changed to %s, will re-init on next display",
                  s_specs[panel].name);
@@ -395,8 +413,11 @@ static void epd_wait_ready(bool after_update_cmd)
         waited += 200;
         if (waited >= EPD_BUSY_TIMEOUT_MS) {
             ESP_LOGW(TAG, "BUSY timeout %d ms (expect idle=%d, gpio=%d). "
-                          "Try NVS key busy_idle=0 or 1 on namespace 'epd'.",
+                          "Try NVS key busy_idle=0 or 1 on namespace 'epd'. "
+                          "Fast partial refresh will be disabled until next clean init.",
                      waited, idle, (int)gpio_get_level(PIN_EPD_BUSY));
+            s_busy_line_unreliable = true;
+            z08_prev_cache_drop();
             timed_out = true;
             break;
         }
@@ -578,6 +599,89 @@ static void panel_write_bw_red(const uint8_t *bw, const uint8_t *red, int pb)
 {
     panel_write_bw_red_data(bw, red, pb);
     panel_desc()->refresh();
+}
+
+/* GDEW075Z08 / UC8179 black-white fast partial path:
+ * https://github.com/yanyuandi/FastFreshBWOnColor */
+#define Z08_LUT_T1 30
+#define Z08_LUT_T2 5
+#define Z08_LUT_T3 30
+#define Z08_LUT_T4 5
+
+static const uint8_t Z08_LUT_20_LUTC_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
+static const uint8_t Z08_LUT_21_LUTWW_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
+static const uint8_t Z08_LUT_22_LUTKW_PARTIAL[42] = { 0x5A, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
+static const uint8_t Z08_LUT_23_LUTWK_PARTIAL[42] = { 0xA5, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
+static const uint8_t Z08_LUT_24_LUTKK_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
+static const uint8_t Z08_LUT_25_LUTBD_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
+
+static void z08_write_lut_cmd(uint8_t cmd, const uint8_t *lut)
+{
+    epd_cmd(cmd);
+    epd_bulk(lut, 42);
+}
+
+static void z08_set_partial_ram_area(int x, int y, int w, int h)
+{
+    int xe = (x + w - 1) | 0x07;
+    int ye = y + h - 1;
+    x &= ~0x07;
+    xe |= 0x07;
+
+    epd_cmd(0x90);
+    epd_dat((uint8_t)(x >> 8));
+    epd_dat((uint8_t)x);
+    epd_dat((uint8_t)(xe >> 8));
+    epd_dat((uint8_t)xe);
+    epd_dat((uint8_t)(y >> 8));
+    epd_dat((uint8_t)y);
+    epd_dat((uint8_t)(ye >> 8));
+    epd_dat((uint8_t)ye);
+    epd_dat(0x01);
+}
+
+static void z08_refresh_bw_area(int x, int y, int w, int h)
+{
+    int w1 = (x < 0) ? (w + x) : w;
+    int h1 = (y < 0) ? (h + y) : h;
+    int x1 = (x < 0) ? 0 : x;
+    int y1 = (y < 0) ? 0 : y;
+    int W = epd_width();
+    int H = epd_height();
+
+    w1 = (x1 + w1 < W) ? w1 : (W - x1);
+    h1 = (y1 + h1 < H) ? h1 : (H - y1);
+    if (w1 <= 0 || h1 <= 0)
+        return;
+
+    w1 += x1 % 8;
+    if (w1 % 8 > 0)
+        w1 += 8 - (w1 % 8);
+    x1 -= x1 % 8;
+
+    z08_write_lut_cmd(0x20, Z08_LUT_20_LUTC_PARTIAL);
+    z08_write_lut_cmd(0x21, Z08_LUT_21_LUTWW_PARTIAL);
+    z08_write_lut_cmd(0x22, Z08_LUT_22_LUTKW_PARTIAL);
+    z08_write_lut_cmd(0x23, Z08_LUT_23_LUTWK_PARTIAL);
+    z08_write_lut_cmd(0x24, Z08_LUT_24_LUTKK_PARTIAL);
+    z08_write_lut_cmd(0x25, Z08_LUT_25_LUTBD_PARTIAL);
+
+    cmd1(0x00, 0x3F);
+    cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
+    cmd4(0x61, 0x03, 0x20, 0x01, 0xE0);
+    cmd1(0x15, 0x00);
+    cmd1(0x60, 0x22);
+    cmd1(0x82, 0x31);
+    cmd2(0x50, 0x39, 0x07);
+
+    epd_cmd(0x04);
+    epd_wait_ready(false);
+    epd_cmd(0x91);
+    z08_set_partial_ram_area(x1, y1, w1, h1);
+    epd_cmd(0x12);
+    epd_wait_ready(true);
+    epd_cmd(0x92);
+    delay_ms(200);
 }
 
 static esp_err_t file_send_plane(FILE *f, int pb, bool invert)
@@ -881,6 +985,10 @@ static void ws_75_bw_init(void)
 static void ws_75_bwr_init(void)
 {
     epd_hw_reset();
+    ESP_LOGI(TAG, "Z08: BUSY gpio after reset = %d (idle expect %d)",
+             (int)gpio_get_level(PIN_EPD_BUSY), busy_idle_effective());
+    if (busy_idle_effective() == 1 && gpio_get_level(PIN_EPD_BUSY) == 0)
+        ESP_LOGW(TAG, "Z08 BUSY is low while idle=1. Check BUSY pull-up/contact, or set busy_idle=0 only if this board is wired idle-low.");
     cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
     epd_cmd(0x04);
     delay_ms(100);
@@ -1120,8 +1228,158 @@ static void uc8179_refresh(void)
 
 static void panel_run_full_init(void)
 {
+    s_busy_line_unreliable = false;
     panel_desc()->init();
     s_panel_seq_done = true;
+    z08_prev_cache_drop();
+}
+
+static bool z08_fast_capable(void)
+{
+    return s_panel == EPD_PANEL_WS_75_BWR && !s_busy_line_unreliable;
+}
+
+static bool plane_all_value(const uint8_t *data, int len, uint8_t value)
+{
+    if (!data)
+        return true;
+    for (int i = 0; i < len; i++) {
+        if (data[i] != value)
+            return false;
+    }
+    return true;
+}
+
+static esp_err_t z08_prev_cache_ensure(int pb)
+{
+    if (s_z08_prev_bw && s_z08_prev_pb == pb)
+        return ESP_OK;
+
+    free(s_z08_prev_bw);
+    s_z08_prev_bw = heap_caps_malloc((size_t)pb, MALLOC_CAP_8BIT);
+    if (!s_z08_prev_bw) {
+        s_z08_prev_pb = 0;
+        s_z08_prev_valid = false;
+        return ESP_ERR_NO_MEM;
+    }
+    s_z08_prev_pb = pb;
+    memset(s_z08_prev_bw, 0xFF, (size_t)pb);
+    s_z08_prev_valid = false;
+    return ESP_OK;
+}
+
+static void z08_prev_cache_drop(void)
+{
+    free(s_z08_prev_bw);
+    s_z08_prev_bw = NULL;
+    s_z08_prev_pb = 0;
+    s_z08_prev_valid = false;
+}
+
+static void z08_prev_cache_update(const uint8_t *bw, int pb)
+{
+    if (!z08_fast_capable() || !bw || z08_prev_cache_ensure(pb) != ESP_OK)
+        return;
+    memcpy(s_z08_prev_bw, bw, (size_t)pb);
+    s_z08_prev_valid = true;
+}
+
+static void z08_prev_cache_fill(uint8_t value, int pb)
+{
+    if (!z08_fast_capable() || z08_prev_cache_ensure(pb) != ESP_OK)
+        return;
+    memset(s_z08_prev_bw, value, (size_t)pb);
+    s_z08_prev_valid = true;
+}
+
+static void z08_note_full_refresh(const uint8_t *bw, const uint8_t *red, int pb)
+{
+    if (!z08_fast_capable())
+        return;
+    if (plane_all_value(red, pb, 0x00))
+        z08_prev_cache_update(bw, pb);
+    else
+        z08_prev_cache_drop();
+}
+
+static bool consume_force_full_refresh_request(void)
+{
+    return atomic_exchange(&s_force_full_refresh_next, false);
+}
+
+static void prepare_for_forced_full_refresh(void)
+{
+    z08_prev_cache_drop();
+    /*
+     * The Z08 fast path installs a partial LUT.  A mode change must reload the
+     * panel's full waveform before the next full refresh, otherwise the call
+     * path is "full" but the panel still behaves like a partial update.
+     */
+    s_panel_seq_done = false;
+}
+
+void epd_request_full_refresh_next(void)
+{
+    atomic_store(&s_force_full_refresh_next, true);
+}
+
+static esp_err_t epd_display_from_buffer_fast_locked(const fb_t *fb)
+{
+    int pb = epd_plane_bytes();
+    panel_ensure_ready();
+
+    if (s_panel == EPD_PANEL_42_BWR) {
+        /* BW plane only - skip red for speed */
+        ssd1619_cursor_home();
+        epd_cmd(0x24);
+        epd_bulk(fb->black, (size_t)pb);
+
+        /* Clear red plane to avoid stale red artifacts */
+        ssd1619_cursor_home();
+        epd_cmd(0x26);
+        epd_fill(0x00, (size_t)pb);
+
+        ssd1619_refresh_fast();
+        ESP_LOGI(TAG, "display from buffer (fast SSD1619)");
+        return ESP_OK;
+    }
+
+    if (z08_fast_capable()) {
+        if (!plane_all_value(fb->red, pb, 0x00)) {
+            ESP_LOGW(TAG, "7.5 fast refresh requires empty red plane, falling back to full");
+            return ESP_ERR_NOT_SUPPORTED;
+        }
+
+        esp_err_t ret = z08_prev_cache_ensure(pb);
+        if (ret != ESP_OK)
+            return ret;
+
+        if (!s_z08_prev_valid) {
+            ESP_LOGW(TAG, "7.5 fast refresh has no trusted previous BW frame, falling back to full");
+            return ESP_ERR_NOT_SUPPORTED;
+        }
+
+        epd_cmd(0x91);
+        z08_set_partial_ram_area(0, 0, fb->width, fb->height);
+        epd_cmd(0x10);
+        epd_bulk(s_z08_prev_valid ? s_z08_prev_bw : fb->black, (size_t)pb);
+        epd_cmd(0x13);
+        epd_bulk(fb->black, (size_t)pb);
+        z08_refresh_bw_area(0, 0, fb->width, fb->height);
+
+        epd_cmd(0x91);
+        z08_set_partial_ram_area(0, 0, fb->width, fb->height);
+        epd_cmd(0x13);
+        epd_fill(0x00, (size_t)pb);
+        epd_cmd(0x92);
+
+        z08_prev_cache_update(fb->black, pb);
+        ESP_LOGI(TAG, "display from buffer (fast Z08 BW)");
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "fast refresh unsupported on this panel, falling back to full");
+    return ESP_ERR_NOT_SUPPORTED;
 }
 
 static void panel_ensure_ready(void)
@@ -1131,10 +1389,15 @@ static void panel_ensure_ready(void)
 }
 
 /** 调用方已持有 s_epd_mutex */
-static void epd_clear_to_white_locked(void)
+static void epd_clear_to_white_locked(bool seed_fast_cache)
 {
+    int pb = epd_plane_bytes();
     panel_ensure_ready();
-    panel_fill_bw_red(0xFF, 0x00, epd_plane_bytes());
+    panel_fill_bw_red(0xFF, 0x00, pb);
+    if (seed_fast_cache)
+        z08_prev_cache_fill(0xFF, pb);
+    else
+        z08_prev_cache_drop();
 }
 
 bool epd_is_ready(void)
@@ -1219,7 +1482,7 @@ esp_err_t epd_init(void)
               s_specs[s_panel].name, epd_width(), epd_height(), busy_idle_effective());
 
     panel_run_full_init();
-    epd_clear_to_white_locked();
+    epd_clear_to_white_locked(false);
 
     s_epd_ready = true;
     xSemaphoreGive(s_epd_mutex);
@@ -1238,7 +1501,7 @@ esp_err_t epd_clear_screen(void)
         return ESP_ERR_INVALID_STATE;
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
-    epd_clear_to_white_locked();
+    epd_clear_to_white_locked(true);
     xSemaphoreGive(s_epd_mutex);
     return ESP_OK;
 }
@@ -1294,6 +1557,7 @@ esp_err_t epd_display_test_pattern(void)
     panel_ensure_ready();
 
     panel_write_bw_red(buf, red, pb);
+    z08_note_full_refresh(buf, red, pb);
 
     free(red);
     free(buf);
@@ -1335,8 +1599,11 @@ esp_err_t epd_display_from_file(const char *path)
         fclose(f);
         return ESP_ERR_INVALID_SIZE;
     }
+    if (consume_force_full_refresh_request())
+        prepare_for_forced_full_refresh();
     panel_ensure_ready();
     esp_err_t ret = panel_write_bw_red_file(f, pb, has_red_file);
+    z08_prev_cache_drop();
     xSemaphoreGive(s_epd_mutex);
     fclose(f);
     if (ret != ESP_OK)
@@ -1361,9 +1628,12 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
         return ESP_ERR_INVALID_SIZE;
     }
     int pb = epd_plane_bytes();
+    if (consume_force_full_refresh_request())
+        prepare_for_forced_full_refresh();
     panel_ensure_ready();
 
     panel_write_bw_red(fb->black, fb->red, pb);
+    z08_note_full_refresh(fb->black, fb->red, pb);
 
     xSemaphoreGive(s_epd_mutex);
 
@@ -1389,11 +1659,25 @@ esp_err_t epd_display_fb_free(fb_t *fb)
         return ESP_ERR_INVALID_SIZE;
     }
     int pb = epd_plane_bytes();
+    bool force_full = consume_force_full_refresh_request();
+    if (force_full)
+        prepare_for_forced_full_refresh();
     panel_ensure_ready();
 
+    if (!force_full && z08_fast_capable() && plane_all_value(fb->red, pb, 0x00)) {
+        esp_err_t fast_ret = epd_display_from_buffer_fast_locked(fb);
+        if (fast_ret == ESP_OK) {
+            fb_destroy(fb);
+            xSemaphoreGive(s_epd_mutex);
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "7.5 fast path failed: %s, falling back to full", esp_err_to_name(fast_ret));
+    }
+
     panel_write_bw_red_data(fb->black, fb->red, pb);
-    fb_destroy(fb);
     panel_desc()->refresh();
+    z08_note_full_refresh(fb->black, fb->red, pb);
+    fb_destroy(fb);
 
     xSemaphoreGive(s_epd_mutex);
 
@@ -1408,36 +1692,18 @@ esp_err_t epd_display_from_buffer_fast(const fb_t *fb)
         return ESP_ERR_INVALID_STATE;
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
-    if (!fb_matches_current_panel(fb)) {
+    esp_err_t ret = fb_matches_current_panel(fb) ? epd_display_from_buffer_fast_locked(fb) : ESP_ERR_INVALID_SIZE;
+    xSemaphoreGive(s_epd_mutex);
+    if (ret != ESP_OK && ret != ESP_ERR_NOT_SUPPORTED && ret != ESP_ERR_INVALID_SIZE) {
+        return ret;
+    }
+    if (ret == ESP_OK)
+        return ESP_OK;
+    if (ret == ESP_ERR_INVALID_SIZE) {
         ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
                  fb->width, fb->height, fb->plane_bytes,
                  epd_width(), epd_height(), epd_plane_bytes());
-        xSemaphoreGive(s_epd_mutex);
         return ESP_ERR_INVALID_SIZE;
     }
-    if (s_panel != EPD_PANEL_42_BWR) {
-        xSemaphoreGive(s_epd_mutex);
-        ESP_LOGW(TAG, "fast refresh only for SSD1619, falling back to full");
-        return epd_display_from_buffer(fb);
-    }
-
-    int pb = epd_plane_bytes();
-    panel_ensure_ready();
-
-    /* BW plane only — skip red for speed */
-    ssd1619_cursor_home();
-    epd_cmd(0x24);
-    epd_bulk(fb->black, (size_t)pb);
-
-    /* Clear red plane to avoid stale red artifacts */
-    ssd1619_cursor_home();
-    epd_cmd(0x26);
-    epd_fill(0x00, (size_t)pb);
-
-    ssd1619_refresh_fast();
-
-    xSemaphoreGive(s_epd_mutex);
-
-    ESP_LOGI(TAG, "display from buffer (fast)");
-    return ESP_OK;
+    return epd_display_from_buffer(fb);
 }

@@ -32,5 +32,10 @@ int display_mode_register(const display_mode_entry_t *entry);
 int                        display_mode_count(void);
 const display_mode_entry_t *display_mode_get(int index);
 esp_err_t                  display_mode_show(int index);
+esp_err_t                  display_mode_show_request(int index, unsigned *epoch_out);
 const char                *display_mode_name(int index);
 const char                *display_mode_label(int index);
+
+/** Last successfully displayed mode, or -1 before any mode takes ownership. */
+int                        display_mode_active(void);
+void                       display_mode_set_active(int index);

@@ -11,9 +11,13 @@ dependencies.lock
 .vscode/
 .idea/
 .cursor/
+project.private.config.json
 *.swp
 *.swo
 *~
+
+# Separate projects kept next to this firmware checkout
+/shuimoping/
 
 # OS
 Thumbs.db
@@ -26,6 +30,9 @@ __pycache__/
 # Temporary / Debug
 *.log
 .tmp/
+
+# Local font cache used only when regenerating font_data.h
+tools/fonts/
 
 # Local reference clones (not part of firmware)
 otto-robot/

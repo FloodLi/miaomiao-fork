@@ -17,6 +17,7 @@ idf_component_register(
         "time_sync.c"
         "scheduler.c"
         "fb_render.c"
+        "ui_theme.c"
         "weather.c"
         "clock_display.c"
         "display_policy.c"

@@ -29,6 +29,9 @@ bool display_policy_weather_use_full_page(bool user_explicit);
  */
 bool display_policy_weather_may_network_fetch(bool user_explicit);
 
+/** 后台天气刷新是否仍可占用整页显示。 */
+bool display_policy_weather_may_render_full_page(void);
+
 /** 留言板、日历、HTTP 看图、上传预览等全屏内容展示中 */
 void display_policy_set_manual_screen_active(bool active);
 bool display_policy_manual_screen_active(void);

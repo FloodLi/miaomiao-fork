@@ -40,6 +40,34 @@ static inline char *json_escape(char *dst, size_t dst_len, const char *src)
     return dst;
 }
 
+static inline bool http_read_request_body(httpd_req_t *req, char *buf, size_t buf_len,
+                                          const char *bad_msg)
+{
+    if (!req || !buf || buf_len == 0)
+        return false;
+
+    int len = req->content_len;
+    if (len <= 0 || len >= (int)buf_len) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            bad_msg ? bad_msg : "invalid request body");
+        return false;
+    }
+
+    int total = 0;
+    while (total < len) {
+        int r = httpd_req_recv(req, buf + total, len - total);
+        if (r <= 0) {
+            if (r == HTTPD_SOCK_ERR_TIMEOUT)
+                continue;
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
+            return false;
+        }
+        total += r;
+    }
+    buf[total] = '\0';
+    return true;
+}
+
 extern httpd_handle_t    http_server_handle;
 extern http_app_config_t http_app_cfg;
 extern const char       *http_images_dir;

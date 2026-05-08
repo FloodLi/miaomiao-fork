@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
@@ -22,6 +23,32 @@ static portMUX_TYPE s_reserved_mux = portMUX_INITIALIZER_UNLOCKED;
 static StaticSemaphore_t s_raw_file_mutex_buf;
 static SemaphoreHandle_t s_raw_file_mutex;
 static portMUX_TYPE      s_raw_file_mux = portMUX_INITIALIZER_UNLOCKED;
+
+#define FB_FILE_WRITE_CHUNK 4096u
+
+static uint8_t *fb_alloc_plane_storage(size_t size, const char *label)
+{
+    uint8_t *buf = NULL;
+
+#ifdef CONFIG_SPIRAM
+    if (size >= 4096) {
+        buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (buf)
+            return buf;
+        ESP_LOGW(TAG, "%s PSRAM alloc(%u) failed", label, (unsigned)size);
+    }
+#endif
+
+    buf = heap_caps_malloc(size, MALLOC_CAP_8BIT);
+    if (!buf)
+        ESP_LOGE(TAG, "%s alloc(%u) failed: free=%lu largest=%lu internal=%lu/%lu",
+                 label, (unsigned)size,
+                 (unsigned long)esp_get_free_heap_size(),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                 (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    return buf;
+}
 
 static SemaphoreHandle_t raw_file_mutex_get(void)
 {
@@ -74,9 +101,7 @@ void fb_reserve_planes_early(void)
     portEXIT_CRITICAL(&s_reserved_mux);
     free(old);
 
-    uint8_t *buf = heap_caps_malloc((size_t)pb * 2, MALLOC_CAP_DMA);
-    if (!buf)
-        buf = malloc((size_t)pb * 2);
+    uint8_t *buf = fb_alloc_plane_storage((size_t)pb * 2, "early reserve");
     if (!buf) {
         ESP_LOGW(TAG, "early reserve 2x%d failed (heap will use ad hoc alloc)", pb);
         return;
@@ -154,44 +179,32 @@ fb_t *fb_create(void)
      * 回退：单次普通堆。
      * 再回退：分别分配两块（碎片化下的最后一根稻草，
      *          epd_bulk 已经能透明处理非 DMA-capable 内存）。 */
-    uint8_t *buf = heap_caps_malloc((size_t)pb * 2, MALLOC_CAP_DMA);
+    uint8_t *buf = fb_alloc_plane_storage((size_t)pb * 2, "fb dual plane");
     if (buf) {
         fb->black = buf;
         fb->red   = buf + pb;
     } else {
-        buf = malloc((size_t)pb * 2);
-        if (buf) {
-            ESP_LOGW(TAG, "DMA alloc failed, using regular heap (2x%d bytes)", pb);
-            fb->black = buf;
-            fb->red   = buf + pb;
-        } else {
-            /* 单块 2*pb 不行 → 分别申请两个 pb 大小的块，对碎片更友好 */
-            uint8_t *b = heap_caps_malloc((size_t)pb, MALLOC_CAP_DMA);
-            if (!b) b = malloc((size_t)pb);
-            uint8_t *r = NULL;
-            if (b) {
-                r = heap_caps_malloc((size_t)pb, MALLOC_CAP_DMA);
-                if (!r) r = malloc((size_t)pb);
-            }
-            if (!b || !r) {
-                free(b);
-                free(r);
-                free(fb);
-                ESP_LOGE(TAG, "Failed to allocate frame buffer (2x%d bytes), "
-                         "free heap: %lu, largest block: %lu",
-                         pb,
-                         (unsigned long)esp_get_free_heap_size(),
-                         (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-                return NULL;
-            }
-            ESP_LOGW(TAG, "fb split planes (2x%d), free=%lu largest=%lu",
+        /* 单块 2*pb 不行 → 分别申请两个 pb 大小的块，对碎片更友好 */
+        uint8_t *b = fb_alloc_plane_storage((size_t)pb, "fb black plane");
+        uint8_t *r = b ? fb_alloc_plane_storage((size_t)pb, "fb red plane") : NULL;
+        if (!b || !r) {
+            free(b);
+            free(r);
+            free(fb);
+            ESP_LOGE(TAG, "Failed to allocate frame buffer (2x%d bytes), "
+                     "free heap: %lu, largest block: %lu",
                      pb,
                      (unsigned long)esp_get_free_heap_size(),
                      (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-            fb->black        = b;
-            fb->red          = r;
-            fb->planes_split = true;
+            return NULL;
         }
+        ESP_LOGW(TAG, "fb split planes (2x%d), free=%lu largest=%lu",
+                 pb,
+                 (unsigned long)esp_get_free_heap_size(),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        fb->black        = b;
+        fb->red          = r;
+        fb->planes_split = true;
     }
 
     fb_clear(fb);
@@ -429,18 +442,53 @@ static int decode_utf8(const char **pp)
     return cp;
 }
 
+static int normalize_compat_ascii(int cp)
+{
+    if (cp == 0x3000)
+        return ' ';
+    if (cp >= 0xFF01 && cp <= 0xFF5E)
+        return cp - 0xFEE0;
+    return cp;
+}
+
+static void fb_missing_glyph(fb_t *fb, int x, int y, fb_color_t c, int scale)
+{
+    if (scale < 1)
+        scale = 1;
+    int size = 16 * scale;
+    fb_rect(fb, x, y, size, size, c);
+    int pad = 3 * scale;
+    for (int i = 0; i < size - 2 * pad; i += scale) {
+        fb_pixel(fb, x + pad + i, y + pad + i, c);
+        fb_pixel(fb, x + size - pad - 1 - i, y + pad + i, c);
+    }
+}
+
+static bool glyph16_is_empty(const uint8_t *glyph)
+{
+    if (!glyph)
+        return true;
+    for (int i = 0; i < 32; i++) {
+        if (glyph[i] != 0)
+            return false;
+    }
+    return true;
+}
+
 int fb_utf8(fb_t *fb, int x, int y, const char *s, fb_color_t c)
 {
     int cx = x;
     while (*s) {
-        int cp = decode_utf8(&s);
+        int cp = normalize_compat_ascii(decode_utf8(&s));
         if (cp < 0x80) {
             fb_char(fb, cx, y, (char)cp, c);
             cx += 8;
         } else {
             const uint8_t *glyph = find_zh_glyph((uint32_t)cp);
-            if (glyph)
+            if (!glyph16_is_empty(glyph))
                 fb_bitmap(fb, cx, y, 16, 16, glyph, c);
+            else
+                fb_missing_glyph(fb, cx, y, c, 1);
             cx += 16;
         }
     }
@@ -489,7 +537,7 @@ int fb_utf8_scaled(fb_t *fb, int x, int y, const char *s,
     if (scale < 1) scale = 1;
     int cx = x;
     while (*s) {
-        int cp = decode_utf8(&s);
+        int cp = normalize_compat_ascii(decode_utf8(&s));
         if (cp < 0x80) {
             int idx = cp - 32;
             if (idx < 0 || idx >= 95) idx = 0;
@@ -497,8 +545,10 @@ int fb_utf8_scaled(fb_t *fb, int x, int y, const char *s,
             cx += 8 * scale;
         } else {
             const uint8_t *glyph = find_zh_glyph((uint32_t)cp);
-            if (glyph)
+            if (!glyph16_is_empty(glyph))
                 fb_bitmap_sc(fb, cx, y, 16, 16, glyph, c, scale);
+            else
+                fb_missing_glyph(fb, cx, y, c, scale);
             cx += 16 * scale;
         }
     }
@@ -514,7 +564,7 @@ int fb_utf8_scaled_maxw(fb_t *fb, int x, int y, const char *s,
     const int lim = x + max_w;
     while (*s && cx < lim) {
         const char *before = s;
-        int cp = decode_utf8(&s);
+        int cp = normalize_compat_ascii(decode_utf8(&s));
         int adv = (cp < 0x80) ? (8 * scale) : (16 * scale);
         if (cx + adv > lim) {
             s = before;
@@ -526,8 +576,10 @@ int fb_utf8_scaled_maxw(fb_t *fb, int x, int y, const char *s,
             fb_bitmap_sc(fb, cx, y, 8, 16, font_ascii[idx], c, scale);
         } else {
             const uint8_t *glyph = find_zh_glyph((uint32_t)cp);
-            if (glyph)
+            if (!glyph16_is_empty(glyph))
                 fb_bitmap_sc(fb, cx, y, 16, 16, glyph, c, scale);
+            else
+                fb_missing_glyph(fb, cx, y, c, scale);
         }
         cx += adv;
     }
@@ -536,6 +588,20 @@ int fb_utf8_scaled_maxw(fb_t *fb, int x, int y, const char *s,
 
 /* ── export ───────────────────────────────────────────────────────── */
 
+static bool fb_write_all_chunked(FILE *f, const uint8_t *data, size_t len)
+{
+    size_t off = 0;
+    while (off < len) {
+        size_t n = len - off;
+        if (n > FB_FILE_WRITE_CHUNK)
+            n = FB_FILE_WRITE_CHUNK;
+        if (fwrite(data + off, 1, n, f) != n)
+            return false;
+        off += n;
+    }
+    return true;
+}
+
 esp_err_t fb_export(const fb_t *fb, const char *path)
 {
     FILE *f = fopen(path, "wb");
@@ -543,12 +609,17 @@ esp_err_t fb_export(const fb_t *fb, const char *path)
         ESP_LOGE(TAG, "Cannot create %s", path);
         return ESP_FAIL;
     }
-    bool ok = (fwrite(fb->black, 1, fb->plane_bytes, f) == fb->plane_bytes);
+    errno = 0;
+    bool ok = fb_write_all_chunked(f, fb->black, (size_t)fb->plane_bytes);
     if (ok && epd_has_red())
-        ok = (fwrite(fb->red, 1, fb->plane_bytes, f) == fb->plane_bytes);
-    fclose(f);
+        ok = fb_write_all_chunked(f, fb->red, (size_t)fb->plane_bytes);
+    int close_ret = fclose(f);
+    if (close_ret != 0)
+        ok = false;
     if (!ok) {
-        ESP_LOGE(TAG, "fb_export write failed (disk full?)");
+        ESP_LOGE(TAG, "fb_export write failed: path=%s bytes=%u red=%d errno=%d",
+                 path, (unsigned)fb->plane_bytes, epd_has_red() ? 1 : 0, errno);
+        remove(path);
         return ESP_FAIL;
     }
     return ESP_OK;

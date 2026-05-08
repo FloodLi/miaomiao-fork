@@ -10,6 +10,7 @@
 #include "calendar_display.h"
 #include "lunar.h"
 #include "fb_render.h"
+#include "ui_theme.h"
 #include "epd.h"
 #include "display_policy.h"
 #include "time_sync.h"
@@ -120,6 +121,9 @@ typedef struct {
     int sc;
     int title_h;
     int wday_h;
+    int footer_h;
+    int grid_x;
+    int grid_w;
     int grid_top;
     int grid_h;
     int row_h;
@@ -132,19 +136,23 @@ static void cal_layout_build(cal_layout_t *L, int w, int h)
     L->fb_h = h;
     L->sc = (w >= 600) ? 2 : 1;
     int s = L->sc;
-    /* 大屏（s=2，648×480）布局精算（bold 已改为 sc>=3 才启用，sc=2 字高严格 32px）：
-     *   title_h = 48，wday_h = 36，grid_top = 84，grid_h = 396，row_h = 66
-     *   cell: top_pad(2) + 32(day) + sub_gap(0) + 32(label) = 66 = row_h ✓
-     *   wday 文字起 y = 52，高 32px，结 y = 83 < grid_top=84 ✓
-     * 小屏（s=1，400×300）不变：title_h=24，wday_h=20，row_h=42 */
-    L->title_h = 16 * s + 8 * s;
-    L->wday_h  = (s >= 2) ? 18 * s : 16 * s + 4 * s;
+    int mx = 12 * s;
+
+    /* Month view is dense by nature. Keep the title readable, but render the
+     * grid text at 1x so the page does not become a wall of heavy pixels. */
+    L->title_h = 28 * s;
+    L->wday_h  = 16 * s;
+    L->footer_h = 26 * s;
+    L->grid_x = mx;
+    L->grid_w = w - 2 * mx;
+    if (L->grid_w < CAL_GRID_COLS)
+        L->grid_w = CAL_GRID_COLS;
     L->grid_top = L->title_h + L->wday_h;
-    L->grid_h = h - L->grid_top;
+    L->grid_h = h - L->grid_top - L->footer_h;
     if (L->grid_h < 1)
         L->grid_h = 1;
     L->row_h = L->grid_h / CAL_GRID_ROWS;
-    L->col_w = w / CAL_GRID_COLS;
+    L->col_w = L->grid_w / CAL_GRID_COLS;
     if (L->row_h < 1)
         L->row_h = 1;
     if (L->col_w < 1)
@@ -186,15 +194,29 @@ static int cal_isqrt_u32(uint32_t x)
     return (int)r;
 }
 
-static void cal_fill_circle(fb_t *fb, int cx, int cy, int radius, fb_color_t c)
+static void cal_draw_circle_outline(fb_t *fb, int cx, int cy, int radius, fb_color_t c)
 {
     if (radius <= 0)
         return;
     uint32_t r2 = (uint32_t)radius * (uint32_t)radius;
+    uint32_t inner_r2 = (uint32_t)(radius - 1) * (uint32_t)(radius - 1);
     for (int dy = -radius; dy <= radius; dy++) {
-        uint32_t inner = r2 - (uint32_t)(dy * dy);
-        int half = cal_isqrt_u32(inner);
-        fb_hline(fb, cx - half, cy + dy, 2 * half + 1, c);
+        uint32_t outer = r2 - (uint32_t)(dy * dy);
+        int outer_half = cal_isqrt_u32(outer);
+        int inner_half = -1;
+        if ((uint32_t)(dy * dy) <= inner_r2)
+            inner_half = cal_isqrt_u32(inner_r2 - (uint32_t)(dy * dy));
+
+        if (inner_half < 0) {
+            fb_hline(fb, cx - outer_half, cy + dy, 2 * outer_half + 1, c);
+        } else {
+            int left_w = outer_half - inner_half;
+            int right_x = cx + inner_half + 1;
+            if (left_w > 0) {
+                fb_hline(fb, cx - outer_half, cy + dy, left_w, c);
+                fb_hline(fb, right_x, cy + dy, left_w, c);
+            }
+        }
     }
 }
 
@@ -207,61 +229,60 @@ static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month)
     int W = L->fb_w;
     int s = L->sc;
 
-    fb_fill_rect(fb, 0, 0, W, L->title_h, COLOR_BLACK);
-
     char title[40];
     snprintf(title, sizeof(title), "%d年%d月", year, month);
-    fb_utf8_scaled(fb, 4 * s, 4 * s, title, COLOR_WHITE, s);
+    char meta[48] = "";
 
     lunar_date_t ld;
     int mid = cal_days_in_month(year, month) / 2;
     if (lunar_from_solar(year, month, mid, &ld)) {
-        char meta[48];
         snprintf(meta, sizeof(meta), "%s年[%s]",
                  lunar_year_gz(ld.year), lunar_year_sx(ld.year));
-        int tw = cal_utf8_width_px(meta, 8 * s, 16 * s);
-        fb_utf8_scaled(fb, W - tw - 4 * s, 4 * s, meta, COLOR_WHITE, s);
     }
+    fb_fill_rect(fb, L->grid_x, 8 * s, 2 * s, 12 * s, COLOR_RED);
+    fb_utf8_scaled(fb, L->grid_x + 8 * s, 6 * s, title, COLOR_BLACK, s);
+    if (meta[0]) {
+        int tw = cal_utf8_width_px(meta, 8, 16);
+        fb_utf8_scaled(fb, W - tw - L->grid_x, 10 * s, meta, COLOR_BLACK, 1);
+    }
+    ui_draw_dotted_hline(fb, L->grid_x, L->title_h - 4 * s,
+                         L->col_w * CAL_GRID_COLS,
+                         COLOR_BLACK, 6);
 }
 
 static void cal_draw_weekday_row(fb_t *fb, const cal_layout_t *L)
 {
     static const char *WD[] = {"日", "一", "二", "三", "四", "五", "六"};
-    int s = L->sc;
-    int y = L->title_h + 2 * s;
+    int y = L->title_h + (L->wday_h - 16) / 2;
 
     for (int c = 0; c < CAL_GRID_COLS; c++) {
-        int x = c * L->col_w + (L->col_w - 16 * s) / 2;
+        int x = L->grid_x + c * L->col_w + (L->col_w - 16) / 2;
         fb_color_t col = (c == 0 || c == CAL_GRID_COLS - 1) ? COLOR_RED : COLOR_BLACK;
-        fb_utf8_scaled(fb, x, y, WD[c], col, s);
+        fb_utf8_scaled(fb, x, y, WD[c], col, 1);
     }
 }
 
 /** 先画线再画数字，避免格线与文字争同一像素（常见月历 widget 顺序） */
 static void cal_draw_grid_lines(fb_t *fb, const cal_layout_t *L)
 {
-    int W   = L->fb_w;
     int H   = L->fb_h;
     int top = L->grid_top;
-    int lw  = L->sc;          /* 线宽随屏幕缩放：s=1→1px，s=2→2px，避免大屏线条不可见 */
+    int x0  = L->grid_x;
+    int w   = L->col_w * CAL_GRID_COLS;
 
-    /* 横线：每行上边界 */
+    /* 横线：每行上边界。1px dotted keeps the page closer to a paper planner. */
     for (int r = 0; r <= CAL_GRID_ROWS; r++) {
         int y = top + r * L->row_h;
-        for (int t = 0; t < lw; t++) {
-            if (y + t < H)
-                fb_hline(fb, 0, y + t, W, COLOR_BLACK);
-        }
+        if (y < H)
+            ui_draw_dotted_hline(fb, x0, y, w, COLOR_BLACK, 6);
     }
-    /* 竖线：每列左边界（不含最左边缘） */
-    int actual_gh = CAL_GRID_ROWS * L->row_h + lw;  /* 延伸覆盖最后一行的底线 */
+    /* 竖线：仅画内部分隔，不再形成厚重外框 */
+    int actual_gh = CAL_GRID_ROWS * L->row_h + 1;
     if (top + actual_gh > H) actual_gh = H - top;
     for (int c = 1; c < CAL_GRID_COLS; c++) {
-        int x = c * L->col_w;
-        for (int t = 0; t < lw; t++) {
-            if (x + t < W)
-                fb_vline(fb, x + t, top, actual_gh, COLOR_BLACK);
-        }
+        int x = x0 + c * L->col_w;
+        if (x < L->fb_w)
+            ui_draw_dotted_vline(fb, x, top, actual_gh, COLOR_BLACK, 6);
     }
 }
 
@@ -271,35 +292,34 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
                               int today_y, int today_m, int today_d)
 {
     int cw = L->col_w;
-    int s  = L->sc;
+    int text_sc = 1;
 
     bool is_today = (year == today_y && month == today_m && day == today_d);
     bool weekend  = (col == 0 || col == CAL_GRID_COLS - 1);
 
-    /* 自适应单元格内边距（bold 仅 sc>=3 启用，sc=2 字高严格 32px）：
-     * s=1 (4.2" 400×300, row_h=42): top_pad=4, sub_gap=4 → 4+16+4+16=40 ≤42 ✓
-     * s=2 (5.83" 648×480, row_h=66): top_pad=2, sub_gap=0 → 2+32+0+32=66=row_h ✓
-     *   top_pad=2 确保内容在 2px 格线下方不重叠；sub_gap=0 两行紧邻（颜色/大小有视觉差异）*/
-    int top_pad = (s >= 2) ? 2 : 4 * s;
-    int sub_gap = (s >= 2) ? 0 : 4 * s;
+    int sub_gap = 3;
+    int total_h = 16 * text_sc + sub_gap + 16 * text_sc;
+    int top_pad = (L->row_h - total_h) / 2;
+    if (top_pad < 3)
+        top_pad = 3;
 
     if (is_today) {
         int ccx    = cell_x + cw / 2;
-        int ccy    = cell_y + top_pad + 8 * s;   /* 圆心在数字垂直中心 */
-        int radius = 9 * s;
+        int ccy    = cell_y + top_pad + 8 * text_sc;
+        int radius = 10;
         if (radius > cw / 2 - 1)      radius = cw / 2 - 1;
         if (radius > ccy - cell_y)     radius = ccy - cell_y;  /* 不超出格顶 */
         if (radius < 4)                radius = 4;
-        cal_fill_circle(fb, ccx, ccy, radius, COLOR_RED);
+        cal_draw_circle_outline(fb, ccx, ccy, radius, COLOR_RED);
     }
 
     char ds[12];
     snprintf(ds, sizeof(ds), "%d", day);
-    int dw = (int)strlen(ds) * 8 * s;
+    int dw = (int)strlen(ds) * 8 * text_sc;
     int dx = cell_x + (cw - dw) / 2;
     int dy = cell_y + top_pad;
-    fb_color_t num_c = is_today ? COLOR_WHITE : (weekend ? COLOR_RED : COLOR_BLACK);
-    fb_utf8_scaled(fb, dx, dy, ds, num_c, s);
+    fb_color_t num_c = weekend ? COLOR_RED : COLOR_BLACK;
+    fb_utf8_scaled(fb, dx, dy, ds, num_c, text_sc);
 
     lunar_date_t ld;
     const char *label  = NULL;
@@ -325,16 +345,14 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
     if (!label)
         return;
 
-    int ly = cell_y + top_pad + 16 * s + sub_gap;
-    fb_color_t sub_c = is_today ? COLOR_WHITE
-                                : ((special || weekend) ? COLOR_RED : COLOR_BLACK);
+    int ly = cell_y + top_pad + 16 * text_sc + sub_gap;
+    fb_color_t sub_c = (special || weekend) ? COLOR_RED : COLOR_BLACK;
 
-    /* 农历标签与日期数字统一使用屏幕缩放系数 s，避免大屏出现大数字配小标签的落差 */
-    int max_w = cw - 4 * s;
+    int max_w = cw - 6;
     if (max_w < 8) max_w = 8;
-    int lw = cal_utf8_width_px(label, 8 * s, 16 * s);
-    int lx = (lw <= max_w) ? cell_x + (cw - lw) / 2 : cell_x + 2 * s;
-    fb_utf8_scaled_maxw(fb, lx, ly, label, sub_c, s, max_w);
+    int lw = cal_utf8_width_px(label, 8 * text_sc, 16 * text_sc);
+    int lx = (lw <= max_w) ? cell_x + (cw - lw) / 2 : cell_x + 3;
+    fb_utf8_scaled_maxw(fb, lx, ly, label, sub_c, text_sc, max_w);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -348,6 +366,7 @@ static void cal_render_month(fb_t *fb, int year, int month,
     cal_layout_build(&L, fb->width, fb->height);
 
     fb_clear(fb);
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
 
     cal_draw_title(fb, &L, year, month);
     cal_draw_weekday_row(fb, &L);
@@ -363,12 +382,16 @@ static void cal_render_month(fb_t *fb, int year, int month,
 
         int col = cell % CAL_GRID_COLS;
         int row = cell / CAL_GRID_COLS;
-        int cx = col * L.col_w;
+        int cx = L.grid_x + col * L.col_w;
         int cy = L.grid_top + row * L.row_h;
 
         cal_draw_day_cell(fb, &L, year, month, d, col, cx, cy,
                           today_y, today_m, today_d);
     }
+
+    char today[24];
+    snprintf(today, sizeof(today), "%04d-%02d-%02d", today_y, today_m, today_d);
+    ui_draw_footer(fb, "CALENDAR", today);
 }
 
 static void cal_run_render(int year, int month, unsigned epoch)

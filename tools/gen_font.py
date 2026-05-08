@@ -1,12 +1,37 @@
 #!/usr/bin/env python3
 """Generate bitmap font data for EPD display.
-Uses GNU Unifont (.hex) for pixel-perfect 16x16 Chinese glyphs,
-and Consolas TrueType for 8x16 ASCII glyphs.
-Outputs main/font_data.h.
+
+The firmware renderer currently uses compact fixed-cell glyph tables
+(8x16 ASCII, 16x16 CJK). Prefer InkSight's PCF bitmap fonts as the source so
+the generated tables keep the same crisp 1-bit font shapes InkSight uses,
+without pulling multi-megabyte font files into flash.
 """
 import sys, os, gzip, io
 
 UNIFONT_URL = "https://unifoundry.com/pub/unifont/unifont-16.0.02/font-builds/unifont-16.0.02.hex.gz"
+
+UI_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/Deng.ttf",
+    "C:/Windows/Fonts/msyh.ttc",
+    "C:/Windows/Fonts/Dengl.ttf",
+    "C:/Windows/Fonts/msyhl.ttc",
+    "C:/Windows/Fonts/Noto Sans SC (TrueType).otf",
+    "C:/Windows/Fonts/simsun.ttc",
+]
+
+SYMBOL_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/seguisym.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/NotoSans-Regular.ttf",
+    "C:/Windows/Fonts/Noto Sans SC (TrueType).otf",
+]
+
+ASCII_FONT_CANDIDATES = [
+    "C:/Windows/Fonts/consola.ttf",
+    "C:/Windows/Fonts/cour.ttf",
+    "C:/Windows/Fonts/lucon.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
+] + UI_FONT_CANDIDATES
 
 def get_gb2312_level1():
     """Generate all 3755 GB2312 Level-1 Chinese characters."""
@@ -21,7 +46,18 @@ def get_gb2312_level1():
                 pass
     return ''.join(chars)
 
-EXTRA_CHARS = "浏览器页态址钟盘轮播墨升级"
+EXTRA_CHARS = (
+    "\u6d4f\u89c8\u5668\u9875\u6001\u5740\u949f\u76d8\u8f6e\u64ad"
+    "\u58a8\u5347\u7ea7\u7ebf\u7801"
+    "\u00b0\u2103\u00b7\u2014\uff1a\uff0c\u3002\uff01\uff1f\uff08\uff09"
+    "\u3010\u3011\u300c\u300d"
+    "\u7535\u5b50\u58a8\u6c34\u5c4f\u7f51\u7edc\u4fe1\u606f\u4f7f\u7528"
+    "\u6b65\u9aa4\u5df2\u8fde\u5730\u5740\u72b6\u6001\u79bb\u7ebf\u70ed"
+    "\u70b9\u5bc6\u7801\u7f51\u9875\u6253\u5f00\u914d\u7f6e\u5bb6\u5ead"
+    "\u8fd4\u56de\u6309\u952e\u6a21\u5f0f\u4e0a\u4e00\u4e0b"
+    "\u5012\u8ba1\u65f6\u5929\u540e\u5c31\u662f\u4eca\u524d\u6682\u65e0"
+    "\u8bf7\u901a\u8fc7\u6dfb\u52a0"
+)
 
 def get_gb2312_level2():
     """Generate all GB2312 Level-2 Chinese characters (rows D8-F7)."""
@@ -34,9 +70,6 @@ def get_gb2312_level2():
             except (UnicodeDecodeError, ValueError):
                 pass
     return ''.join(chars)
-
-CHINESE_CHARS = get_gb2312_level1() + get_gb2312_level2() + EXTRA_CHARS
-
 
 def download_unifont(cache_path):
     """Download GNU Unifont .hex.gz and cache locally."""
@@ -102,45 +135,153 @@ def find_font(candidates):
     return None
 
 
-def render_8x16(font, ch):
-    from PIL import Image, ImageDraw
-    img = Image.new('L', (8, 16), 0)
-    draw = ImageDraw.Draw(img)
-    bb = draw.textbbox((0, 0), ch, font=font)
-    x = (8 - (bb[2] - bb[0])) // 2 - bb[0]
-    y = (16 - (bb[3] - bb[1])) // 2 - bb[1]
-    draw.text((x, y), ch, font=font, fill=255)
+def load_pcf_font(candidates):
+    """Load the first usable PCF bitmap font from (path, pixel_size) pairs."""
+    from PIL import ImageFont
+    for fp, size in candidates:
+        if not os.path.exists(fp):
+            continue
+        try:
+            return ImageFont.truetype(fp, size), fp, size
+        except Exception as e:
+            print(f"WARNING: failed to load PCF {fp} @ {size}px: {e}")
+    return None, None, 0
+
+
+def _pack_1bpp(img, w, h, threshold):
     data = []
-    for row in range(16):
-        b = 0
-        for col in range(8):
-            if img.getpixel((col, row)) > 100:
-                b |= 0x80 >> col
-        data.append(b)
+    for row in range(h):
+        byte = 0
+        bit_count = 0
+        for col in range(w):
+            if img.getpixel((col, row)) > threshold:
+                byte |= 0x80 >> (bit_count % 8)
+            bit_count += 1
+            if bit_count % 8 == 0:
+                data.append(byte)
+                byte = 0
+        if bit_count % 8:
+            data.append(byte)
     return data
 
 
-def render_16x16_ttf(font, ch):
-    """Fallback: render Chinese char via TrueType (if Unifont glyph unavailable)."""
+def bitmap_pixel_count(bmp):
+    return sum(int(b).bit_count() for b in bmp)
+
+
+def bitmap_nonempty_columns(bmp, w, h):
+    stride = (w + 7) // 8
+    cols = 0
+    for x in range(w):
+        used = False
+        for y in range(h):
+            if bmp[y * stride + x // 8] & (0x80 >> (x % 8)):
+                used = True
+                break
+        if used:
+            cols += 1
+    return cols
+
+
+def validate_ascii_data(ascii_data):
+    glyphs = {ch: bmp for _code, ch, bmp in ascii_data}
+    required = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    bad = []
+    for ch in required:
+        bmp = glyphs.get(ch)
+        pixels = bitmap_pixel_count(bmp or [])
+        cols = bitmap_nonempty_columns(bmp or [], 8, 16)
+        min_cols = 5 if ch in "WwMm" else 2
+        if pixels < 3 or cols < min_cols:
+            bad.append(f"{ch}(pixels={pixels}, cols={cols})")
+    if bad:
+        raise RuntimeError("ASCII glyph sanity check failed: " + ", ".join(bad))
+
+
+def load_supplemental_chars(path):
+    if not os.path.exists(path):
+        return ""
+    chars = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "#" in line:
+                line = line.split("#", 1)[0].strip()
+            chars.append("".join(ch for ch in line if not ch.isspace()))
+    return "".join(chars)
+
+
+def render_cell(font, ch, cell_w, cell_h, threshold=100, pixel_font=False):
     from PIL import Image, ImageDraw
-    img = Image.new('L', (16, 16), 0)
-    draw = ImageDraw.Draw(img)
-    bb = draw.textbbox((0, 0), ch, font=font)
-    x = (16 - (bb[2] - bb[0])) // 2 - bb[0]
-    y = (16 - (bb[3] - bb[1])) // 2 - bb[1]
-    draw.text((x, y), ch, font=font, fill=255)
-    data = []
-    for row in range(16):
-        hi = lo = 0
-        for col in range(8):
-            if img.getpixel((col, row)) > 80:
-                hi |= 0x80 >> col
-        for col in range(8, 16):
-            if img.getpixel((col, row)) > 80:
-                lo |= 0x80 >> (col - 8)
-        data.append(hi)
-        data.append(lo)
-    return data
+
+    canvas = Image.new('L', (cell_w, cell_h), 0)
+    probe = ImageDraw.Draw(Image.new('L', (max(64, cell_w * 4), max(64, cell_h * 4)), 0))
+    if pixel_font:
+        probe.fontmode = "1"
+    bb = probe.textbbox((0, 0), ch, font=font)
+    glyph_w = max(0, bb[2] - bb[0])
+    glyph_h = max(0, bb[3] - bb[1])
+    if glyph_w == 0 or glyph_h == 0:
+        return _pack_1bpp(canvas, cell_w, cell_h, threshold)
+
+    glyph = Image.new('L', (glyph_w, glyph_h), 0)
+    gdraw = ImageDraw.Draw(glyph)
+    if pixel_font:
+        gdraw.fontmode = "1"
+    gdraw.text((-bb[0], -bb[1]), ch, font=font, fill=255)
+
+    if glyph_w > cell_w or glyph_h > cell_h:
+        new_w = min(glyph_w, cell_w)
+        new_h = min(glyph_h, cell_h)
+        resample = Image.Resampling.NEAREST if pixel_font else Image.Resampling.LANCZOS
+        glyph = glyph.resize((new_w, new_h), resample)
+        glyph_w, glyph_h = glyph.size
+
+    x = (cell_w - glyph_w) // 2
+    y = (cell_h - glyph_h) // 2
+    canvas.paste(glyph, (x, y))
+    return _pack_1bpp(canvas, cell_w, cell_h, threshold)
+
+
+def render_8x16(font, ch, pixel_font=False):
+    return render_cell(font, ch, 8, 16,
+                       threshold=1 if pixel_font else 100,
+                       pixel_font=pixel_font)
+
+
+def render_16x16_ttf(font, ch, threshold=90):
+    """Render a CJK character from TrueType into the existing 16x16 cell."""
+    return render_cell(font, ch, 16, 16, threshold=threshold, pixel_font=False)
+
+
+def render_16x16_bitmap(font, ch):
+    """Render a CJK character from an InkSight PCF bitmap font."""
+    return render_cell(font, ch, 16, 16, threshold=1, pixel_font=True)
+
+
+def render_zh_with_fallback(ch, primary_font, primary_is_bitmap,
+                            fallback_fonts, unifont_glyphs):
+    cp = ord(ch)
+    if primary_font and primary_is_bitmap:
+        bmp = render_16x16_bitmap(primary_font, ch)
+    elif primary_font:
+        bmp = render_16x16_ttf(primary_font, ch)
+    elif cp in unifont_glyphs:
+        bmp = unifont_glyphs[cp]
+    else:
+        bmp = [0] * 32
+
+    if bitmap_pixel_count(bmp) > 0:
+        return bmp
+
+    for font in fallback_fonts:
+        bmp = render_16x16_ttf(font, ch)
+        if bitmap_pixel_count(bmp) > 0:
+            return bmp
+
+    return unifont_glyphs.get(cp, bmp)
 
 
 def main():
@@ -149,70 +290,150 @@ def main():
     from PIL import ImageFont
 
     tools_dir = os.path.dirname(os.path.abspath(__file__))
+    local_bitmap = os.path.join(tools_dir, "fonts", "inksight")
+    local_truetype = os.path.join(tools_dir, "fonts", "truetype")
 
-    # --- ASCII via TrueType ---
-    mono_path = find_font([
-        "C:/Windows/Fonts/consola.ttf",
-        "C:/Windows/Fonts/cour.ttf",
-        "C:/Windows/Fonts/lucon.ttf",
-    ])
-    if not mono_path:
-        print("WARNING: No mono font, using default")
+    def pcf(name):
+        return os.path.join(local_bitmap, name)
+
+    def ttf(name):
+        return os.path.join(local_truetype, name)
+
+    inksight_ascii_pcf = [
+        (pcf("Inter_24pt-Medium-10.pcf"), 13),
+        (pcf("Inter_24pt-Medium-9.pcf"), 12),
+        (pcf("Inter_24pt-Medium-13.pcf"), 14),
+    ]
+    inksight_cjk_pcf = [
+        # On the 7.5" BWR panel, 16px bitmap CJK looks visually too dense.
+        # InkSight maps the "-13" bitmap strike to a 14px load size, then we
+        # center it in our existing 16x16 firmware cell for a lighter result.
+        (pcf("NotoSerifSC-ExtraLight-13.pcf"), 14),
+        (pcf("NotoSerifSC-Light-13.pcf"), 14),
+        (pcf("NotoSerifSC-Regular-13.pcf"), 14),
+        (pcf("NotoSerifSC-Regular-12.pcf"), 16),
+        (pcf("NotoSerifSC-Light-12.pcf"), 16),
+        (pcf("NotoSerifSC-Bold-12.pcf"), 16),
+        (pcf("wqy-zenhei-13.pcf"), 14),
+        (pcf("wqy-song-12.pcf"), 16),
+    ]
+    inksight_ascii = [
+        ttf("CascadiaMono.ttf"),
+        ttf("Consolas.ttf"),
+        ttf("Inter_24pt-Medium.ttf"),
+        ttf("Lora-Regular.ttf"),
+    ]
+    inksight_cjk = [
+        ttf("NotoSerifSC-Light.ttf"),
+        ttf("NotoSerifSC-Regular.ttf"),
+        ttf("NotoSerifSC-Bold.ttf"),
+    ]
+
+    # --- ASCII via a narrow monospace font ---
+    # The firmware stores ASCII in an 8x16 fixed cell. Proportional UI fonts can
+    # make wide glyphs such as W/w collapse or crop, so prefer a monospace TTF.
+    ascii_path = find_font(inksight_ascii + ASCII_FONT_CANDIDATES)
+    ascii_is_bitmap = False
+    ascii_pcf_size = 0
+    if ascii_path:
+        print(f"ASCII monospace/UI font: {ascii_path}")
     else:
-        print(f"Mono font: {mono_path}")
+        ascii_font, ascii_path, ascii_pcf_size = load_pcf_font(inksight_ascii_pcf)
+        ascii_is_bitmap = ascii_font is not None
+        if ascii_is_bitmap:
+            print(f"ASCII InkSight bitmap font fallback: {ascii_path} @ {ascii_pcf_size}px")
 
-    mono_font = ImageFont.truetype(mono_path, 13) if mono_path else ImageFont.load_default()
+    if not ascii_path:
+        print("WARNING: No ASCII UI font, using default")
+        ascii_font = ImageFont.load_default()
+    elif not ascii_is_bitmap:
+        ascii_font = ImageFont.truetype(ascii_path, 13)
 
     ascii_data = []
     for code in range(32, 127):
-        ascii_data.append((code, chr(code), render_8x16(mono_font, chr(code))))
+        ascii_data.append((code, chr(code),
+                           render_8x16(ascii_font, chr(code), pixel_font=ascii_is_bitmap)))
+    validate_ascii_data(ascii_data)
 
-    # --- Chinese via GNU Unifont (pixel-perfect 16x16 bitmaps) ---
-    unique = list(dict.fromkeys(CHINESE_CHARS))
+    # --- Chinese via UI TrueType font, with Unifont only as last fallback ---
+    # fb_render.c uses binary search over font_zh, so glyphs must be sorted by
+    # Unicode codepoint. GB2312 table order is not codepoint order.
+    supplemental_path = os.path.join(tools_dir, "font_extra_chars.txt")
+    supplemental_chars = load_supplemental_chars(supplemental_path)
+    if supplemental_chars:
+        print(f"Supplemental chars: {len(dict.fromkeys(supplemental_chars))} unique from {supplemental_path}")
+    chinese_chars = get_gb2312_level1() + get_gb2312_level2() + EXTRA_CHARS + supplemental_chars
+    unique = sorted(dict.fromkeys(chinese_chars), key=ord)
     needed_cps = [ord(ch) for ch in unique]
+
+    zh_font, zh_path, zh_pcf_size = load_pcf_font(inksight_cjk_pcf)
+    zh_is_bitmap = zh_font is not None
+    if zh_is_bitmap:
+        print(f"Chinese InkSight bitmap font: {zh_path} @ {zh_pcf_size}px")
+    else:
+        zh_path = find_font(inksight_cjk + UI_FONT_CANDIDATES)
+        zh_font = ImageFont.truetype(zh_path, 15) if zh_path else None
+        if zh_path:
+            print(f"Chinese UI font: {zh_path}")
+
+    if not zh_path:
+        print("WARNING: No Chinese UI font found, falling back to Unifont")
+
+    fallback_fonts = []
+    fallback_paths = []
+    for fp in SYMBOL_FONT_CANDIDATES + UI_FONT_CANDIDATES:
+        if not fp or fp == zh_path or fp in fallback_paths or not os.path.exists(fp):
+            continue
+        try:
+            fallback_fonts.append(ImageFont.truetype(fp, 15))
+            fallback_paths.append(fp)
+        except Exception:
+            continue
+    if fallback_paths:
+        print("Fallback glyph fonts: " + ", ".join(os.path.basename(p) for p in fallback_paths[:3]))
 
     hex_gz = os.path.join(tools_dir, "unifont.hex.gz")
     unifont_glyphs = {}
-
-    if not os.path.exists(hex_gz):
-        download_unifont(hex_gz)
-
-    if os.path.exists(hex_gz):
-        print(f"Loading Unifont from {hex_gz} ...")
-        unifont_glyphs = load_unifont_hex(hex_gz, needed_cps)
-        print(f"  Found {len(unifont_glyphs)}/{len(needed_cps)} glyphs in Unifont")
-
-    # Fallback to TrueType for any missing glyphs
-    zh_font = None
-    missing = [ch for ch in unique if ord(ch) not in unifont_glyphs]
-    if missing:
-        zh_path = find_font([
-            "C:/Windows/Fonts/simhei.ttf",
-            "C:/Windows/Fonts/simsun.ttc",
-            "C:/Windows/Fonts/msyh.ttc",
-        ])
-        if zh_path:
-            zh_font = ImageFont.truetype(zh_path, 14)
-            print(f"  TTF fallback for {len(missing)} chars: {zh_path}")
-        else:
-            print(f"  WARNING: {len(missing)} chars have no glyph source!")
+    if not zh_font:
+        if not os.path.exists(hex_gz):
+            download_unifont(hex_gz)
+        if os.path.exists(hex_gz):
+            print(f"Loading Unifont from {hex_gz} ...")
+            unifont_glyphs = load_unifont_hex(hex_gz, needed_cps)
+            print(f"  Found {len(unifont_glyphs)}/{len(needed_cps)} glyphs in Unifont")
 
     zh_data = []
     for ch in unique:
         cp = ord(ch)
-        if cp in unifont_glyphs:
-            zh_data.append((cp, ch, unifont_glyphs[cp]))
-        elif zh_font:
-            zh_data.append((cp, ch, render_16x16_ttf(zh_font, ch)))
-        else:
-            zh_data.append((cp, ch, [0] * 32))
+        zh_data.append((cp, ch,
+                        render_zh_with_fallback(ch, zh_font, zh_is_bitmap,
+                                                fallback_fonts, unifont_glyphs)))
 
     # --- Output C header ---
     out = os.path.join(tools_dir, "..", "main", "font_data.h")
+    project_dir = os.path.abspath(os.path.join(tools_dir, ".."))
+
+    def source_label(path, size=0):
+        if not path:
+            return ""
+        label = path
+        try:
+            rel = os.path.relpath(os.path.abspath(path), project_dir)
+            if not rel.startswith(".." + os.sep) and rel != "..":
+                label = rel.replace(os.sep, "/")
+        except ValueError:
+            pass
+        if size:
+            label = f"{label} @ {size}px"
+        return label
+
     with open(out, "w", encoding="utf-8") as f:
         f.write("/* Auto-generated bitmap font data. Do not edit. */\n")
         f.write(f"/* ASCII: {len(ascii_data)} glyphs (8x16)  Chinese: {len(zh_data)} glyphs (16x16) */\n")
-        f.write(f"/* Chinese source: GNU Unifont (pixel-perfect bitmap) */\n\n")
+        ascii_source = source_label(ascii_path, ascii_pcf_size) if ascii_is_bitmap else (source_label(ascii_path) or "Pillow default")
+        zh_source = source_label(zh_path, zh_pcf_size) if zh_is_bitmap else (source_label(zh_path) if zh_path else "GNU Unifont fallback")
+        f.write(f"/* ASCII source: {ascii_source} */\n")
+        f.write(f"/* Chinese source: {zh_source} */\n\n")
         f.write("#pragma once\n#include <stdint.h>\n\n")
 
         f.write(f"static const uint8_t font_ascii[{len(ascii_data)}][16] = {{\n")
@@ -231,8 +452,8 @@ def main():
         f.write(f"#define FONT_ZH_COUNT {len(zh_data)}\n")
 
     print(f"\nGenerated {out}")
-    print(f"  ASCII:   {len(ascii_data)} chars (TrueType)")
-    print(f"  Chinese: {len(zh_data)} chars (Unifont: {len(unifont_glyphs)}, TTF fallback: {len(zh_data) - len(unifont_glyphs)})")
+    print(f"  ASCII:   {len(ascii_data)} chars ({'InkSight PCF' if ascii_is_bitmap else 'TrueType/default'})")
+    print(f"  Chinese: {len(zh_data)} chars ({'InkSight PCF' if zh_is_bitmap else ('TrueType' if zh_font else 'Unifont fallback')})")
 
 
 if __name__ == "__main__":

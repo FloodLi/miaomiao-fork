@@ -18,7 +18,8 @@
 #include "time_sync.h"
 #include "weather.h"
 #include "display_policy.h"
-#include "battery_mon.h"
+#include "display_mode.h"
+#include "ui_theme.h"
 
 /* 摘要区占位（无有效天气数据时） */
 static const char k_wx_placeholder_l1[] =
@@ -82,14 +83,7 @@ static struct {
  * 只在显示天气时用来判断"是否真正变了"，避免每次 BIT_WEATHER_DATA 通知都强制全刷。 */
 static int compute_weather_sig(void)
 {
-    weather_data_t wd;
-    weather_get_data_copy(&wd);
-    if (!wd.valid) return -1;
-    int s = ((wd.now.temp + 100) & 0x1FF);          /* 9 bit, -100..411 */
-    s |= (wd.now.icon & 0xFFF) << 9;                 /* 12 bit */
-    s |= (wd.now.humidity & 0x7F) << 21;             /* 7 bit, 0..127 */
-    s |= (wd.daily_count & 0x7) << 28;               /* 3 bit */
-    return s;
+    return weather_data_signature();
 }
 
 static void state_reset(void)
@@ -102,6 +96,18 @@ static void state_reset(void)
     s_state.last_show_weather = false;
     s_state.force_full_next = true;
     portEXIT_CRITICAL(&s_state_mux);
+}
+
+static bool clock_get_local_or_system(struct tm *out)
+{
+    if (!out)
+        return false;
+    if (time_sync_get_local(out))
+        return true;
+
+    time_t now = time(NULL);
+    localtime_r(&now, out);
+    return false;
 }
 
 /* ── 7-segment digit rendering ────────────────────────────────────── */
@@ -227,7 +233,7 @@ static void nvs_save_snapshot(const clock_config_t *cfg)
  * 全刷耗时且会刷花画面），因此本模块统一走全刷，画面质量优先。
  * 参数 @p prefer_partial 暂保留接口位置，已不参与决策。
  */
-static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
+static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_scheduler)
 {
     if (s_render_mutex && xSemaphoreTake(s_render_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
         ESP_LOGW(TAG, "render_clock: another render in progress, skip");
@@ -250,9 +256,7 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
     }
 
     struct tm tm;
-    if (!time_sync_get_local(&tm)) {
-        time_t now = time(NULL);
-        localtime_r(&now, &tm);
+    if (!clock_get_local_or_system(&tm)) {
         ESP_LOGW(TAG, "SNTP not synced, using system time");
     }
 
@@ -273,12 +277,11 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
     int d_gap = dw + 6 * ds_num / ds_den;
     int col_w_px = BASE_COL * ds_num / ds_den;
 
-    fb_rect(fb, 6, 6, W - 12, H - 12, COLOR_BLACK);
-    fb_rect(fb, 9, 9, W - 18, H - 18, COLOR_BLACK);
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
 
     int total_w = 4 * d_gap + col_w_px - 6 * ds_num / ds_den;
     int time_x = (W - total_w) / 2;
-    int time_y = H * 30 / 480;
+    int time_y = H * 34 / 480;
 
     int cx = time_x;
     draw_digit_s(fb, cx, time_y, hour / 10, COLOR_BLACK, ds_num, ds_den); cx += d_gap;
@@ -299,72 +302,94 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
              "\xe6\x98\x9f\xe6\x9c\x9f%s",
              weekday_zh[wday]);
 
-    int date_y = time_y + dh + 16;
-    /* 与日期同行靠左；字号用 1，避免小屏上与大号日期字重叠 */
-    battery_mon_draw_percent_compact(fb, 14, date_y, COLOR_BLACK, 1);
-    fb_utf8_scaled(fb, W * 120 / 648, date_y, date_str, COLOR_BLACK, sc);
-    fb_utf8_scaled(fb, W * 400 / 648, date_y, week_str, COLOR_BLACK, sc);
+    int date_y = time_y + dh + 18;
+    int date_w = ui_text_width(date_str, sc);
+    int week_w = ui_text_width(week_str, sc);
+    int date_gap = big ? 22 * sc : 18;
+    int date_x = (W - date_w - week_w - date_gap) / 2;
+    if (date_x < 16)
+        date_x = 16;
+    fb_utf8_scaled(fb, date_x, date_y, date_str, COLOR_BLACK, sc);
+    fb_utf8_scaled(fb, date_x + date_w + date_gap, date_y, week_str, COLOR_RED, sc);
+    if (big)
+        ui_draw_battery_badge(fb, date_x - 10, date_y + (sc > 1 ? 3 : 0));
+    else {
+        int battery_y = cfg_local.show_weather ? (date_y - 18) : (H - 34);
+        ui_draw_battery_badge(fb, W - 28, battery_y);
+    }
 
-    int sep_y = date_y + 16 * sc + 10;
-    fb_hline(fb, MX + 10, sep_y, W - 2 * MX - 20, COLOR_BLACK);
-    fb_hline(fb, MX + 10, sep_y + 1, W - 2 * MX - 20, COLOR_BLACK);
-
-    weather_data_t wd_local = {0};
+    weather_summary_t wd_local = {0};
     weather_config_t wcfg = {0};
     bool has_weather = false;
 
     if (cfg_local.show_weather) {
-        weather_get_data_copy(&wd_local);
+        weather_get_summary_copy(&wd_local);
         if (wd_local.valid) {
             weather_get_config(&wcfg);
             has_weather = true;
         }
     }
-    const weather_data_t *wd = &wd_local;
+    const weather_summary_t *wd = &wd_local;
 
-    int bot_y = sep_y + 16;
+    int sep_y = date_y + 16 * sc + 12;
+    if (big || has_weather || cfg_local.show_weather) {
+        ui_draw_dotted_hline(fb, MX + 12, sep_y, W - 2 * MX - 24, COLOR_BLACK, 6);
+    } else {
+        fb_fill_rect(fb, W / 2 - 34, sep_y, 68, 2, COLOR_RED);
+    }
+
+    int bot_y = sep_y + 14;
+    const int wx_head_sc = big ? 2 : 1;
+    const int wx_body_sc = 1;
+    const int wx_head_gap = 16 * wx_head_sc + 8;
 
     if (has_weather) {
         char line1[280];
         if (wcfg.city_name[0]) {
-            snprintf(line1, sizeof(line1), "%s   %s   %d'C",
+            snprintf(line1, sizeof(line1), "%.31s  %.23s  %d\xc2\xb0""C",
                      wcfg.city_name, wd->now.text, wd->now.temp);
         } else {
-            snprintf(line1, sizeof(line1), "%s   %d'C",
+            snprintf(line1, sizeof(line1), "%.23s  %d\xc2\xb0""C",
                      wd->now.text, wd->now.temp);
         }
         {
-            int lx = W * 100 / 648;
+            int icon_x = W * 66 / 648;
+            int icon_y = bot_y + (16 * wx_head_sc - WEATHER_ICON_H) / 2;
+            if (icon_y < bot_y)
+                icon_y = bot_y;
+            fb_bitmap(fb, icon_x, icon_y, WEATHER_ICON_W, WEATHER_ICON_H,
+                      weather_icon_bitmap(wd->now.icon), COLOR_BLACK);
+
+            int lx = icon_x + WEATHER_ICON_W + 10;
             int lw = W - lx - MX - 8;
             if (lw < 24) lw = 24;
-            fb_utf8_scaled_maxw(fb, lx, bot_y, line1, COLOR_BLACK, sc, lw);
+            fb_utf8_scaled_maxw(fb, lx, bot_y, line1, COLOR_BLACK, wx_head_sc, lw);
         }
 
         char line2[280];
         snprintf(line2, sizeof(line2),
-                 "\xe4\xbd\x93\xe6\x84\x9f%d'C   "
-                 "\xe6\xb9\xbf\xe5\xba\xa6%d%%   "
-                 "%s%d\xe7\xba\xa7",
+                 "\xe4\xbd\x93\xe6\x84\x9f%d\xc2\xb0""C  "
+                 "\xe6\xb9\xbf\xe5\xba\xa6%d%%  "
+                 "%.15s%d\xe7\xba\xa7",
                  wd->now.feels_like,
                  wd->now.humidity,
                  wd->now.wind_dir, wd->now.wind_scale);
         {
-            int lx2 = W * 60 / 648;
+            int lx2 = W * 80 / 648;
             int lw2 = W - lx2 - MX - 8;
             if (lw2 < 24) lw2 = 24;
-            fb_utf8_scaled_maxw(fb, lx2, bot_y + 16 * sc + 8, line2, COLOR_BLACK, sc, lw2);
+            fb_utf8_scaled_maxw(fb, lx2, bot_y + wx_head_gap, line2, COLOR_BLACK, wx_head_sc, lw2);
         }
 
-        int dot_y = bot_y + 2 * (16 * sc + 8) + 4;
-        for (int dx = MX + 10; dx < W - MX - 10; dx += 6)
-            fb_pixel(fb, dx, dot_y, COLOR_BLACK);
+        int dot_y = bot_y + 2 * wx_head_gap + 2;
+        ui_draw_dotted_hline(fb, MX + 10, dot_y, W - 2 * MX - 20, COLOR_BLACK, 6);
 
         int fcol = (W - 2 * MX - 40) / 3;
         if (fcol < 32) fcol = 32;
         const int fpad = 6;
         const int max_fc = fcol - fpad;
         int row_y = dot_y + 10;
-        const int line_gap = 16 * sc + 4;
+        const int line_gap = 16 * wx_body_sc + 4;
 
         for (int i = 0; i < wd->daily_count && i < 3; i++) {
             int fx = MX + 20 + i * fcol;
@@ -373,7 +398,7 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
 
             if (i == 0) {
                 snprintf(line_a, sizeof(line_a),
-                         "\xe4\xbb\x8a\xe5\xa4\xa9 %d/%d'C",
+                         "\xe4\xbb\x8a\xe5\xa4\xa9 %d/%d\xc2\xb0""C",
                          wd->daily[i].temp_max, wd->daily[i].temp_min);
             } else {
                 const char *d = wd->daily[i].date;
@@ -385,65 +410,64 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
                 } else {
                     snprintf(md, sizeof(md), "%s", d);
                 }
-                snprintf(line_a, sizeof(line_a), "%s %d/%d'C",
+                snprintf(line_a, sizeof(line_a), "%.15s %d/%d\xc2\xb0""C",
                          md, wd->daily[i].temp_max, wd->daily[i].temp_min);
             }
-            snprintf(line_b, sizeof(line_b), "%s", wd->daily[i].text_day);
+            snprintf(line_b, sizeof(line_b), "%.23s", wd->daily[i].text_day);
 
-            fb_utf8_scaled_maxw(fb, fx, row_y, line_a, COLOR_BLACK, sc, max_fc);
-            fb_utf8_scaled_maxw(fb, fx, row_y + line_gap, line_b, COLOR_BLACK, sc, max_fc);
+            int icon_x = fx + max_fc - WEATHER_ICON_W;
+            if (icon_x < fx)
+                icon_x = fx;
+            fb_bitmap(fb, icon_x, row_y + 1, WEATHER_ICON_W, WEATHER_ICON_H,
+                      weather_icon_bitmap(wd->daily[i].icon_day), COLOR_BLACK);
+
+            int text_max = max_fc - WEATHER_ICON_W - 6;
+            if (text_max < 32)
+                text_max = max_fc;
+            fb_utf8_scaled_maxw(fb, fx, row_y, line_a,
+                                (i == 0) ? COLOR_RED : COLOR_BLACK,
+                                wx_body_sc, text_max);
+            fb_utf8_scaled_maxw(fb, fx, row_y + line_gap, line_b,
+                                COLOR_BLACK, wx_body_sc, text_max);
         }
     } else if (cfg_local.show_weather) {
         /* 已勾选「显示天气摘要」但尚未拉到 API 数据：提示原因，避免误以为开关无效 */
         int lx = MX + 16;
         int lw = W - 2 * MX - 32;
         if (lw < 24) lw = 24;
-        fb_utf8_scaled_maxw(fb, lx, bot_y, k_wx_placeholder_l1, COLOR_BLACK, sc, lw);
-        fb_utf8_scaled_maxw(fb, lx, bot_y + 16 * sc + 6, k_wx_placeholder_l2, COLOR_BLACK, sc, lw);
+        fb_utf8_scaled_maxw(fb, lx, bot_y, k_wx_placeholder_l1,
+                            COLOR_BLACK, wx_body_sc, lw);
+        fb_utf8_scaled_maxw(fb, lx, bot_y + 16 * wx_body_sc + 6,
+                            k_wx_placeholder_l2, COLOR_BLACK, wx_body_sc, lw);
     } else {
-        fb_hline(fb, W / 2 - 60, bot_y + 30, 120, COLOR_BLACK);
-        fb_hline(fb, W / 2 - 60, bot_y + 32, 120, COLOR_BLACK);
-
         char ampm[16];
         if (hour < 6)       snprintf(ampm, sizeof(ampm), "\xe5\x87\x8c\xe6\x99\xa8");
         else if (hour < 12) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8a\xe5\x8d\x88");
         else if (hour < 18) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8b\xe5\x8d\x88");
         else                snprintf(ampm, sizeof(ampm), "\xe6\x99\x9a\xe4\xb8\x8a");
-        fb_utf8_scaled(fb, W / 2 - 16 * sc, bot_y + 50, ampm, COLOR_BLACK, sc);
+        if (!big) {
+            const int card_x = 24;
+            const int card_y = bot_y + 6;
+            const int card_w = W - 2 * card_x;
+            const int card_h = 72;
+            ui_draw_card(fb, card_x, card_y, card_w, card_h, true);
 
-        fb_fill_rect(fb, 16, 16, 16, 4, COLOR_BLACK);
-        fb_fill_rect(fb, 16, 16, 4, 16, COLOR_BLACK);
-        fb_fill_rect(fb, W - 32, 16, 16, 4, COLOR_BLACK);
-        fb_fill_rect(fb, W - 20, 16, 4, 16, COLOR_BLACK);
-        fb_fill_rect(fb, 16, H - 20, 16, 4, COLOR_BLACK);
-        fb_fill_rect(fb, 16, H - 32, 4, 16, COLOR_BLACK);
-        fb_fill_rect(fb, W - 32, H - 20, 16, 4, COLOR_BLACK);
-        fb_fill_rect(fb, W - 20, H - 32, 4, 16, COLOR_BLACK);
+            const char *tag = time_sync_is_synced()
+                                  ? "\xe6\x97\xb6\xe9\x97\xb4\xe5\xb7\xb2\xe5\x90\x8c\xe6\xad\xa5"
+                                  : "\xe7\xad\x89\xe5\xbe\x85\xe7\xbd\x91\xe7\xbb\x9c\xe6\xa0\xa1\xe6\x97\xb6";
+            int aw = ui_text_width(ampm, 2);
+            int tw = ui_text_width(tag, 1);
+            fb_utf8_scaled(fb, (W - aw) / 2, card_y + 14, ampm, COLOR_BLACK, 2);
+            fb_utf8_scaled(fb, (W - tw) / 2, card_y + 48, tag,
+                           time_sync_is_synced() ? COLOR_BLACK : COLOR_RED, 1);
+        } else {
+            ui_draw_dotted_hline(fb, W / 2 - 70, bot_y + 30, 140, COLOR_BLACK, 6);
+            fb_utf8_scaled(fb, W / 2 - 16 * sc, bot_y + 50, ampm, COLOR_BLACK, sc);
+        }
     }
 
-    /* ── export to SPIFFS（保留 wake-restore 缓存）── */
-    const char *raw_path = "/spiffs/image.bin";
-    fb_raw_file_lock();
-    if (!display_policy_epoch_is_current(epoch)) {
-        fb_raw_file_unlock();
-        fb_destroy(fb);
-        if (s_render_mutex)
-            xSemaphoreGive(s_render_mutex);
-        ESP_LOGI(TAG, "Clock display skipped before export: stale request");
-        return ESP_ERR_INVALID_STATE;
-    }
-    esp_err_t err = fb_export(fb, raw_path);
-    fb_raw_file_unlock();
-
-    if (err != ESP_OK) {
-        fb_destroy(fb);
-        if (s_render_mutex)
-            xSemaphoreGive(s_render_mutex);
-        return err;
-    }
-
-    (void)prefer_partial;
-    (void)raw_path;
+    if (big || has_weather || cfg_local.show_weather)
+        ui_draw_footer(fb, "CLOCK", cfg_local.show_weather ? "WEATHER" : "TIME");
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
@@ -453,15 +477,18 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch)
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* 全刷：用 epd_display_fb_free，SPI 完成立即释放 fb，省 ~18s 内存占用 */
-    err = epd_display_fb_free(fb);
+    (void)prefer_partial;
+
+    /* Display directly from RAM; clock refreshes should not rewrite /spiffs/image.bin. */
+    esp_err_t err = epd_display_fb_free(fb);
     if (err != ESP_OK) {
         if (s_render_mutex)
             xSemaphoreGive(s_render_mutex);
         return err;
     }
 
-    scheduler_notify_manual_show();
+    if (notify_scheduler)
+        scheduler_notify_manual_show();
     ESP_LOGI(TAG, "Clock displayed: %02d:%02d", hour, min);
 
     /* 同步全局渲染状态：任何成功的 render_clock() 都更新它，
@@ -509,12 +536,7 @@ static void clock_task(void *arg)
     ESP_LOGI(TAG, "Clock task running");
 
     for (;;) {
-        bool enabled;
-        portENTER_CRITICAL(&s_cfg_mux);
-        enabled = s_cfg.enabled;
-        portEXIT_CRITICAL(&s_cfg_mux);
-
-        if (!enabled || !display_policy_clock_may_auto_refresh()) {
+        if (!display_policy_clock_may_auto_refresh()) {
             state_reset();
             xEventGroupWaitBits(s_event,
                                 BIT_CFG_CHANGED | BIT_WEATHER_DATA | BIT_WAKE,
@@ -525,7 +547,7 @@ static void clock_task(void *arg)
         /* 等待时长对齐到下一分钟边界（最长 60s），让分钟跳变能尽快响应。 */
         TickType_t timeout = pdMS_TO_TICKS(30000);
         struct tm tm_pre;
-        if (time_sync_get_local(&tm_pre)) {
+        if (clock_get_local_or_system(&tm_pre)) {
             int wait_sec = 60 - tm_pre.tm_sec;
             if (wait_sec < 1) wait_sec = 1;
             if (wait_sec > 60) wait_sec = 60;
@@ -543,8 +565,8 @@ static void clock_task(void *arg)
         }
 
         struct tm tm;
-        if (!time_sync_get_local(&tm)) {
-            continue;
+        if (!clock_get_local_or_system(&tm)) {
+            ESP_LOGW(TAG, "SNTP not synced, auto-refresh uses system time");
         }
 
         bool show_weather;
@@ -605,14 +627,14 @@ static void clock_task(void *arg)
         }
 
         ESP_LOGI(TAG,
-                 "tick %02d:%02d -> render full  min=%d step=%d hr=%d day=%d cfg=%d "
+                 "tick %02d:%02d -> render clock  min=%d step=%d hr=%d day=%d cfg=%d "
                  "sw_vis=%d wx=%d ff=%d",
                  tm.tm_hour, tm.tm_min,
                  minute_changed, full_step_due, hour_changed, day_changed, cfg_changed,
                  sw_visibility_changed, weather_data_changed, s_force_full);
 
         unsigned epoch = display_policy_display_epoch();
-        render_clock(false, epoch);
+        render_clock(false, epoch, false);
     }
 }
 
@@ -673,9 +695,9 @@ esp_err_t clock_display_set_config(const clock_config_t *cfg)
     ESP_LOGI(TAG, "Config saved: enabled=%d, style=%d, weather=%d (changed=%d)",
              cfg->enabled, cfg->style, cfg->show_weather, actually_changed);
 
-    if (s_event && actually_changed)
+    if (s_event && actually_changed && display_policy_clock_may_auto_refresh())
         xEventGroupSetBits(s_event, BIT_CFG_CHANGED);
-    if (cfg->show_weather)
+    if (cfg->show_weather && display_policy_clock_may_auto_refresh())
         weather_request_embedded_refresh();
     return ESP_OK;
 }
@@ -703,9 +725,11 @@ esp_err_t clock_display_show(void)
     /* 同步渲染（耗时 ~18.8s 全刷）。render_clock 末尾会更新 s_state，
      * 任务循环看到 s_state.last_minute 已是当前分钟 → 不会立即重复刷。 */
     unsigned epoch = display_policy_display_epoch();
-    esp_err_t err = render_clock(false, epoch);
+    esp_err_t err = render_clock(false, epoch, true);
     if (err != ESP_OK)
         return err;
+
+    display_mode_set_active(DISPLAY_MODE_CLOCK);
 
     if (show_weather)
         weather_request_embedded_refresh();

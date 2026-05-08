@@ -49,6 +49,8 @@ esp_err_t    epd_display_fb_free(fb_t *fb);
  * Currently only implemented for SSD1619 (4.2"); other panels fall back to full.
  */
 esp_err_t    epd_display_from_buffer_fast(const fb_t *fb);
+/** Force the next framebuffer/file display to reload the full waveform and skip fast partial refresh. */
+void         epd_request_full_refresh_next(void);
 esp_err_t    epd_clear_screen(void);
 esp_err_t    epd_display_test_pattern(void);
 

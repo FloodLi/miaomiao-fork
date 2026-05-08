@@ -118,7 +118,6 @@ static int list_images(char out[][64], int max)
 
 static void show_next_image(void)
 {
-    unsigned epoch = display_policy_display_epoch();
     if (display_policy_manual_screen_active()) {
         ESP_LOGI(TAG, "Slideshow skipped: manual screen active");
         return;
@@ -164,6 +163,11 @@ static void show_next_image(void)
 
     free(names);
 
+    int prev_mode = display_mode_active();
+    display_mode_set_active(DISPLAY_MODE_SLIDESHOW);
+    display_policy_bump_display_epoch();
+    unsigned epoch = display_policy_display_epoch();
+
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
     if (display_policy_manual_screen_active() ||
@@ -175,6 +179,8 @@ static void show_next_image(void)
     esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
     if (err != ESP_OK) {
         fb_raw_file_unlock();
+        if (display_policy_display_epoch() == epoch)
+            display_mode_set_active(prev_mode);
         ESP_LOGW(TAG, "Convert failed: %s", esp_err_to_name(err));
         return;
     }
@@ -206,9 +212,13 @@ static void show_next_image(void)
     err = epd_display_from_file(raw_path);
     fb_raw_file_unlock();
     if (err != ESP_OK) {
+        if (display_policy_display_epoch() == epoch)
+            display_mode_set_active(prev_mode);
         ESP_LOGW(TAG, "Display failed: %s", esp_err_to_name(err));
         return;
     }
+
+    button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
 
     /* 顺序模式：仅在转换+刷屏均成功后再前进索引并落盘，避免失败时跳过画廊项 */
     if (mode != SLIDESHOW_RANDOM) {
@@ -341,17 +351,26 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
     portENTER_CRITICAL(&s_cfg_mux);
     bool slideshow_was_on = s_config.enabled;
     s_config = *cfg;
+    bool slideshow_stopped = slideshow_was_on && !s_config.enabled;
     portEXIT_CRITICAL(&s_cfg_mux);
     nvs_save();
 
     ESP_LOGI(TAG, "Config updated: enabled=%d, interval=%lus, mode=%d",
              s_config.enabled, (unsigned long)s_config.interval_sec, s_config.mode);
     /* Enabling slideshow config no longer changes last_mode; explicit image show does. */
+    if (slideshow_stopped && display_mode_active() == DISPLAY_MODE_SLIDESHOW) {
+        clock_config_t cc;
+        if (clock_display_get_config(&cc) == ESP_OK && cc.enabled) {
+            display_policy_set_manual_screen_active(false);
+            button_set_current_mode(DISPLAY_MODE_CLOCK);
+            power_mgr_save_mode(DISPLAY_MODE_CLOCK);
+        }
+    }
     /* HTTP may call this before scheduler_init() creates the event group (see app_main order). */
     if (s_event)
         xEventGroupSetBits(s_event, BIT_CFG_CHANGED);
     clock_display_notify_home_changed();
-    if (slideshow_was_on && !s_config.enabled)
+    if (slideshow_stopped)
         weather_notify_slideshow_stopped();
     return ESP_OK;
 }

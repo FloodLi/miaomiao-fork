@@ -11,6 +11,7 @@
 
 #include "epd.h"
 #include "fb_render.h"
+#include "ui_theme.h"
 #include "time_sync.h"
 #include "display_policy.h"
 #include "scheduler.h"
@@ -24,7 +25,7 @@ static countdown_config_t s_cfg;
 static SemaphoreHandle_t  s_cfg_mutex;
 static uint8_t s_page_idx;
 
-/* ── NVS persistence ──────────────────────────────────────────────── */
+/* NVS persistence */
 
 static void nvs_load(void)
 {
@@ -48,7 +49,7 @@ static void nvs_save_snapshot(const countdown_config_t *cfg)
     nvs_close(h);
 }
 
-/* ── Helpers ──────────────────────────────────────────────────────── */
+/* Helpers */
 
 static int days_remaining(const countdown_item_t *item)
 {
@@ -73,7 +74,7 @@ static int days_remaining(const countdown_item_t *item)
     return (int)(diff / 86400.0);
 }
 
-/* ── EPD render ───────────────────────────────────────────────────── */
+/* EPD render */
 
 /** YYYY-MM-DD into buf[11]; clamps fields so no truncation warnings. */
 static void format_date_ymd(char buf[11], int y, int mo, int da)
@@ -97,129 +98,189 @@ static void format_date_ymd(char buf[11], int y, int mo, int da)
     buf[10] = '\0';
 }
 
-static int text_px_width(const char *s, int scale)
-{
-    int w = 0;
-    const uint8_t *p = (const uint8_t *)s;
-    while (*p) {
-        if (*p < 0x80) {
-            w += 8 * scale;
-            p++;
-        } else {
-            w += 16 * scale;
-            p++;
-            while (*p && (*p & 0xC0) == 0x80) p++;
-        }
-    }
-    return w;
-}
-
 static void draw_header(fb_t *fb, int W)
 {
-    /* 标题与今日日期上下错开，避免窄屏横向挤在一起 */
-    fb_utf8_scaled(fb, 10, 4, "倒计时", COLOR_BLACK, 2);
-
+    char today[16] = "";
     struct tm now;
     if (time_sync_get_local(&now)) {
-        char today[11];
         format_date_ymd(today, now.tm_year + 1900, now.tm_mon + 1, now.tm_mday);
-        int tw = 10 * 8;
-        fb_utf8_scaled(fb, W - tw - 8, 6, today, COLOR_BLACK, 1);
+    }
+    (void)W;
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_header(fb, "\xe5\x80\x92\xe8\xae\xa1\xe6\x97\xb6", today, true);
+}
+
+static const char *status_text_for_days(int days)
+{
+    if (days > 0)
+        return "\xe8\xbf\x98\xe6\x9c\x89";
+    if (days == 0)
+        return "\xe4\xbb\x8a\xe5\xa4\xa9";
+    return "\xe5\xb7\xb2\xe8\xbf\x87";
+}
+
+static const char *suffix_text_for_days(int days)
+{
+    if (days > 0)
+        return "\xe5\xa4\xa9\xe5\x90\x8e";
+    if (days == 0)
+        return "\xe5\xb0\xb1\xe6\x98\xaf\xe4\xbb\x8a\xe5\xa4\xa9";
+    return "\xe5\xa4\xa9\xe5\x89\x8d";
+}
+
+static int countdown_sort_score(int days)
+{
+    if (days >= 0)
+        return days;
+    return 10000 - days;
+}
+
+static void sort_active_indices(int *idx, int n, const countdown_config_t *cfg)
+{
+    for (int i = 0; i < n - 1; i++) {
+        for (int j = i + 1; j < n; j++) {
+            int di = days_remaining(&cfg->items[idx[i]]);
+            int dj = days_remaining(&cfg->items[idx[j]]);
+            if (countdown_sort_score(dj) < countdown_sort_score(di)) {
+                int tmp = idx[i];
+                idx[i] = idx[j];
+                idx[j] = tmp;
+            }
+        }
+    }
+}
+
+static void draw_day_metric(fb_t *fb, int right_x, int center_y,
+                            int days, int card_h)
+{
+    int abs_days = days < 0 ? -days : days;
+    fb_color_t c = (days >= 0) ? COLOR_RED : COLOR_BLACK;
+
+    if (days == 0) {
+        const char *today = "\xe4\xbb\x8a\xe5\xa4\xa9";
+        int scale = (card_h >= 74) ? 2 : 1;
+        int w = ui_text_width(today, scale);
+        fb_utf8_scaled(fb, right_x - w, center_y - 8 * scale,
+                       today, COLOR_RED, scale);
+        return;
     }
 
-    fb_hline(fb, 0, 34, W, COLOR_BLACK);
-    fb_hline(fb, 0, 35, W, COLOR_BLACK);
+    char days_str[16];
+    snprintf(days_str, sizeof(days_str), "%d", abs_days);
+    const char *unit = suffix_text_for_days(days);
+    int d_scale = (card_h >= 70 && abs_days < 1000) ? 3 : 2;
+    int num_w = (int)strlen(days_str) * 8 * d_scale;
+    int unit_w = ui_text_width(unit, 1);
+    int gap = 6;
+    int total_w = num_w + gap + unit_w;
+    int x = right_x - total_w;
+    int num_y = center_y - 8 * d_scale;
+    int unit_y = center_y - 8;
+
+    fb_utf8_scaled(fb, x, num_y, days_str, c, d_scale);
+    fb_utf8_scaled(fb, x + num_w + gap, unit_y, unit, c, 1);
 }
 
 static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int days)
 {
-    const int body_top   = 40;
-    const int date_line_y = H - 20; /* 目标日固定在底部 */
-    const int gap        = 8;
+    const int s = ui_scale_for(fb);
+    const int margin = 14 * s;
+    const int card_x = margin;
+    const int card_y = 38 * s;
+    const int card_w = W - 2 * margin;
+    int card_h = H - card_y - 34 * s;
+    if (card_h < 160)
+        card_h = H - card_y - 24 * s;
 
     char days_str[16];
     int abs_days = days < 0 ? -days : days;
     snprintf(days_str, sizeof(days_str), "%d", abs_days);
 
-    /* 先定数字倍率，再按剩余垂直空间居中整块内容，避免与底栏重叠 */
+    bool hot = (days >= 0 && days <= 7);
+    fb_color_t accent = hot ? COLOR_RED : COLOR_BLACK;
+    ui_draw_card(fb, card_x, card_y, card_w, card_h, hot);
+    ui_draw_section_label(fb, card_x + 12 * s, card_y + 10 * s,
+                          "\xe7\x84\xa6\xe7\x82\xb9\xe4\xba\x8b\xe4\xbb\xb6",
+                          accent, 1);
+    fb_utf8_scaled(fb, card_x + card_w - 12 * s - ui_text_width(status_text_for_days(days), 1),
+                   card_y + 10 * s, status_text_for_days(days), accent, 1);
+
+    int title_scale = (W >= 600) ? 2 : 1;
+    int title_max = card_w - 28 * s;
+    if (ui_text_width(item->title, title_scale) > title_max)
+        title_scale = 1;
+    int title_y = card_y + 36 * s;
+    int title_w = ui_text_width(item->title, title_scale);
+    if (title_w <= title_max) {
+        fb_utf8_scaled(fb, card_x + (card_w - title_w) / 2, title_y,
+                       item->title, COLOR_BLACK, title_scale);
+    } else {
+        fb_utf8_scaled_maxw(fb, card_x + 14 * s, title_y, item->title,
+                            COLOR_BLACK, title_scale, title_max);
+    }
+
+    char date_buf[11];
+    format_date_ymd(date_buf, item->year, item->month, item->day);
+    int date_y = card_y + card_h - 26 * s;
+    ui_draw_dotted_hline(fb, card_x + 12 * s, date_y - 8 * s,
+                         card_w - 24 * s, accent, 6);
+    fb_utf8_scaled(fb, card_x + 14 * s, date_y,
+                   "\xe7\x9b\xae\xe6\xa0\x87\xe6\x97\xa5", COLOR_BLACK, 1);
+    fb_utf8_scaled(fb, card_x + card_w - 14 * s - 10 * 8, date_y,
+                   date_buf, COLOR_BLACK, 1);
+
     int d_scale = 6;
+    if (W >= 700 && abs_days < 1000) d_scale = 7;
     if (abs_days >= 1000) d_scale = 4;
     else if (abs_days >= 100) d_scale = 5;
     if (H < 400) d_scale--;
     if (H < 320) d_scale--;
     if (d_scale < 2) d_scale = 2;
 
-    int num_h = 16 * d_scale;
-    const char *suf;
-    fb_color_t suf_c = COLOR_BLACK;
-    if (days > 0) {
-        suf   = "天后";
-        suf_c = COLOR_BLACK;
-    } else if (days == 0) {
-        suf   = "就是今天";
-        suf_c = COLOR_RED;
-    } else {
-        suf   = "天前";
-        suf_c = COLOR_BLACK;
-    }
-    int suf_h = 16 * 2; /* scale 2 中文行高 */
-    const int title_h = 32; /* scale 2 单行约 32px */
+    const char *suf = suffix_text_for_days(days);
+    fb_color_t suf_c = (days == 0) ? COLOR_RED : COLOR_BLACK;
+    const int suf_scale = 1;
+    const char *primary = (days == 0) ? "\xe4\xbb\x8a\xe5\xa4\xa9" : days_str;
+    int primary_w = (days == 0) ? ui_text_width(primary, d_scale)
+                                : (int)strlen(primary) * 8 * d_scale;
 
+    int num_top = title_y + 16 * title_scale + 12 * s;
+    int num_bottom = date_y - 12 * s;
     for (;;) {
-        num_h = 16 * d_scale;
-        int block_h = num_h + gap + suf_h;
-        int need    = title_h + gap + block_h + gap + 18; /* 底栏上方留白 */
-        if (date_line_y - body_top >= need || d_scale <= 2)
+        int block_h = 16 * d_scale + 6 * s + 16 * suf_scale;
+        primary_w = (days == 0) ? ui_text_width(primary, d_scale)
+                                : (int)strlen(primary) * 8 * d_scale;
+        if ((primary_w <= card_w - 32 * s && block_h <= num_bottom - num_top) ||
+            d_scale <= 2)
             break;
         d_scale--;
     }
 
-    /* 标题：居中，过长则缩宽 */
-    int title_max = W - 16;
-    int tw_full   = text_px_width(item->title, 2);
-    int title_y   = body_top + 4;
-    if (tw_full <= title_max)
-        fb_utf8_scaled(fb, (W - tw_full) / 2, title_y, item->title, COLOR_BLACK, 2);
-    else
-        fb_utf8_scaled_maxw(fb, 8, title_y, item->title, COLOR_BLACK, 2, title_max);
+    int num_h = 16 * d_scale;
+    int block_h = num_h + 6 * s + 16 * suf_scale;
+    int block_y = num_top + ((num_bottom - num_top) - block_h) / 2;
+    if (block_y < num_top)
+        block_y = num_top;
 
-    int y_after_title = title_y + title_h + gap;
+    primary_w = (days == 0) ? ui_text_width(primary, d_scale)
+                            : (int)strlen(primary) * 8 * d_scale;
+    fb_utf8_scaled(fb, card_x + (card_w - primary_w) / 2, block_y,
+                   primary, COLOR_RED, d_scale);
 
-    /* 数字 + 副标题：在 title 与 date 行之间垂直居中 */
-    int mid_top    = y_after_title;
-    int mid_bottom = date_line_y - gap - 4;
-    int mid_h      = mid_bottom - mid_top;
-    int block_h    = num_h + gap + suf_h;
-    int block_y    = mid_top + (mid_h > block_h ? (mid_h - block_h) / 2 : 0);
-    if (block_y + block_h > mid_bottom)
-        block_y = mid_bottom - block_h;
-    if (block_y < mid_top)
-        block_y = mid_top;
-
-    if (days == 0) {
-        int tw2 = text_px_width("TODAY", d_scale);
-        fb_utf8_scaled(fb, (W - tw2) / 2, block_y, "TODAY", COLOR_RED, d_scale);
-    } else {
-        int dw = (int)strlen(days_str) * 8 * d_scale;
-        fb_utf8_scaled(fb, (W - dw) / 2, block_y, days_str, COLOR_RED, d_scale);
-    }
-
-    int suf_y = block_y + num_h + gap;
-    int sw    = text_px_width(suf, 2);
-    fb_utf8_scaled(fb, (W - sw) / 2, suf_y, suf, suf_c, 2);
-
-    char date_buf[11];
-    format_date_ymd(date_buf, item->year, item->month, item->day);
-    int dtw = 10 * 8;
-    fb_utf8_scaled(fb, (W - dtw) / 2, date_line_y, date_buf, COLOR_BLACK, 1);
+    int suf_y = block_y + num_h + 6 * s;
+    int sw = ui_text_width(suf, suf_scale);
+    fb_utf8_scaled(fb, card_x + (card_w - sw) / 2, suf_y,
+                   suf, suf_c, suf_scale);
 }
 
 static void draw_cards(fb_t *fb, int W, int H,
                        const countdown_config_t *cfg, int active_count)
 {
-    const int body_y   = 40;
-    const int margin   = 8;
-    const int gap      = 6;
+    (void)active_count;
+    const int s = ui_scale_for(fb);
+    const int body_y = 38 * s;
+    const int margin = 14 * s;
+    const int gap = 7 * s;
 
     int active_idx[COUNTDOWN_MAX_ITEMS];
     int n = 0;
@@ -227,6 +288,7 @@ static void draw_cards(fb_t *fb, int W, int H,
         if (cfg->items[i].active) active_idx[n++] = i;
     }
     if (n <= 0) return;
+    sort_active_indices(active_idx, n, cfg);
 
     int pages = (n + 3) / 4;
     if (pages < 1) pages = 1;
@@ -236,80 +298,66 @@ static void draw_cards(fb_t *fb, int W, int H,
     if (show_n > 4) show_n = 4;
     if (show_n < 1) show_n = 1;
 
-    int body_h         = H - body_y - 6;
-    int card_h         = (body_h - gap * (show_n - 1)) / show_n;
-    if (card_h > 84) card_h = 84;
-    if (card_h < 36) card_h = 36;
+    ui_draw_section_label(fb, margin, body_y,
+                          "\xe8\xbf\x91\xe6\x9c\x9f\xe4\xba\x8b\xe4\xbb\xb6",
+                          COLOR_BLACK, 1);
 
-    /* 右侧固定留给「天数+说明」，避免与左侧标题叠字 */
-    int right_col = 120;
-    if (W < 320) right_col = 100;
-    int left_maxw = W - margin * 2 - right_col - 6;
+    int list_y = body_y + 22 * s;
+    int body_h = H - list_y - 34 * s;
+    int card_h = (body_h - gap * (show_n - 1)) / show_n;
+    if (card_h > 88) card_h = 88;
+    if (card_h < 42) card_h = 42;
+
+    int right_col = (W >= 600) ? 172 : 116;
+    int left_maxw = W - margin * 2 - right_col - 12 * s;
     if (left_maxw < 80) left_maxw = 80;
 
-    int y = body_y;
+    int y = list_y;
     for (int k = 0; k < show_n; k++) {
         int i = active_idx[start + k];
         int days = days_remaining(&cfg->items[i]);
-        int abs_days = days < 0 ? -days : days;
+        bool hot = (days >= 0 && days <= 7);
+        fb_color_t accent = hot ? COLOR_RED : COLOR_BLACK;
 
-        fb_fill_rect(fb, margin, y, W - margin * 2, 2, COLOR_RED);
-        fb_rect(fb, margin, y + 2, W - margin * 2, card_h - 2, COLOR_BLACK);
+        ui_draw_card(fb, margin, y, W - margin * 2, card_h, hot);
+        fb_fill_rect(fb, margin + 1, y + 8, 3 * s, card_h - 16, accent);
 
-        int title_scale = (card_h >= 58) ? 2 : 1;
-        int title_y     = y + 6;
-        int text_x      = margin + 8;
+        int title_scale = (W >= 600 && card_h >= 74) ? 2 : 1;
+        if (ui_text_width(cfg->items[i].title, title_scale) > left_maxw)
+            title_scale = 1;
+        int title_y = y + 8 * s;
+        int text_x = margin + 10 * s;
         fb_utf8_scaled_maxw(fb, text_x, title_y, cfg->items[i].title,
                             COLOR_BLACK, title_scale, left_maxw);
 
         char date_buf[11];
         format_date_ymd(date_buf, cfg->items[i].year,
                         cfg->items[i].month, cfg->items[i].day);
-        int date_y = title_y + 16 * title_scale + 6;
-        if (date_y + 16 > y + card_h - 4)
-            date_y = y + card_h - 18;
-        fb_utf8_scaled(fb, text_x, date_y, date_buf, COLOR_BLACK, 1);
+        int meta_y = title_y + 16 * title_scale + 5 * s;
+        if (meta_y + 16 > y + card_h - 6)
+            meta_y = y + card_h - 20;
 
-        char days_str[16];
-        snprintf(days_str, sizeof(days_str), "%d", days == 0 ? 0 : abs_days);
+        const char *status = status_text_for_days(days);
+        fb_utf8_scaled(fb, text_x, meta_y, status, accent, 1);
+        int status_w = ui_text_width(status, 1);
+        fb_utf8_scaled(fb, text_x + status_w + 8 * s, meta_y,
+                       date_buf, COLOR_BLACK, 1);
 
-        int d_scale = 3;
-        if (card_h < 52) d_scale = 2;
-        if (abs_days >= 1000) d_scale = 2;
-
-        int d_num_h = 16 * d_scale;
-        const char *label;
-        fb_color_t label_c = COLOR_BLACK;
-        if (days > 0) label = "天后";
-        else if (days == 0) {
-            label  = "今天";
-            label_c = COLOR_RED;
-        } else
-            label = "天前";
-
-        int label_h = 16;
-        int stack_h = d_num_h + 4 + label_h;
-        int stack_y = y + 4 + (card_h - 4 - stack_h) / 2;
-        if (stack_y < y + 4) stack_y = y + 4;
-
-        int col_r = W - margin - 6;
-        int dw    = (int)strlen(days_str) * 8 * d_scale;
-        int num_x = col_r - dw;
-        fb_utf8_scaled(fb, num_x, stack_y, days_str, COLOR_RED, d_scale);
-
-        int lw     = text_px_width(label, 1);
-        int label_x = col_r - lw;
-        fb_utf8_scaled(fb, label_x, stack_y + d_num_h + 4, label, label_c, 1);
+        int sep_x = W - margin - right_col + 4 * s;
+        ui_draw_dotted_vline(fb, sep_x, y + 10, card_h - 20,
+                             COLOR_BLACK, 6);
+        draw_day_metric(fb, W - margin - 12 * s,
+                        y + card_h / 2, days, card_h);
 
         y += card_h + gap;
     }
 
-    if (pages > 1) {
-        char page_str[16];
+    char page_str[16];
+    if (pages > 1)
         snprintf(page_str, sizeof(page_str), "%d/%d", page + 1, pages);
-        int pw = (int)strlen(page_str) * 8;
-        fb_utf8_scaled(fb, W - pw - 8, H - 18, page_str, COLOR_BLACK, 1);
-    }
+    else
+        snprintf(page_str, sizeof(page_str), "%d EVENTS", n);
+    ui_draw_footer(fb, "COUNTDOWN", page_str);
 }
 
 esp_err_t countdown_show(void)
@@ -344,13 +392,14 @@ esp_err_t countdown_show(void)
     draw_header(fb, W);
 
     if (active_count == 0) {
-        int tw = text_px_width("暂无倒计时", 2);
-        fb_utf8_scaled(fb, (W - tw) / 2, H / 2 - 16, "暂无倒计时", COLOR_BLACK, 2);
-        int tw2 = text_px_width("请通过网页添加", 1);
-        fb_utf8_scaled(fb, (W - tw2) / 2, H / 2 + 24, "请通过网页添加", COLOR_BLACK, 1);
+        ui_draw_empty_state(fb,
+                            "\xe6\x9a\x82\xe6\x97\xa0\xe5\x80\x92\xe8\xae\xa1\xe6\x97\xb6",
+                            "\xe8\xaf\xb7\xe9\x80\x9a\xe8\xbf\x87\xe7\xbd\x91\xe9\xa1\xb5\xe6\xb7\xbb\xe5\x8a\xa0");
+        ui_draw_footer(fb, "COUNTDOWN", "EMPTY");
     } else if (active_count == 1) {
         int days = days_remaining(&cfg.items[first_active]);
         draw_hero(fb, W, H, &cfg.items[first_active], days);
+        ui_draw_footer(fb, "COUNTDOWN", days == 0 ? "TODAY" : "FOCUS");
     } else {
         draw_cards(fb, W, H, &cfg, active_count);
         if (active_count > 4) {
@@ -394,7 +443,7 @@ esp_err_t countdown_show(void)
     return ESP_OK;
 }
 
-/* ── Public API ───────────────────────────────────────────────────── */
+/* Public API */
 
 esp_err_t countdown_init(void)
 {

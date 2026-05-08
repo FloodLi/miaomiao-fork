@@ -22,6 +22,7 @@
 #include "epd.h"
 #include "esp_log.h"
 #include "fb_render.h"
+#include "ui_theme.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -29,7 +30,7 @@
 
 static const char *TAG = "button";
 
-/* 原理图：SW3→GPIO9(prev)，SW4→GPIO46(refresh)，SW5→GPIO3(next)，按键接 3V3、10k 下拉 */
+/* Schematic: SW3->GPIO9(prev), SW4->GPIO46(refresh), SW5->GPIO3(next), 10k pulldown. */
 #define BTN_LEFT    GPIO_NUM_9
 #define BTN_MID     GPIO_NUM_46
 #define BTN_RIGHT   GPIO_NUM_3
@@ -53,12 +54,15 @@ static QueueHandle_t  s_cmd_queue;
 int  button_get_current_mode(void) { return s_mode_idx; }
 void button_set_current_mode(int mode)
 {
-    /* 防止外部调用方写入越界 idx，导致按键循环跳到无效 entry。 */
+    /* Clamp external callers so the button loop never lands on an invalid entry. */
     int n = display_mode_count();
     if (n <= 0) return;
     if (mode < 0) mode = 0;
     if (mode >= n) mode = n - 1;
+    if (s_mode_idx != mode)
+        epd_request_full_refresh_next();
     s_mode_idx = mode;
+    display_mode_set_active(mode);
 }
 
 static const gpio_num_t btn_pins[BTN_COUNT] = {
@@ -72,7 +76,7 @@ typedef struct {
 
 static debounce_t s_db[BTN_COUNT];
 
-/* ── display worker (runs on 10KB stack) ────────────────────────── */
+/* display worker (runs on 10KB stack) */
 
 static void show_unconfigured_hint(int idx, unsigned epoch)
 {
@@ -81,10 +85,11 @@ static void show_unconfigured_hint(int idx, unsigned epoch)
 
     const char *label = display_mode_label(idx);
 
-    int cy = epd_height() / 2 - 24;
-    fb_utf8_scaled(fb, epd_width() / 2 - 48, cy, label, COLOR_BLACK, 3);
-    fb_utf8_scaled(fb, epd_width() / 2 - 36, cy + 42, "未配置", COLOR_BLACK, 2);
-    fb_utf8_scaled(fb, epd_width() / 2 - 80, cy + 72, "请通过网页进行设置", COLOR_BLACK, 1);
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_header(fb, label, "\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae", true);
+    ui_draw_empty_state(fb, "\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae",
+                        "\xe8\xaf\xb7\xe9\x80\x9a\xe8\xbf\x87\xe7\xbd\x91\xe9\xa1\xb5\xe8\xae\xbe\xe7\xbd\xae");
+    ui_draw_footer(fb, "SETUP", "192.168.4.1");
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
@@ -101,8 +106,8 @@ static void switch_mode(int dir)
 
     s_mode_idx = (s_mode_idx + dir + n) % n;
 
-    unsigned epoch = display_policy_begin_manual_display();
-    esp_err_t err = display_mode_show(s_mode_idx);
+    unsigned epoch = 0;
+    esp_err_t err = display_mode_show_request(s_mode_idx, &epoch);
     if (err == ESP_OK && s_mode_idx == DISPLAY_MODE_CALENDAR)
         calendar_display_wait_render_idle();
 
@@ -138,8 +143,8 @@ static void display_worker_task(void *arg)
             break;
         case CMD_REFRESH:
             {
-                unsigned epoch = display_policy_begin_manual_display();
-                esp_err_t err = display_mode_show(s_mode_idx);
+                unsigned epoch = 0;
+                esp_err_t err = display_mode_show_request(s_mode_idx, &epoch);
                 if (err == ESP_OK && s_mode_idx == DISPLAY_MODE_CALENDAR)
                     calendar_display_wait_render_idle();
                 if (err == ESP_OK && display_policy_epoch_is_current(epoch))
@@ -152,7 +157,7 @@ static void display_worker_task(void *arg)
     }
 }
 
-/* ── button polling ──────────────────────────────────────────────── */
+/* button polling */
 
 static void on_press(int idx)
 {
@@ -196,7 +201,7 @@ static void button_task(void *arg)
     }
 }
 
-/* ── init ───────────────────────────────────────────────────────── */
+/* init */
 
 esp_err_t button_init(void)
 {
@@ -208,7 +213,7 @@ esp_err_t button_init(void)
         .pin_bit_mask = mask,
         .mode         = GPIO_MODE_INPUT,
         .pull_up_en   = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type    = GPIO_INTR_DISABLE,
     };
     esp_err_t err = gpio_config(&cfg);

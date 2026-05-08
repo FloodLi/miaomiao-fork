@@ -20,6 +20,7 @@ static const char *TAG = "img";
 #define JPEG_FS_BAND_ROWS       16
 #define PNG_MAX_DECODE_PIXELS   (1000u * 1000u)
 #define PNG_MAX_SIDE_PIXELS     4096u
+#define RAW_WRITE_CHUNK         4096u
 
 static void log_heap_state(const char *label)
 {
@@ -66,6 +67,42 @@ static void *img_calloc(size_t count, size_t size, const char *label)
     if (p)
         memset(p, 0, total);
     return p;
+}
+
+static bool write_all_chunked(FILE *f, const uint8_t *data, size_t len)
+{
+    size_t off = 0;
+    while (off < len) {
+        size_t n = len - off;
+        if (n > RAW_WRITE_CHUNK)
+            n = RAW_WRITE_CHUNK;
+        if (fwrite(data + off, 1, n, f) != n)
+            return false;
+        off += n;
+    }
+    return true;
+}
+
+static bool write_raw_planes(const char *out_path, const uint8_t *black,
+                             const uint8_t *red, int plane_bytes, bool has_red)
+{
+    FILE *f = fopen(out_path, "wb");
+    if (!f) {
+        ESP_LOGE(TAG, "open out failed: %s", out_path);
+        return false;
+    }
+
+    bool ok = write_all_chunked(f, black, (size_t)plane_bytes);
+    if (ok && has_red)
+        ok = write_all_chunked(f, red, (size_t)plane_bytes);
+    if (fclose(f) != 0)
+        ok = false;
+
+    if (!ok) {
+        ESP_LOGE(TAG, "write raw failed: %s", out_path);
+        remove(out_path);
+    }
+    return ok;
 }
 
 /* ── Bayer 8x8 matrix (fallback when F-S allocation fails) ────────── */
@@ -594,19 +631,7 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         return ESP_FAIL;
     }
 
-    FILE *f = fopen(out_path, "wb");
-    if (!f) {
-        ESP_LOGE(TAG, "open out failed: %s", out_path);
-        free(black); free(red);
-        return ESP_FAIL;
-    }
-    bool wrote = (fwrite(black, 1, EC, f) == (size_t)EC);
-    if (wrote && epd_has_red())
-        wrote = (fwrite(red, 1, EC, f) == (size_t)EC);
-    fclose(f);
-    if (!wrote) {
-        ESP_LOGE(TAG, "write raw failed: %s", out_path);
-        remove(out_path);
+    if (!write_raw_planes(out_path, black, red, EC, epd_has_red())) {
         free(black); free(red);
         return ESP_FAIL;
     }
@@ -715,15 +740,7 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
     free(rgba);
     free(rgb_row); free(ec); free(en);
 
-    FILE *f = fopen(out_path, "wb");
-    if (!f) { ESP_LOGE(TAG, "open out failed: %s", out_path); free(black); free(red); return ESP_FAIL; }
-    bool wrote = (fwrite(black, 1, EC, f) == (size_t)EC);
-    if (wrote && has_red)
-        wrote = (fwrite(red, 1, EC, f) == (size_t)EC);
-    fclose(f);
-    if (!wrote) {
-        ESP_LOGE(TAG, "write raw failed: %s", out_path);
-        remove(out_path);
+    if (!write_raw_planes(out_path, black, red, EC, has_red)) {
         free(black);
         free(red);
         return ESP_FAIL;
@@ -908,15 +925,7 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     free(row);
     free(rgb_row); free(ec_b); free(en_b);
 
-    FILE *f = fopen(out_path, "wb");
-    if (!f) { ESP_LOGE(TAG, "open out failed: %s", out_path); free(black); free(red); return ESP_FAIL; }
-    bool wrote = (fwrite(black, 1, EC, f) == (size_t)EC);
-    if (wrote && has_red_bmp)
-        wrote = (fwrite(red, 1, EC, f) == (size_t)EC);
-    fclose(f);
-    if (!wrote) {
-        ESP_LOGE(TAG, "write raw failed: %s", out_path);
-        remove(out_path);
+    if (!write_raw_planes(out_path, black, red, EC, has_red_bmp)) {
         free(black);
         free(red);
         return ESP_FAIL;

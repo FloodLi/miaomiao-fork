@@ -20,7 +20,8 @@
 typedef struct {
     uint8_t  percent;   /* 0–100，未初始化成功时为 0 */
     bool     charging;  /* 仅当 CHG 引脚有效时可信 */
-    int      adc_raw;   /* 最近一次滑动平均前的单样本或 0 */
+    int      adc_raw;   /* 最近一次滑动平均 ADC 值或 0 */
+    int      voltage_mv; /* 估算电池端电压，单位 mV；无效时为 0 */
     bool     valid;     /* ADC 已就绪且至少采样过一次 */
 } battery_status_t;
 

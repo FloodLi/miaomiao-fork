@@ -149,11 +149,8 @@ static esp_err_t auth_config_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
 
     char buf[160] = {0};
-    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (len <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体为空");
+    if (!http_read_request_body(req, buf, sizeof(buf), "请求体为空"))
         return ESP_OK;
-    }
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
@@ -289,7 +286,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     battery_status_t bat;
     battery_mon_get_status(&bat);
 
-    char json[768];
+    char json[832];
     snprintf(json, sizeof(json),
              "{\"upload_path\":\"%s\",\"upload_bytes\":%d,"
              "\"raw_path\":\"/spiffs/image.bin\",\"raw_bytes\":%d,"
@@ -297,7 +294,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"time\":\"%s\",\"time_synced\":%s,"
              "\"current_mode\":%d,"
              "\"free_heap\":%u,\"min_free_heap\":%u,"
-             "\"battery_pct\":%u,\"battery_valid\":%s,\"charging\":%s,\"battery_adc\":%d}",
+             "\"battery_pct\":%u,\"battery_valid\":%s,\"charging\":%s,"
+             "\"battery_adc\":%d,\"battery_mv\":%d}",
              s_cfg.upload_path, upload_sz, raw_sz,
              spiffs_ok ? "true" : "false", (unsigned)total, (unsigned)used,
              time_str, time_sync_is_synced() ? "true" : "false",
@@ -307,7 +305,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              (unsigned)bat.percent,
              bat.valid ? "true" : "false",
              bat.charging ? "true" : "false",
-             bat.adc_raw);
+             bat.adc_raw,
+             bat.voltage_mv);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
@@ -405,22 +404,8 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[256] = {0};
-    int len = req->content_len;
-    if (len <= 0 || len >= (int)sizeof(buf)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid request body");
+    if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
         return ESP_OK;
-    }
-    int total = 0;
-    while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
-        if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
-            return ESP_OK;
-        }
-        total += r;
-    }
-    buf[total] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
@@ -441,6 +426,9 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
 
     cJSON *resp = cJSON_CreateObject();
     if (err == ESP_OK) {
+        esp_err_t ts_err = time_sync_init();
+        if (ts_err != ESP_OK)
+            ESP_LOGW(TAG, "time sync start after WiFi connect failed: %s", esp_err_to_name(ts_err));
         cJSON_AddBoolToObject(resp, "ok", true);
         cJSON_AddStringToObject(resp, "sta_ip", wifi_manager_get_sta_ip());
         cJSON_AddStringToObject(resp, "mdns_host", device_identity_get_mdns_hostname());
@@ -516,22 +504,8 @@ static esp_err_t slideshow_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[128] = {0};
-    int len = req->content_len;
-    if (len <= 0 || len >= (int)sizeof(buf)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体错误");
+    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
         return ESP_OK;
-    }
-    int total = 0;
-    while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
-        if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
-            return ESP_OK;
-        }
-        total += r;
-    }
-    buf[total] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
@@ -718,8 +692,8 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
 
     weather_config_t cfg;
     weather_get_config(&cfg);
-    weather_data_t d;
-    weather_get_data_copy(&d);
+    weather_summary_t d;
+    weather_get_summary_copy(&d);
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
@@ -758,19 +732,8 @@ static esp_err_t weather_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[512] = {0};
-    int len = req->content_len;
-    if (len <= 0 || len >= (int)sizeof(buf)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体错误");
+    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
         return ESP_OK;
-    }
-    int total = 0;
-    while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
-        if (r <= 0) { if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败"); return ESP_OK; }
-        total += r;
-    }
-    buf[total] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误"); return ESP_OK; }
@@ -853,22 +816,8 @@ static esp_err_t clock_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     char buf[128] = {0};
-    int len = req->content_len;
-    if (len <= 0 || len >= (int)sizeof(buf)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体错误");
+    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
         return ESP_OK;
-    }
-    int total = 0;
-    while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
-        if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
-            return ESP_OK;
-        }
-        total += r;
-    }
-    buf[total] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
@@ -955,24 +904,15 @@ static esp_err_t msg_config_post_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存分配失败");
         return ESP_OK;
     }
-    int len = req->content_len;
-    if (len <= 0 || len >= MSG_MAX_LEN + 128) {
+    if (req->content_len <= 0 || req->content_len >= MSG_MAX_LEN + 128) {
         free(buf);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体错误");
         return ESP_OK;
     }
-    int total = 0;
-    while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
-        if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
-            free(buf);
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
-            return ESP_OK;
-        }
-        total += r;
+    if (!http_read_request_body(req, buf, MSG_MAX_LEN + 128, "请求体错误")) {
+        free(buf);
+        return ESP_OK;
     }
-    buf[total] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
     free(buf);
@@ -1056,17 +996,9 @@ static esp_err_t panel_config_get_handler(httpd_req_t *req)
 static esp_err_t panel_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
-    if (req->content_len <= 0 || req->content_len >= 128) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid request body");
+    char buf[128] = {0};
+    if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
         return ESP_OK;
-    }
-    char buf[128];
-    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (len <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求体为空");
-        return ESP_OK;
-    }
-    buf[len] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
     if (!root) {
@@ -1146,10 +1078,9 @@ static esp_err_t power_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
-    char body[256];
-    int len = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (len <= 0) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "请求为空"); return ESP_OK; }
-    body[len] = '\0';
+    char body[256] = {0};
+    if (!http_read_request_body(req, body, sizeof(body), "请求为空"))
+        return ESP_OK;
 
     cJSON *root = cJSON_Parse(body);
     if (!root) { httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误"); return ESP_OK; }
@@ -1239,23 +1170,8 @@ static esp_err_t spiffs_format_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
 
     char buf[128] = {0};
-    int len = req->content_len;
-    if (len <= 0 || len >= (int)sizeof(buf)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid request body");
+    if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
         return ESP_OK;
-    }
-
-    int total = 0;
-    while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
-        if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "recv failed");
-            return ESP_OK;
-        }
-        total += r;
-    }
-    buf[total] = '\0';
 
     cJSON *root = cJSON_Parse(buf);
     const char *confirm = root ? cJSON_GetStringValue(cJSON_GetObjectItem(root, "confirm")) : NULL;
@@ -1268,6 +1184,8 @@ static esp_err_t spiffs_format_post_handler(httpd_req_t *req)
 
     esp_err_t err = spiffs_mount_format_and_mount();
     send_spiffs_action_result(req, err, err == ESP_OK);
+    if (err == ESP_OK)
+        xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
     return ESP_OK;
 }
 

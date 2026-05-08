@@ -88,11 +88,9 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
         return ESP_OK;
 
     int year = 0, month = 0;
-    if (req->content_len > 0 && req->content_len < 128) {
+    if (req->content_len > 0) {
         char buf[128];
-        int r = httpd_req_recv(req, buf, sizeof(buf) - 1);
-        if (r > 0) {
-            buf[r] = '\0';
+        if (http_read_request_body(req, buf, sizeof(buf), "请求体错误")) {
             cJSON *root = cJSON_Parse(buf);
             if (root) {
                 cJSON *jy = cJSON_GetObjectItem(root, "year");
@@ -101,6 +99,8 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
                 if (jm && cJSON_IsNumber(jm)) month = jm->valueint;
                 cJSON_Delete(root);
             }
+        } else {
+            return ESP_OK;
         }
     }
 

@@ -13,6 +13,7 @@
 
 static const char *TAG = "time_sync";
 static atomic_bool s_synced;
+static atomic_bool s_ip_handler_registered;
 
 /** 周期性校时：默认 15 分钟，减小两次 SNTP 之间的晶振漂移（原 1 小时易累计偏差） */
 #define SNTP_RESYNC_INTERVAL_MS (15 * 60 * 1000)
@@ -40,10 +41,32 @@ static void on_sta_got_ip(void *arg, esp_event_base_t base, int32_t id, void *da
     ESP_LOGI(TAG, "SNTP restarted after STA got IP");
 }
 
+static esp_err_t register_sta_got_ip_handler_once(void)
+{
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&s_ip_handler_registered, &expected, true))
+        return ESP_OK;
+
+    esp_err_t err = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                               on_sta_got_ip, NULL);
+    if (err != ESP_OK) {
+        atomic_store(&s_ip_handler_registered, false);
+        ESP_LOGW(TAG, "STA got IP handler register failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
 esp_err_t time_sync_init(void)
 {
     setenv("TZ", "CST-8", 1);
     tzset();
+
+    esp_err_t handler_err = register_sta_got_ip_handler_once();
+    if (esp_sntp_enabled()) {
+        esp_sntp_restart();
+        ESP_LOGI(TAG, "SNTP already initialized, restart requested");
+        return handler_err;
+    }
 
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
     /* 收到 NTP 包后立即 settimeofday，避免 SMOOTH 模式在数分钟内缓慢追赶导致表盘滞后 */
@@ -55,11 +78,9 @@ esp_err_t time_sync_init(void)
     esp_sntp_set_sync_interval(SNTP_RESYNC_INTERVAL_MS);
     esp_sntp_init();
 
-    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_sta_got_ip, NULL);
-
     ESP_LOGI(TAG, "SNTP: TZ=CST-8, mode=IMMED, resync=%ds, servers=ntp.aliyun.com, cn.pool.ntp.org",
              SNTP_RESYNC_INTERVAL_MS / 1000);
-    return ESP_OK;
+    return handler_err;
 }
 
 bool time_sync_is_synced(void)
