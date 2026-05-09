@@ -61,6 +61,12 @@
 | :---: | :---: |
 | ![课程表](docs/images/web-timetable.png) | ![待办事项](docs/images/web-todo.png) |
 
+### 墨水屏实物
+
+| `4.2寸内部结构.jpg` |
+| :---: |
+| ![4.2寸内部结构](docs/images/device-internal-4-2.jpg) |
+
 ## 🔧 硬件要求
 
 主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；主测墨水屏为 **4.2" SSD1619（400×300 BWR）** 与 **5.83" UC8179 / 微雪 5.83" BWR B V2（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。固件可保存面板配置，建议**保存后重启生效**，避免热切换期间 framebuffer/raw cache 尺寸不一致。
