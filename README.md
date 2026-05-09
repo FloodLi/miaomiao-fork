@@ -63,6 +63,22 @@
 
 ### 墨水屏实物
 
+| `4.2寸正面-立绘.jpg` | `4.2寸背壳.jpg` |
+| :---: | :---: |
+| ![4.2寸正面立绘](docs/images/device-4-2-front-art.jpg) | ![4.2寸背壳](docs/images/device-4-2-back-shell.jpg) |
+
+| `4.2寸侧边按键.jpg` | `4.2寸 USB-C 侧边.jpg` |
+| :---: | :---: |
+| ![4.2寸侧边按键](docs/images/device-4-2-side-buttons.jpg) | ![4.2寸 USB-C 侧边](docs/images/device-4-2-usb-side.jpg) |
+
+| `4.2寸天气模式.jpg` | `4.2寸图片模式.jpg` |
+| :---: | :---: |
+| ![4.2寸天气模式](docs/images/device-4-2-weather.jpg) | ![4.2寸图片模式](docs/images/device-4-2-art.jpg) |
+
+| `4.2寸待办模式.jpg` | `4.2寸倒计时模式.jpg` |
+| :---: | :---: |
+| ![4.2寸待办模式](docs/images/device-4-2-todo.jpg) | ![4.2寸倒计时模式](docs/images/device-4-2-countdown.jpg) |
+
 | `4.2寸内部结构.jpg` |
 | :---: |
 | ![4.2寸内部结构](docs/images/device-internal-4-2.jpg) |
