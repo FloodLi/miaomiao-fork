@@ -149,7 +149,7 @@
   - 问题：原先 Web 端推屏不记录模式，导致深睡定时唤醒后回退到"上次按键模式"发生显示错位。
   - 修复：在所有 Web 手动推屏路由（如 `/timetable_show`, `/weather_show` 等）及快速唤醒恢复路径上，强制补齐 `button_set_current_mode()` 与 `power_mgr_save_mode()`。
   - 新增 `display_mode_index_t` 枚举，解耦硬编码的模式 ID。
-- **协议与开源规范对齐**：
+- **协议与源码公开规范对齐**：
   - 全局更换为 PolyForm Noncommercial License 1.0.0。
   - Web UI（`/index`, `/timetable` 等）底部加入统一页脚版权声明（`<div class="epd-credit">Made with ❤️ by 喵喵</div>`）。
   - HTTP 路由注册：增加返回值检查 + 错误日志，`max_uri_handlers` 扩大至 64。
