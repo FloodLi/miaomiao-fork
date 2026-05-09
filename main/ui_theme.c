@@ -175,20 +175,35 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
     if (red_accent)
         fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, COLOR_RED);
 
-    if (title)
-        fb_utf8_scaled_maxw(fb, x, y, title, COLOR_BLACK, 1, W / 2 - 28 * s);
+    int title_w = 0;
+    if (title && title[0]) {
+        int title_max_w = W / 2 - 28 * s;
+        if (title_max_w < 0)
+            title_max_w = 0;
+        title_w = ui_text_width(title, 1);
+        if (title_w > title_max_w)
+            title_w = title_max_w;
+        fb_utf8_scaled_maxw(fb, x, y, title, COLOR_BLACK, 1, title_max_w);
+    }
 
     int battery_right = W - 14 * s;
     int battery_w = ui_draw_battery_badge(fb, battery_right, y);
     int right_limit = battery_right - battery_w - 8 * s;
 
-    if (right && right[0] && right_limit > W / 2) {
+    if (right && right[0]) {
+        int min_right_x = x + title_w + 12 * s;
+        if (min_right_x < x)
+            min_right_x = x;
+        if (min_right_x > right_limit)
+            min_right_x = right_limit;
+
         int rw = ui_text_width(right, 1);
         int rx = right_limit - rw;
-        if (rx < W / 2)
-            rx = W / 2;
-        fb_utf8_scaled_maxw(fb, rx, y + 1 * s, right, COLOR_BLACK, 1,
-                            right_limit - rx);
+        if (rx < min_right_x)
+            rx = min_right_x;
+        if (right_limit > rx)
+            fb_utf8_scaled_maxw(fb, rx, y + 1 * s, right, COLOR_BLACK, 1,
+                                right_limit - rx);
     }
 
     ui_draw_dotted_hline(fb, 12 * s, header_h + 6 * s, W - 24 * s,
