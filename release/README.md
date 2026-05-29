@@ -4,7 +4,13 @@
 
 ## 固件文件
 
-整包固件：
+推荐下载烧录包：
+
+```text
+epaper_uploader_full_16MB.zip
+```
+
+解压后使用整包固件：
 
 ```text
 epaper_uploader_full_16MB.bin
@@ -16,6 +22,28 @@ epaper_uploader_full_16MB.bin
 Size:   2017520 bytes
 SHA256: D9E3F6D23158A442CF8597A2998E9F878DD1F4C5FAF960AE3F82503E0039B5B1
 ```
+
+ZIP 校验信息：
+
+```text
+Size:   1056314 bytes
+SHA256: E8DB81E17B2DDCE875A061BEB65733DFD759B3340B602C9106202D3E38CA1F52
+```
+
+如果直接下载 `.bin` 后文件名带了单引号，例如：
+
+```text
+'epaper_uploader_full_16MB.bin'
+epaper_uploader_full_16MB.bin'
+```
+
+请手动重命名为：
+
+```text
+epaper_uploader_full_16MB.bin
+```
+
+或者直接下载 `.zip`，解压出来的文件名会是正常的。
 
 适用范围：
 

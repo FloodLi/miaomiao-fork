@@ -188,13 +188,15 @@ cd miaomiao   # 或你本地的 msp 目录名
 
 如果只是想把固件烧进设备，不需要安装 ESP-IDF，也不需要自己编译。仓库已提供整包固件：
 
-**点击下载：** [下载整包固件 epaper_uploader_full_16MB.bin](https://gitee.com/gxp666111/miaomiao/raw/master/release/epaper_uploader_full_16MB.bin)
+**推荐下载：** [下载烧录包 epaper_uploader_full_16MB.zip](https://gitee.com/gxp666111/miaomiao/raw/master/release/epaper_uploader_full_16MB.zip)
 
-如果浏览器没有自动下载，可以右键上面的链接选择「另存为」。仓库内路径为：
+下载后先解压，使用里面的 `epaper_uploader_full_16MB.bin` 烧录。仓库内固件路径为：
 
 ```text
 release/epaper_uploader_full_16MB.bin
 ```
+
+备用直链：[直接下载 bin](https://gitee.com/gxp666111/miaomiao/raw/master/release/epaper_uploader_full_16MB.bin)。如果直接下载后的文件名变成 `'epaper_uploader_full_16MB.bin'` 或 `epaper_uploader_full_16MB.bin'`，请手动重命名为 `epaper_uploader_full_16MB.bin`，或改用上面的 zip 包。
 
 在 Espressif Flash Download Tool 的 `SPIDownload` 页面只填一行：
 
