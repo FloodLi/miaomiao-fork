@@ -184,7 +184,34 @@ git clone https://gitee.com/gxp666111/miaomiao.git
 cd miaomiao   # 或你本地的 msp 目录名
 ```
 
-### 3. 编译与烧录
+### 3. 免编译一键烧录
+
+如果只是想把固件烧进设备，不需要安装 ESP-IDF，也不需要自己编译。仓库已提供整包固件：
+
+```text
+release/epaper_uploader_full_16MB.bin
+```
+
+在 Espressif Flash Download Tool 的 `SPIDownload` 页面只填一行：
+
+```text
+File:    release\epaper_uploader_full_16MB.bin
+Address: 0x0000
+```
+
+推荐参数：
+
+```text
+SPI SPEED: 80MHz
+SPI MODE:  DIO
+FLASH SIZE: 16MB
+DoNotChgBin: 勾选
+BAUD: 115200 或 460800
+```
+
+新板子或配置混乱时可以先点 `ERASE`，再点 `START`；如果不想清空 WiFi、天气、面板等已有配置，不要点 `ERASE`，直接 `START`。更详细的小白烧录说明见 [release/README.md](release/README.md)。
+
+### 4. 开发者编译与烧录
 
 ```powershell
 # 首次配置目标芯片，只需要执行一次
@@ -208,7 +235,7 @@ idf.py -p COM3 build flash monitor
 
 典型错误特征是日志出现 `Building ESP-IDF components for target esp32`、`GPIO_NUM_46 undeclared` 或 `hal/usb_serial_jtag_ll.h: No such file or directory`。这些都表示当前按普通 ESP32 编译了本 ESP32-S3 固件。
 
-### 4. 关于 erase-flash
+### 5. 关于 erase-flash
 
 ```powershell
 # 仅在 Flash 内容混乱、分区表切换或需要完全恢复出厂状态时使用
@@ -222,7 +249,7 @@ idf.py -p COM3 build flash monitor
 
 > 注意：`erase-flash` 会清空整颗 Flash，包括 WiFi 配置、NVS 设置、SPIFFS 里的图片和布局。新芯片本来就是空的，不需要先擦除。若擦除后首次启动提示 SPIFFS 未挂载，请连接设备热点进入网页恢复/格式化文件系统。
 
-### 5. 首次使用
+### 6. 首次使用
 
 1. 设备上电后自动创建 WiFi 热点 `ESP32_EPD_xxxxxx`（默认密码 `12345678`）
 2. 手机连接该热点，浏览器打开 `http://192.168.4.1/`
