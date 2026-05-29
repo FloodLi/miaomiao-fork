@@ -19,6 +19,7 @@ idf_component_register(
         "fb_render.c"
         "ui_theme.c"
         "weather.c"
+        "weather_icons_qw.c"
         "clock_display.c"
         "display_policy.c"
         "message_board.c"

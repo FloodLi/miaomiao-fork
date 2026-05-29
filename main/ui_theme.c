@@ -222,8 +222,13 @@ void ui_draw_footer(fb_t *fb, const char *left, const char *right)
 
     ui_draw_dotted_hline(fb, 12 * s, y - 4 * s, W - 24 * s, COLOR_BLACK, 6);
 
-    if (left && left[0])
-        fb_utf8_scaled(fb, 14 * s, y, left, COLOR_BLACK, 1);
+    int left_max_w = W - 28 * s;
+    if (right && right[0]) {
+        int rw = ui_text_width(right, 1);
+        left_max_w = W - 34 * s - rw;
+    }
+    if (left && left[0] && left_max_w > 0)
+        fb_utf8_scaled_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1, left_max_w);
 
     if (right && right[0]) {
         int rw = ui_text_width(right, 1);

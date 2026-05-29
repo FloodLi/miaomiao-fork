@@ -435,6 +435,21 @@ static void quick_refresh_and_sleep(void)
     ESP_LOGI(TAG, "Quick-refresh: restoring mode %d (%s)",
              mode, display_mode_name(mode));
 
+    bool prefetch_weather = false;
+    if (mode == DISPLAY_MODE_CALENDAR) {
+        prefetch_weather = calendar_display_style_uses_weather();
+    } else if (mode == DISPLAY_MODE_CLOCK) {
+        clock_config_t cc;
+        if (clock_display_get_config(&cc) == ESP_OK)
+            prefetch_weather = cc.show_weather;
+    }
+    if (prefetch_weather) {
+        esp_err_t wx_err = weather_request_cache_fetch_wait(120000);
+        if (wx_err != ESP_OK)
+            ESP_LOGW(TAG, "Quick-refresh: weather prefetch failed: %s",
+                     esp_err_to_name(wx_err));
+    }
+
     esp_err_t err;
     if (mode == DISPLAY_MODE_WEATHER) {
         /* Deep sleep clears the in-RAM weather cache; timer wake must fetch

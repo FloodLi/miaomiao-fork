@@ -67,6 +67,7 @@ const uint8_t *weather_icon_bitmap(int code);
 esp_err_t weather_fetch_and_display(bool force_fullscreen);
 esp_err_t weather_request_fullscreen_fetch(void);
 esp_err_t weather_request_fullscreen_fetch_wait(uint32_t timeout_ms);
+esp_err_t weather_request_cache_fetch_wait(uint32_t timeout_ms);
 
 /** Display cached weather data on EPD without network fetch. Returns ESP_ERR_INVALID_STATE if no data cached. */
 esp_err_t weather_display_cached(void);

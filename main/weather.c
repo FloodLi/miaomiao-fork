@@ -30,6 +30,7 @@
 #include "clock_display.h"
 #include "power_mgr.h"
 #include "ui_theme.h"
+#include "weather_icons_qw.h"
 
 static const char *TAG    = "weather";
 static const char *NVS_NS = "weather";
@@ -39,6 +40,9 @@ static const char *NVS_NS = "weather";
 #define BIT_FULLPAGE_REQUEST BIT2
 #define BIT_FULLPAGE_DONE    BIT3
 #define BIT_FULLPAGE_FAILED  BIT4
+#define BIT_CACHE_REQUEST    BIT5
+#define BIT_CACHE_DONE       BIT6
+#define BIT_CACHE_FAILED     BIT7
 #define MAX_RESP_LEN     12288
 #define WEATHER_ACTIVE_REFRESH_MIN 30
 #define WEATHER_EMBED_CACHE_TTL_US (300LL * 1000000LL)
@@ -67,6 +71,8 @@ static char               s_data_source_location[sizeof(((weather_config_t *)0)-
 static unsigned           s_fullpage_request_epoch;
 static bool               s_fullpage_inflight;
 static portMUX_TYPE       s_fullpage_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool               s_cache_fetch_inflight;
+static portMUX_TYPE       s_cache_fetch_mux = portMUX_INITIALIZER_UNLOCKED;
 
 typedef struct {
     int64_t hour_epoch;
@@ -371,7 +377,7 @@ static const uint8_t icon_snow[72] = {
     0x01,0x09,0x00, 0x00,0x86,0x00, 0x01,0x09,0x00, 0x02,0x10,0x80,
 };
 
-static const uint8_t *get_icon(int code)
+static const uint8_t *get_fallback_icon(int code)
 {
     if (code == 150) return icon_sunny;
     if (code >= 100 && code <= 103) return icon_sunny;
@@ -381,7 +387,7 @@ static const uint8_t *get_icon(int code)
     return icon_cloudy;
 }
 
-static const uint8_t *get_icon_by_text(int code, const char *text)
+static const uint8_t *get_fallback_icon_by_text(int code, const char *text)
 {
     if (text && text[0]) {
         if (strstr(text, "\xe9\x9b\xa8")) return icon_rain;
@@ -390,12 +396,13 @@ static const uint8_t *get_icon_by_text(int code, const char *text)
         if (strstr(text, "\xe4\xba\x91") || strstr(text, "\xe9\x98\xb4"))
             return icon_cloudy;
     }
-    return get_icon(code);
+    return get_fallback_icon(code);
 }
 
 const uint8_t *weather_icon_bitmap(int code)
 {
-    return get_icon(code);
+    const uint8_t *icon = qw_icon_bitmap(code, WEATHER_ICON_W, NULL);
+    return icon ? icon : get_fallback_icon(code);
 }
 
 /* NVS */
@@ -808,6 +815,277 @@ static void draw_weather_icon_scaled(fb_t *fb, int x, int y, int scale,
     }
 }
 
+static void draw_weather_icon_code(fb_t *fb, int x, int y, int code,
+                                   const char *text, int target_size,
+                                   fb_color_t color)
+{
+    if (!fb)
+        return;
+    if (target_size <= 0)
+        target_size = WEATHER_ICON_W;
+
+    int actual_size = 0;
+    const uint8_t *icon = qw_icon_bitmap(code, target_size, &actual_size);
+    if (icon && actual_size > 0) {
+        fb_bitmap(fb, x, y, actual_size, actual_size, icon, color);
+        return;
+    }
+
+    int scale = target_size / WEATHER_ICON_W;
+    if (scale < 1)
+        scale = 1;
+    draw_weather_icon_scaled(fb, x, y, scale,
+                             get_fallback_icon_by_text(code, text), color);
+}
+
+#define TEMP_SEG_A 0x01
+#define TEMP_SEG_B 0x02
+#define TEMP_SEG_C 0x04
+#define TEMP_SEG_D 0x08
+#define TEMP_SEG_E 0x10
+#define TEMP_SEG_F 0x20
+#define TEMP_SEG_G 0x40
+
+static const uint8_t temp_digit_segs[10] = {
+    TEMP_SEG_A | TEMP_SEG_B | TEMP_SEG_C | TEMP_SEG_D | TEMP_SEG_E | TEMP_SEG_F,
+    TEMP_SEG_B | TEMP_SEG_C,
+    TEMP_SEG_A | TEMP_SEG_B | TEMP_SEG_D | TEMP_SEG_E | TEMP_SEG_G,
+    TEMP_SEG_A | TEMP_SEG_B | TEMP_SEG_C | TEMP_SEG_D | TEMP_SEG_G,
+    TEMP_SEG_B | TEMP_SEG_C | TEMP_SEG_F | TEMP_SEG_G,
+    TEMP_SEG_A | TEMP_SEG_C | TEMP_SEG_D | TEMP_SEG_F | TEMP_SEG_G,
+    TEMP_SEG_A | TEMP_SEG_C | TEMP_SEG_D | TEMP_SEG_E | TEMP_SEG_F | TEMP_SEG_G,
+    TEMP_SEG_A | TEMP_SEG_B | TEMP_SEG_C,
+    TEMP_SEG_A | TEMP_SEG_B | TEMP_SEG_C | TEMP_SEG_D | TEMP_SEG_E | TEMP_SEG_F | TEMP_SEG_G,
+    TEMP_SEG_A | TEMP_SEG_B | TEMP_SEG_C | TEMP_SEG_D | TEMP_SEG_F | TEMP_SEG_G,
+};
+
+static int weather_temp_digit_w(int scale)
+{
+    return 9 * scale;
+}
+
+static int weather_temp_digit_w_for(int digit, int scale)
+{
+    return digit == 1 ? 5 * scale : weather_temp_digit_w(scale);
+}
+
+static int weather_temp_digit_h(int scale)
+{
+    return 15 * scale;
+}
+
+static int weather_temp_stroke(int scale)
+{
+    int stroke = (scale * 3 + 1) / 2;
+    return stroke < 2 ? 2 : stroke;
+}
+
+static void draw_weather_temp_hseg(fb_t *fb, int x, int y, int w, int h,
+                                   fb_color_t color)
+{
+    if (!fb || w <= 0 || h <= 0)
+        return;
+    int mid = h / 2;
+    int denom = mid > 0 ? mid : 1;
+    int cap = h / 2;
+    for (int yy = 0; yy < h; yy++) {
+        int inset = abs(yy - mid) * cap / denom;
+        if (inset * 2 >= w)
+            inset = w / 2;
+        fb_fill_rect(fb, x + inset, y + yy, w - inset * 2, 1, color);
+    }
+}
+
+static void draw_weather_temp_vseg(fb_t *fb, int x, int y, int w, int h,
+                                   fb_color_t color)
+{
+    if (!fb || w <= 0 || h <= 0)
+        return;
+    int mid = w / 2;
+    int denom = mid > 0 ? mid : 1;
+    int cap = w / 2;
+    for (int xx = 0; xx < w; xx++) {
+        int inset = abs(xx - mid) * cap / denom;
+        if (inset * 2 >= h)
+            inset = h / 2;
+        fb_fill_rect(fb, x + xx, y + inset, 1, h - inset * 2, color);
+    }
+}
+
+static void draw_weather_temp_digit(fb_t *fb, int x, int y, int digit,
+                                    fb_color_t color, int scale)
+{
+    if (!fb || digit < 0 || digit > 9 || scale < 1)
+        return;
+
+    int dw = weather_temp_digit_w_for(digit, scale);
+    int dh = weather_temp_digit_h(scale);
+    int sw = weather_temp_stroke(scale);
+
+    if (digit == 1) {
+        int stem_x = x + (dw - sw) / 2;
+        draw_weather_temp_vseg(fb, stem_x, y + sw / 2,
+                               sw, dh - sw, color);
+        draw_weather_temp_hseg(fb, stem_x - scale, y,
+                               sw + scale, sw, color);
+        draw_weather_temp_hseg(fb, x + scale / 2, y + dh - sw,
+                               dw - scale, sw, color);
+        return;
+    }
+
+    int half_h = dh / 2;
+    int v_h = half_h - sw;
+    if (v_h < sw)
+        v_h = sw;
+
+    uint8_t segs = temp_digit_segs[digit];
+    if (segs & TEMP_SEG_A)
+        draw_weather_temp_hseg(fb, x + sw / 2, y, dw - sw, sw, color);
+    if (segs & TEMP_SEG_B)
+        draw_weather_temp_vseg(fb, x + dw - sw, y + sw / 2, sw, v_h, color);
+    if (segs & TEMP_SEG_C)
+        draw_weather_temp_vseg(fb, x + dw - sw, y + half_h + sw / 2,
+                               sw, v_h, color);
+    if (segs & TEMP_SEG_D)
+        draw_weather_temp_hseg(fb, x + sw / 2, y + dh - sw,
+                               dw - sw, sw, color);
+    if (segs & TEMP_SEG_E)
+        draw_weather_temp_vseg(fb, x, y + half_h + sw / 2, sw, v_h, color);
+    if (segs & TEMP_SEG_F)
+        draw_weather_temp_vseg(fb, x, y + sw / 2, sw, v_h, color);
+    if (segs & TEMP_SEG_G)
+        draw_weather_temp_hseg(fb, x + sw / 2, y + half_h - sw / 2,
+                               dw - sw, sw, color);
+}
+
+static int weather_temp_minus_w(int scale)
+{
+    return 7 * scale;
+}
+
+static void draw_weather_temp_minus(fb_t *fb, int x, int y, fb_color_t color,
+                                    int scale)
+{
+    int sw = weather_temp_stroke(scale);
+    int dh = weather_temp_digit_h(scale);
+    draw_weather_temp_hseg(fb, x, y + dh / 2 - sw / 2,
+                           weather_temp_minus_w(scale), sw, color);
+}
+
+static void draw_weather_temp_ring(fb_t *fb, int cx, int cy, int radius,
+                                   int stroke, fb_color_t color)
+{
+    if (!fb || radius <= 0)
+        return;
+    if (stroke < 1)
+        stroke = 1;
+    int inner = radius - stroke;
+    if (inner < 0)
+        inner = 0;
+    int outer2 = radius * radius;
+    int inner2 = inner * inner;
+    for (int yy = -radius; yy <= radius; yy++) {
+        for (int xx = -radius; xx <= radius; xx++) {
+            int d2 = xx * xx + yy * yy;
+            if (d2 <= outer2 && d2 >= inner2)
+                fb_pixel(fb, cx + xx, cy + yy, color);
+        }
+    }
+}
+
+static void draw_weather_temp_c(fb_t *fb, int x, int y, int scale,
+                                fb_color_t color)
+{
+    int w = 5 * scale;
+    int h = 8 * scale;
+    int sw = scale < 2 ? 2 : scale;
+    draw_weather_temp_hseg(fb, x + sw / 2, y, w - sw / 2, sw, color);
+    draw_weather_temp_hseg(fb, x + sw / 2, y + h - sw,
+                           w - sw / 2, sw, color);
+    draw_weather_temp_vseg(fb, x, y + sw / 2, sw, h - sw, color);
+}
+
+static int weather_temp_unit_w(int scale)
+{
+    int degree_r = scale + 2;
+    if (degree_r < 4)
+        degree_r = 4;
+    return degree_r * 2 + scale * 2 + 5 * scale;
+}
+
+static void draw_weather_temp_unit(fb_t *fb, int x, int y, fb_color_t color,
+                                   int scale)
+{
+    int digit_h = weather_temp_digit_h(scale);
+    int degree_r = scale + 2;
+    if (degree_r < 4)
+        degree_r = 4;
+    int degree_stroke = scale / 2;
+    if (degree_stroke < 2)
+        degree_stroke = 2;
+
+    draw_weather_temp_ring(fb, x + degree_r, y + scale * 4,
+                           degree_r, degree_stroke, color);
+
+    int c_h = 8 * scale;
+    int c_x = x + degree_r * 2 + scale * 2;
+    int c_y = y + (digit_h - c_h) / 2;
+    draw_weather_temp_c(fb, c_x, c_y, scale, color);
+}
+
+static int weather_temp_value_width(int temp, int scale, bool with_unit)
+{
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", temp);
+    int gap = scale < 2 ? 2 : scale;
+    int w = 0;
+    for (const char *p = buf; *p; p++) {
+        int glyph_w = (*p == '-') ? weather_temp_minus_w(scale)
+                                  : weather_temp_digit_w_for(*p - '0', scale);
+        if (w > 0)
+            w += gap;
+        w += glyph_w;
+    }
+    if (with_unit) {
+        if (w > 0)
+            w += scale * 2;
+        w += weather_temp_unit_w(scale);
+    }
+    return w;
+}
+
+static int draw_weather_temp_value_fit(fb_t *fb, int x, int y, int temp,
+                                       fb_color_t color, int scale, int max_w)
+{
+    if (scale < 1)
+        scale = 1;
+    while (scale > 1 && max_w > 0 &&
+           weather_temp_value_width(temp, scale, true) > max_w) {
+        scale--;
+    }
+
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", temp);
+    int gap = scale < 2 ? 2 : scale;
+    int cx = x;
+    for (const char *p = buf; *p; p++) {
+        if (p != buf)
+            cx += gap;
+        if (*p == '-') {
+            draw_weather_temp_minus(fb, cx, y, color, scale);
+            cx += weather_temp_minus_w(scale);
+        } else if (*p >= '0' && *p <= '9') {
+            draw_weather_temp_digit(fb, cx, y, *p - '0', color, scale);
+            cx += weather_temp_digit_w_for(*p - '0', scale);
+        }
+    }
+
+    cx += scale * 2;
+    draw_weather_temp_unit(fb, cx, y, color, scale);
+    cx += weather_temp_unit_w(scale);
+    return cx - x;
+}
+
 static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
                                       const weather_config_t *cfg,
                                       const weather_data_t *wd)
@@ -819,19 +1097,14 @@ static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
 
     int icon_x = x + 42;
     int icon_y = y + 54;
-    draw_weather_icon_scaled(fb, icon_x, icon_y, 3,
-                             get_icon_by_text(wd->now.icon, wd->now.text),
-                             COLOR_BLACK);
+    draw_weather_icon_code(fb, icon_x, icon_y, wd->now.icon, wd->now.text,
+                           QW_ICON_LARGE_SIZE, COLOR_BLACK);
 
-    char temp_num[12];
-    snprintf(temp_num, sizeof(temp_num), "%d", wd->now.temp);
     int temp_scale = 5;
     int temp_x = x + 176;
-    fb_utf8_scaled_maxw(fb, temp_x, y + 28, temp_num,
-                        COLOR_BLACK, temp_scale, w - 146);
-    int temp_w = ui_text_width(temp_num, temp_scale);
-    fb_utf8_scaled(fb, temp_x + temp_w + 5, y + 36, "\xc2\xb0", COLOR_BLACK, 2);
-    fb_utf8_scaled(fb, temp_x + temp_w + 31, y + 44, "C", COLOR_BLACK, 2);
+    draw_weather_temp_value_fit(fb, temp_x, y + 28, wd->now.temp,
+                                COLOR_BLACK, temp_scale,
+                                w - (temp_x - x) - 12);
 
     fb_fill_rect(fb, temp_x, y + 108, 30, 3, COLOR_RED);
     fb_utf8_scaled_maxw(fb, temp_x, y + 118, wd->now.text,
@@ -950,9 +1223,9 @@ static void draw_forecast_orbit(fb_t *fb, int x, int y, int w, int h,
                             accent, 1, bw - 108);
 
         int icon_x = bx + bw - 36;
-        draw_weather_icon_scaled(fb, icon_x, card_y + 20, 1,
-                                 get_icon_by_text(day->icon_day, day->text_day),
-                                 COLOR_BLACK);
+        draw_weather_icon_code(fb, icon_x, card_y + 20,
+                               day->icon_day, day->text_day,
+                               QW_ICON_SMALL_SIZE, COLOR_BLACK);
 
         char temp[32];
         snprintf(temp, sizeof(temp), "\xe9\xab\x98%d / \xe4\xbd\x8e%d\xc2\xb0",
@@ -1169,6 +1442,195 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
     }
 }
 
+static void draw_compact_metric(fb_t *fb, int x, int y, int w,
+                                const char *label, const char *value,
+                                fb_color_t accent)
+{
+    if (!fb || w <= 8)
+        return;
+
+    fb_fill_rect(fb, x, y + 3, 2, 10, accent);
+    fb_utf8_scaled_maxw(fb, x + 6, y, label, accent, 1, w - 6);
+    fb_utf8_scaled_maxw(fb, x + 6, y + 15, value, COLOR_BLACK, 1, w - 6);
+}
+
+static const char *compact_forecast_name(int index)
+{
+    static const char *labels[3] = {
+        "\xe4\xbb\x8a\xe5\xa4\xa9",
+        "\xe6\x98\x8e\xe5\xa4\xa9",
+        "\xe5\x90\x8e\xe5\xa4\xa9",
+    };
+    return (index >= 0 && index < 3) ? labels[index] : "";
+}
+
+static const char *compact_forecast_date(const weather_daily_t *day)
+{
+    if (!day)
+        return "";
+    return (strlen(day->date) >= 10) ? day->date + 5 : day->date;
+}
+
+static void draw_compact_forecast_card(fb_t *fb, int x, int y, int w, int h,
+                                       const weather_daily_t *day, int index,
+                                       bool primary)
+{
+    if (!fb || !day || w <= 16 || h <= 36)
+        return;
+
+    fb_color_t accent = primary ? COLOR_RED : COLOR_BLACK;
+    fb_rect(fb, x, y, w, h, COLOR_BLACK);
+    if (primary) {
+        int accent_w = w / 3;
+        if (accent_w < 24)
+            accent_w = 24;
+        fb_fill_rect(fb, x, y, accent_w, 2, COLOR_RED);
+        fb_fill_rect(fb, x, y, 2, 24, COLOR_RED);
+    }
+
+    fb_utf8_scaled_maxw(fb, x + 8, y + 7, compact_forecast_name(index),
+                        accent, 1, w - 42);
+    fb_utf8_scaled_maxw(fb, x + 8, y + 24, compact_forecast_date(day),
+                        COLOR_BLACK, 1, w - 42);
+    draw_weather_icon_code(fb, x + w - 34, y + 8,
+                           day->icon_day, day->text_day,
+                           QW_ICON_SMALL_SIZE, COLOR_BLACK);
+
+    fb_utf8_scaled_maxw(fb, x + 8, y + 47, day->text_day,
+                        COLOR_BLACK, 1, w - 16);
+
+    char temp[24];
+    snprintf(temp, sizeof(temp), "%d/%d\xc2\xb0",
+             day->temp_max, day->temp_min);
+    fb_utf8_scaled_maxw(fb, x + 8, y + h - 26, temp,
+                        COLOR_BLACK, 1, w - 16);
+}
+
+static void draw_compact_weather_page(fb_t *fb, int W, int H, int MX,
+                                      const weather_data_t *wd)
+{
+    if (!fb || !wd)
+        return;
+
+    const int content_x = MX;
+    const int content_w = W - 2 * MX;
+    const int footer_guard = 34;
+    int top_y = 34;
+    int top_h = 100;
+    if (H < 290)
+        top_h = 94;
+
+    ui_draw_card(fb, content_x, top_y, content_w, top_h, true);
+
+    int today_low = wd->now.temp;
+    int today_high = wd->now.temp;
+    if (wd->daily_count > 0) {
+        today_low = wd->daily[0].temp_min;
+        today_high = wd->daily[0].temp_max;
+    }
+
+    int metric_x = content_x + content_w * 58 / 100;
+    int metric_w = content_x + content_w - metric_x - 12;
+    if (metric_w < 108) {
+        metric_x = content_x + content_w - 120;
+        metric_w = 108;
+    }
+
+    int hero_x = content_x + 14;
+    int icon_y = top_y + 24;
+    draw_weather_icon_code(fb, hero_x, icon_y, wd->now.icon, wd->now.text,
+                           QW_ICON_LARGE_SIZE, COLOR_BLACK);
+
+    int temp_x = hero_x + 58;
+    int temp_y = top_y + 16;
+    draw_weather_temp_value_fit(fb, temp_x, temp_y, wd->now.temp,
+                                COLOR_BLACK, 3, metric_x - temp_x - 8);
+
+    char summary[48];
+    snprintf(summary, sizeof(summary), "%s  %d/%d\xc2\xb0",
+             wd->now.text, today_high, today_low);
+    fb_utf8_scaled_maxw(fb, temp_x, top_y + 75, summary,
+                        COLOR_RED, 1, metric_x - temp_x - 8);
+
+    ui_draw_dotted_vline(fb, metric_x - 10, top_y + 16,
+                         top_h - 30, COLOR_BLACK, 6);
+
+    char feels_value[20];
+    char humidity_value[20];
+    char wind_value[20];
+    char pressure_value[20];
+    snprintf(feels_value, sizeof(feels_value), "%d\xc2\xb0", wd->now.feels_like);
+    snprintf(humidity_value, sizeof(humidity_value), "%d%%", wd->now.humidity);
+    snprintf(wind_value, sizeof(wind_value), "%d\xe7\xba\xa7", wd->now.wind_scale);
+    snprintf(pressure_value, sizeof(pressure_value), "%dhPa", wd->now.pressure);
+
+    const char *wind_label = wd->now.wind_dir[0] ? wd->now.wind_dir :
+                             "\xe9\xa3\x8e\xe5\x8a\x9b";
+    int chip_gap = 7;
+    int chip_w = (metric_w - chip_gap) / 2;
+    int chip_y = top_y + 15;
+    int chip_x2 = metric_x + chip_w + chip_gap;
+    draw_compact_metric(fb, metric_x, chip_y, chip_w,
+                        "\xe4\xbd\x93\xe6\x84\x9f", feels_value, COLOR_RED);
+    draw_compact_metric(fb, chip_x2, chip_y, chip_w,
+                        "\xe6\xb9\xbf\xe5\xba\xa6", humidity_value, COLOR_BLACK);
+    draw_compact_metric(fb, metric_x, chip_y + 38, chip_w,
+                        wind_label, wind_value, COLOR_BLACK);
+    draw_compact_metric(fb, chip_x2, chip_y + 38, chip_w,
+                        "\xe6\xb0\x94\xe5\x8e\x8b", pressure_value, COLOR_BLACK);
+
+    int forecast_y = top_y + top_h + 8;
+    ui_draw_section_label(fb, content_x, forecast_y,
+                          "\xe4\xb8\x89\xe6\x97\xa5\xe9\xa2\x84\xe6\x8a\xa5",
+                          COLOR_BLACK, 1);
+
+    int card_y = forecast_y + 21;
+    int card_bottom = H - footer_guard;
+    int card_h = card_bottom - card_y;
+    if (card_h < 72)
+        card_h = 72;
+
+    int gap = 8;
+    int card_w = (content_w - gap * 2) / 3;
+    int n = wd->daily_count;
+    if (n > 3)
+        n = 3;
+    for (int i = 0; i < n; i++) {
+        int bx = content_x + i * (card_w + gap);
+        int bw = (i == 2) ? (content_x + content_w - bx) : card_w;
+        draw_compact_forecast_card(fb, bx, card_y, bw, card_h,
+                                   &wd->daily[i], i, i == 0);
+    }
+}
+
+static const char *weather_footer_tip(const weather_data_t *wd)
+{
+    if (!wd)
+        return "\xe5\xa4\xa9\xe6\xb0\x94\xe5\xb7\xb2\xe6\x9b\xb4\xe6\x96\xb0";
+
+    const char *now_text = wd->now.text;
+    const char *today_text = (wd->daily_count > 0) ? wd->daily[0].text_day : "";
+
+    if ((now_text && strstr(now_text, "\xe9\x9b\xa8")) ||
+        (today_text && strstr(today_text, "\xe9\x9b\xa8"))) {
+        return "\xe5\x87\xba\xe9\x97\xa8\xe8\xae\xb0\xe5\xbe\x97\xe5\xb8\xa6\xe4\xbc\x9e";
+    }
+    if ((now_text && strstr(now_text, "\xe9\x9b\xaa")) ||
+        (today_text && strstr(today_text, "\xe9\x9b\xaa"))) {
+        return "\xe9\x9b\xa8\xe9\x9b\xaa\xe5\xa4\xa9\xe6\xb0\x94 \xe6\xb3\xa8\xe6\x84\x8f\xe9\x98\xb2\xe6\xbb\x91";
+    }
+    if (wd->now.temp >= 32 || wd->now.feels_like >= 32)
+        return "\xe4\xbb\x8a\xe6\x97\xa5\xe5\x81\x8f\xe7\x83\xad \xe6\xb3\xa8\xe6\x84\x8f\xe8\xa1\xa5\xe6\xb0\xb4";
+    if (wd->now.temp <= 0 || wd->now.feels_like <= 0)
+        return "\xe4\xbd\x8e\xe6\xb8\xa9\xe6\xb3\xa8\xe6\x84\x8f\xe4\xbf\x9d\xe6\x9a\x96";
+    if (wd->now.wind_scale >= 5)
+        return "\xe9\xa3\x8e\xe5\x8a\x9b\xe8\xbe\x83\xe5\xa4\xa7 \xe6\xb3\xa8\xe6\x84\x8f\xe9\x98\xb2\xe9\xa3\x8e";
+    if (wd->now.humidity > 0 && wd->now.humidity <= 20)
+        return "\xe7\xa9\xba\xe6\xb0\x94\xe5\xb9\xb2\xe7\x87\xa5 \xe5\xa4\x9a\xe9\xa5\xae\xe6\xb0\xb4";
+
+    return "\xe5\xa4\xa9\xe6\xb0\x94\xe5\xb7\xb2\xe6\x9b\xb4\xe6\x96\xb0";
+}
+
 static void render_weather(unsigned epoch)
 {
     weather_config_t cfg_local;
@@ -1245,104 +1707,15 @@ static void render_weather(unsigned epoch)
             draw_temp_corridor(fb, content_x, trend_y, content_w, trend_h,
                                &s_data);
     } else {
-        int body_top = 44 * sc;
-        int left_x = MX + 10 * sc;
-        int temp_y = body_top + 4 * sc;
-
-        const uint8_t *icon = get_icon(s_data.now.icon);
-        fb_bitmap(fb, left_x, temp_y + 13 * sc, 24, 24, icon, COLOR_BLACK);
-
-        char temp_str[16];
-        snprintf(temp_str, sizeof(temp_str), "%d\xc2\xb0""C", s_data.now.temp);
-        int temp_scale = big ? 5 : 3;
-        fb_utf8_scaled(fb, left_x + 34 * sc, temp_y, temp_str,
-                       COLOR_BLACK, temp_scale);
-
-        int meta_x = W * 54 / 100;
-        if (meta_x < left_x + 210 * sc)
-            meta_x = left_x + 210 * sc;
-        if (meta_x > W - MX - 120)
-            meta_x = W / 2 + 6 * sc;
-        int meta_w = W - meta_x - MX;
-        if (meta_w < 48)
-            meta_w = 48;
-
-        int meta_y = temp_y + 6 * sc;
-        const int meta_sc = big ? 2 : 1;
-        int meta_gap = 16 * meta_sc + 6;
-        fb_utf8_scaled_maxw(fb, meta_x, meta_y, s_data.now.text, COLOR_RED, meta_sc, meta_w);
-
-        char fl_str[48];
-        snprintf(fl_str, sizeof(fl_str), "\xe4\xbd\x93\xe6\x84\x9f %d\xc2\xb0""C",
-                 s_data.now.feels_like);
-        fb_utf8_scaled_maxw(fb, meta_x, meta_y + meta_gap, fl_str,
-                            COLOR_BLACK, meta_sc, meta_w);
-
-        char hum_str[48];
-        snprintf(hum_str, sizeof(hum_str), "\xe6\xb9\xbf\xe5\xba\xa6 %d%%",
-                 s_data.now.humidity);
-        fb_utf8_scaled_maxw(fb, meta_x, meta_y + meta_gap * 2, hum_str,
-                            COLOR_BLACK, meta_sc, meta_w);
-
-        char wind_str[64];
-        snprintf(wind_str, sizeof(wind_str), "%s %d\xe7\xba\xa7  %dhPa",
-                 s_data.now.wind_dir, s_data.now.wind_scale, s_data.now.pressure);
-        fb_utf8_scaled_maxw(fb, meta_x, meta_y + meta_gap * 3, wind_str,
-                            COLOR_BLACK, meta_sc, meta_w);
-
-        int sep_y = meta_y + meta_gap * 4 + 8 * sc;
-        ui_draw_dotted_hline(fb, MX, sep_y, W - 2 * MX, COLOR_BLACK, 6);
-
-        int forecast_y = sep_y + 12 * sc;
-        ui_draw_section_label(fb, MX, forecast_y,
-                              "\xe4\xb8\x89\xe6\x97\xa5\xe9\xa2\x84\xe6\x8a\xa5",
-                              COLOR_BLACK, 1);
-        forecast_y += 22;
-
-        int col_w = (W - 2 * MX) / 3;
-        int forecast_bottom = H - 34 * sc;
-        if (forecast_bottom < forecast_y + 40)
-            forecast_bottom = forecast_y + 40;
-
-        for (int i = 0; i < s_data.daily_count && i < 3; i++) {
-            int bx = MX + i * col_w;
-            int col_inner = col_w - 12;
-            if (col_inner < 24)
-                col_inner = 24;
-
-            if (i > 0)
-                ui_draw_dotted_vline(fb, bx, forecast_y - 4 * sc,
-                                     forecast_bottom - forecast_y, COLOR_BLACK, 6);
-
-            const char *d = s_data.daily[i].date;
-            char md[16];
-            if (strlen(d) >= 10)
-                snprintf(md, sizeof(md), "%s", d + 5);
-            else
-                snprintf(md, sizeof(md), "%s", d);
-
-            fb_color_t accent = (i == 0) ? COLOR_RED : COLOR_BLACK;
-            fb_utf8_scaled_maxw(fb, bx + 6, forecast_y, md,
-                                accent, 1, col_inner);
-
-            const uint8_t *di = get_icon(s_data.daily[i].icon_day);
-            int icon_x = bx + col_w - 30;
-            if (icon_x < bx + 6)
-                icon_x = bx + 6;
-            fb_bitmap(fb, icon_x, forecast_y, 24, 24, di, COLOR_BLACK);
-
-            char t_str[32];
-            snprintf(t_str, sizeof(t_str), "%d/%d\xc2\xb0""C",
-                     s_data.daily[i].temp_max, s_data.daily[i].temp_min);
-            fb_utf8_scaled_maxw(fb, bx + 6, forecast_y + 28,
-                                t_str, COLOR_BLACK, 1, col_inner);
-
-            fb_utf8_scaled_maxw(fb, bx + 6, forecast_y + 52,
-                                s_data.daily[i].text_day, COLOR_BLACK, 1, col_inner);
-        }
+        (void)sc;
+        (void)big;
+        draw_compact_weather_page(fb, W, H, MX, &s_data);
     }
 
-    ui_draw_footer(fb, "\xe6\xb0\x94\xe8\xb1\xa1", s_data.update_time);
+    char footer_left[80];
+    snprintf(footer_left, sizeof(footer_left), "\xe6\xb0\x94\xe8\xb1\xa1  %s",
+             weather_footer_tip(&s_data));
+    ui_draw_footer(fb, footer_left, s_data.update_time);
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
@@ -1380,7 +1753,8 @@ static void render_weather(unsigned epoch)
 
 static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
                                                 bool begin_new_manual_epoch,
-                                                unsigned requested_epoch)
+                                                unsigned requested_epoch,
+                                                bool allow_quick_refresh_fetch)
 {
     weather_config_t cfg;
     weather_config_snapshot(&cfg);
@@ -1390,7 +1764,8 @@ static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
     }
 
     /* Avoid background weather HTTPS while another display owner is active. */
-    if (!display_policy_weather_may_network_fetch(force_fullscreen)) {
+    if (!allow_quick_refresh_fetch &&
+        !display_policy_weather_may_network_fetch(force_fullscreen)) {
         ESP_LOGI(TAG, "Weather auto fetch skipped by display policy");
         return ESP_OK;
     }
@@ -1509,7 +1884,7 @@ out:
 
 esp_err_t weather_fetch_and_display(bool force_fullscreen)
 {
-    return weather_fetch_and_display_impl(force_fullscreen, force_fullscreen, 0);
+    return weather_fetch_and_display_impl(force_fullscreen, force_fullscreen, 0, false);
 }
 
 esp_err_t weather_request_fullscreen_fetch(void)
@@ -1560,6 +1935,44 @@ esp_err_t weather_request_fullscreen_fetch_wait(uint32_t timeout_ms)
     return ESP_ERR_TIMEOUT;
 }
 
+esp_err_t weather_request_cache_fetch_wait(uint32_t timeout_ms)
+{
+    if (!s_event)
+        return ESP_ERR_INVALID_STATE;
+
+    weather_config_t cfg;
+    weather_config_snapshot(&cfg);
+    if (!cfg.enabled || !weather_config_has_api(&cfg)) {
+        ESP_LOGW(TAG, "Weather cache request ignored: API not configured or disabled");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    portENTER_CRITICAL(&s_cache_fetch_mux);
+    if (s_cache_fetch_inflight) {
+        portEXIT_CRITICAL(&s_cache_fetch_mux);
+        ESP_LOGW(TAG, "Weather cache request ignored: request already in flight");
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_cache_fetch_inflight = true;
+    portEXIT_CRITICAL(&s_cache_fetch_mux);
+
+    xEventGroupClearBits(s_event, BIT_CACHE_DONE | BIT_CACHE_FAILED);
+    xEventGroupSetBits(s_event, BIT_CACHE_REQUEST);
+
+    EventBits_t bits = xEventGroupWaitBits(
+        s_event, BIT_CACHE_DONE | BIT_CACHE_FAILED,
+        pdTRUE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    if (bits & BIT_CACHE_DONE)
+        return ESP_OK;
+    if (bits & BIT_CACHE_FAILED)
+        return ESP_FAIL;
+
+    portENTER_CRITICAL(&s_cache_fetch_mux);
+    s_cache_fetch_inflight = false;
+    portEXIT_CRITICAL(&s_cache_fetch_mux);
+    return ESP_ERR_TIMEOUT;
+}
+
 static esp_err_t weather_handle_fullpage_request(void)
 {
     weather_config_t cfg;
@@ -1579,12 +1992,35 @@ static esp_err_t weather_handle_fullpage_request(void)
     portEXIT_CRITICAL(&s_fullpage_mux);
     if (!epoch)
         epoch = display_policy_display_epoch();
-    esp_err_t err = weather_fetch_and_display_impl(true, false, epoch);
+    esp_err_t err = weather_fetch_and_display_impl(true, false, epoch, false);
     if (s_event)
         xEventGroupSetBits(s_event, err == ESP_OK ? BIT_FULLPAGE_DONE : BIT_FULLPAGE_FAILED);
     portENTER_CRITICAL(&s_fullpage_mux);
     s_fullpage_inflight = false;
     portEXIT_CRITICAL(&s_fullpage_mux);
+    return err;
+}
+
+static esp_err_t weather_handle_cache_request(void)
+{
+    weather_config_t cfg;
+    weather_config_snapshot(&cfg);
+    if (!cfg.enabled || !weather_config_has_api(&cfg)) {
+        ESP_LOGW(TAG, "Weather cache request skipped: API not configured or disabled");
+        if (s_event)
+            xEventGroupSetBits(s_event, BIT_CACHE_FAILED);
+        portENTER_CRITICAL(&s_cache_fetch_mux);
+        s_cache_fetch_inflight = false;
+        portEXIT_CRITICAL(&s_cache_fetch_mux);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t err = weather_fetch_and_display_impl(false, false, display_policy_display_epoch(), true);
+    if (s_event)
+        xEventGroupSetBits(s_event, err == ESP_OK ? BIT_CACHE_DONE : BIT_CACHE_FAILED);
+    portENTER_CRITICAL(&s_cache_fetch_mux);
+    s_cache_fetch_inflight = false;
+    portEXIT_CRITICAL(&s_cache_fetch_mux);
     return err;
 }
 
@@ -1654,11 +2090,15 @@ static void weather_task(void *arg)
          * but still respond to clock embedded weather and explicit full-page requests. */
         if (!cfg.enabled || effective_refresh_min == 0) {
             EventBits_t bits = xEventGroupWaitBits(
-                s_event, BIT_CFG_CHANGED | BIT_EMBED_REQUEST | BIT_FULLPAGE_REQUEST,
+                s_event, BIT_CFG_CHANGED | BIT_EMBED_REQUEST | BIT_FULLPAGE_REQUEST | BIT_CACHE_REQUEST,
                 pdTRUE, pdFALSE, portMAX_DELAY);
             weather_config_snapshot(&cfg);
             if (bits & BIT_FULLPAGE_REQUEST) {
                 weather_handle_fullpage_request();
+                continue;
+            }
+            if (bits & BIT_CACHE_REQUEST) {
+                weather_handle_cache_request();
                 continue;
             }
             bool want = false;
@@ -1679,12 +2119,16 @@ static void weather_task(void *arg)
 
         uint32_t wait_ms = effective_refresh_min * 60 * 1000;
         EventBits_t bits = xEventGroupWaitBits(
-            s_event, BIT_CFG_CHANGED | BIT_EMBED_REQUEST | BIT_FULLPAGE_REQUEST,
+            s_event, BIT_CFG_CHANGED | BIT_EMBED_REQUEST | BIT_FULLPAGE_REQUEST | BIT_CACHE_REQUEST,
             pdTRUE, pdFALSE, pdMS_TO_TICKS(wait_ms));
         weather_config_snapshot(&cfg);
 
         if (bits & BIT_FULLPAGE_REQUEST) {
             weather_handle_fullpage_request();
+            continue;
+        }
+        if (bits & BIT_CACHE_REQUEST) {
+            weather_handle_cache_request();
             continue;
         }
 
@@ -1733,6 +2177,9 @@ esp_err_t weather_init(void)
     portENTER_CRITICAL(&s_fullpage_mux);
     s_fullpage_inflight = false;
     portEXIT_CRITICAL(&s_fullpage_mux);
+    portENTER_CRITICAL(&s_cache_fetch_mux);
+    s_cache_fetch_inflight = false;
+    portEXIT_CRITICAL(&s_cache_fetch_mux);
     nvs_load();
 
     /* HTTPS+TLS is stack-heavy; pin to CPU0 to stay close to lwIP work. */

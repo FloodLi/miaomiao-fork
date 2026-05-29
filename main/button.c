@@ -144,9 +144,14 @@ static void display_worker_task(void *arg)
         case CMD_REFRESH:
             {
                 unsigned epoch = 0;
-                esp_err_t err = display_mode_show_request(s_mode_idx, &epoch);
-                if (err == ESP_OK && s_mode_idx == DISPLAY_MODE_CALENDAR)
+                esp_err_t err;
+                if (s_mode_idx == DISPLAY_MODE_CALENDAR) {
+                    epoch = display_policy_begin_manual_display();
+                    err = calendar_display_toggle_style();
                     calendar_display_wait_render_idle();
+                } else {
+                    err = display_mode_show_request(s_mode_idx, &epoch);
+                }
                 if (err == ESP_OK && display_policy_epoch_is_current(epoch))
                     ESP_LOGI(TAG, "refreshed %s", display_mode_name(s_mode_idx));
             }

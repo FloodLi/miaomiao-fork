@@ -267,6 +267,7 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
     const int H = fb->height;
     const int MX = 20;
     const bool big = (W >= 600);
+    const bool compact_clock = (!big && W >= 360 && H >= 260);
     const int sc = big ? 2 : 1;
 
     /* digit scale: 648px -> num=3,den=2 (1.5x); 400px -> num=1,den=1 */
@@ -282,6 +283,12 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
     int total_w = 4 * d_gap + col_w_px - 6 * ds_num / ds_den;
     int time_x = (W - total_w) / 2;
     int time_y = H * 34 / 480;
+    if (compact_clock) {
+        time_x -= 12;
+        if (time_x < 16)
+            time_x = 16;
+        time_y = 16;
+    }
 
     int cx = time_x;
     draw_digit_s(fb, cx, time_y, hour / 10, COLOR_BLACK, ds_num, ds_den); cx += d_gap;
@@ -302,11 +309,15 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
              "\xe6\x98\x9f\xe6\x9c\x9f%s",
              weekday_zh[wday]);
 
-    int date_y = time_y + dh + 18;
+    int date_y = time_y + dh + (compact_clock ? 10 : 18);
     int date_w = ui_text_width(date_str, sc);
     int week_w = ui_text_width(week_str, sc);
     int date_gap = big ? 22 * sc : 18;
+    if (compact_clock)
+        date_gap = 16;
     int date_x = (W - date_w - week_w - date_gap) / 2;
+    if (compact_clock)
+        date_x = MX + 32;
     if (date_x < 16)
         date_x = 16;
     fb_utf8_scaled(fb, date_x, date_y, date_str, COLOR_BLACK, sc);
@@ -314,8 +325,9 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
     if (big)
         ui_draw_battery_badge(fb, date_x - 10, date_y + (sc > 1 ? 3 : 0));
     else {
-        int battery_y = cfg_local.show_weather ? (date_y - 18) : (H - 34);
-        ui_draw_battery_badge(fb, W - 28, battery_y);
+        int battery_y = compact_clock ? 18
+                                      : (cfg_local.show_weather ? (date_y - 18) : (H - 34));
+        ui_draw_battery_badge(fb, compact_clock ? (W - 18) : (W - 28), battery_y);
     }
 
     weather_summary_t wd_local = {0};
@@ -331,19 +343,114 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
     }
     const weather_summary_t *wd = &wd_local;
 
-    int sep_y = date_y + 16 * sc + 12;
+    int sep_y = date_y + 16 * sc + (compact_clock ? 9 : 12);
     if (big || has_weather || cfg_local.show_weather) {
         ui_draw_dotted_hline(fb, MX + 12, sep_y, W - 2 * MX - 24, COLOR_BLACK, 6);
     } else {
         fb_fill_rect(fb, W / 2 - 34, sep_y, 68, 2, COLOR_RED);
     }
 
-    int bot_y = sep_y + 14;
+    int bot_y = sep_y + (compact_clock ? 12 : 14);
     const int wx_head_sc = big ? 2 : 1;
     const int wx_body_sc = 1;
     const int wx_head_gap = 16 * wx_head_sc + 8;
 
     if (has_weather) {
+        if (compact_clock) {
+            const int current_y = bot_y;
+            const int icon_x = MX + 18;
+            const int icon_y = current_y + 13;
+            const int left_x = icon_x + WEATHER_ICON_W + 10;
+            const int split_x = W / 2 + 8;
+            const int right_x = split_x + 16;
+
+            fb_bitmap(fb, icon_x, icon_y, WEATHER_ICON_W, WEATHER_ICON_H,
+                      weather_icon_bitmap(wd->now.icon), COLOR_BLACK);
+            ui_draw_dotted_vline(fb, split_x, current_y + 3, 55, COLOR_BLACK, 6);
+
+            char place[80];
+            if (wcfg.city_name[0]) {
+                snprintf(place, sizeof(place), "%.31s", wcfg.city_name);
+            } else {
+                snprintf(place, sizeof(place), "%s",
+                         "\xe5\xbd\x93\xe5\x89\x8d\xe5\xa4\xa9\xe6\xb0\x94");
+            }
+
+            char now_line[80];
+            snprintf(now_line, sizeof(now_line), "%.23s  %d\xc2\xb0""C",
+                     wd->now.text, wd->now.temp);
+
+            fb_utf8_scaled_maxw(fb, left_x, current_y + 3, place,
+                                COLOR_BLACK, 1, split_x - left_x - 10);
+            fb_utf8_scaled_maxw(fb, left_x, current_y + 27, now_line,
+                                COLOR_RED, 1, split_x - left_x - 10);
+
+            char feels[64];
+            char humid[64];
+            char wind[80];
+            snprintf(feels, sizeof(feels),
+                     "\xe4\xbd\x93\xe6\x84\x9f %d\xc2\xb0""C",
+                     wd->now.feels_like);
+            snprintf(humid, sizeof(humid),
+                     "\xe6\xb9\xbf\xe5\xba\xa6 %d%%",
+                     wd->now.humidity);
+            snprintf(wind, sizeof(wind), "%.15s %d\xe7\xba\xa7",
+                     wd->now.wind_dir, wd->now.wind_scale);
+
+            fb_utf8_scaled_maxw(fb, right_x, current_y + 0, feels,
+                                COLOR_BLACK, 1, W - right_x - MX);
+            fb_utf8_scaled_maxw(fb, right_x, current_y + 20, humid,
+                                COLOR_BLACK, 1, W - right_x - MX);
+            fb_utf8_scaled_maxw(fb, right_x, current_y + 40, wind,
+                                COLOR_BLACK, 1, W - right_x - MX);
+
+            int dot_y = current_y + 66;
+            ui_draw_dotted_hline(fb, MX + 10, dot_y, W - 2 * MX - 20,
+                                 COLOR_BLACK, 6);
+
+            const int gap = 8;
+            const int fcol = (W - 2 * MX - 2 * gap) / 3;
+            const int row_y = dot_y + 9;
+            for (int i = 0; i < wd->daily_count && i < 3; i++) {
+                int fx = MX + i * (fcol + gap);
+                if (i > 0) {
+                    ui_draw_dotted_vline(fb, fx - gap / 2, row_y + 2, 38,
+                                         COLOR_BLACK, 6);
+                }
+
+                char label[24];
+                if (i == 0) {
+                    snprintf(label, sizeof(label), "%s", "\xe4\xbb\x8a\xe5\xa4\xa9");
+                } else {
+                    const char *d = wd->daily[i].date;
+                    if (!d) {
+                        label[0] = '\0';
+                    } else if (strlen(d) >= 10) {
+                        snprintf(label, sizeof(label), "%s", d + 5);
+                    } else {
+                        snprintf(label, sizeof(label), "%s", d);
+                    }
+                }
+
+                char detail[80];
+                snprintf(detail, sizeof(detail), "%s %d/%d",
+                         wd->daily[i].text_day,
+                         wd->daily[i].temp_max, wd->daily[i].temp_min);
+
+                int icon_fx = fx + fcol - WEATHER_ICON_W - 6;
+                fb_bitmap(fb, icon_fx, row_y + 4, WEATHER_ICON_W, WEATHER_ICON_H,
+                          weather_icon_bitmap(wd->daily[i].icon_day), COLOR_BLACK);
+
+                int text_w = icon_fx - fx - 5;
+                if (text_w < 32)
+                    text_w = fcol - 8;
+                fb_utf8_scaled_maxw(fb, fx + 4, row_y, label,
+                                    (i == 0) ? COLOR_RED : COLOR_BLACK,
+                                    1, text_w);
+                fb_utf8_scaled_maxw(fb, fx + 4, row_y + 21, detail,
+                                    COLOR_BLACK, 1, text_w);
+            }
+        } else {
         char line1[280];
         if (wcfg.city_name[0]) {
             snprintf(line1, sizeof(line1), "%.31s  %.23s  %d\xc2\xb0""C",
@@ -429,6 +536,7 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
                                 wx_body_sc, text_max);
             fb_utf8_scaled_maxw(fb, fx, row_y + line_gap, line_b,
                                 COLOR_BLACK, wx_body_sc, text_max);
+        }
         }
     } else if (cfg_local.show_weather) {
         /* 已勾选「显示天气摘要」但尚未拉到 API 数据：提示原因，避免误以为开关无效 */

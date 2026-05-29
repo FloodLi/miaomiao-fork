@@ -267,12 +267,35 @@ static esp_err_t index_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static const char *http_panel_name(epd_panel_t panel)
+{
+    switch (panel) {
+    case EPD_PANEL_42_BWR: return "4.2 BWR SSD1619";
+    case EPD_PANEL_583_BWR: return "5.83 BWR UC8179";
+    case EPD_PANEL_WS_29_BW: return "Waveshare 2.9 BW V2";
+    case EPD_PANEL_WS_29_BWR: return "Waveshare 2.9 BWR B V4";
+    case EPD_PANEL_WS_266_BW: return "Waveshare 2.66 BW";
+    case EPD_PANEL_WS_266_BWR: return "Waveshare 2.66 BWR";
+    case EPD_PANEL_WS_27_BW: return "Waveshare 2.7 BW V2";
+    case EPD_PANEL_WS_27_BWR: return "Waveshare 2.7 BWR B V2";
+    case EPD_PANEL_WS_426_BW: return "Waveshare 4.26 BW";
+    case EPD_PANEL_WS_583_BW: return "Waveshare 5.83 BW V2";
+    case EPD_PANEL_WS_583_BWR: return "Waveshare 5.83 BWR B V2";
+    case EPD_PANEL_WS_75_BW: return "Waveshare 7.5 BW V2";
+    case EPD_PANEL_WS_75_BWR: return "Waveshare/GDEW075Z08 7.5 BWR";
+    case EPD_PANEL_WS_42_BWR_UC8176: return "Waveshare 4.2 BWR UC8176";
+    default: return "Unknown panel";
+    }
+}
+
 /* ── GET /status ───────────────────────────────────────────────────── */
 
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
+    const esp_app_desc_t *desc = esp_app_get_description();
+    const esp_partition_t *running = esp_ota_get_running_partition();
     const int upload_sz = http_stat_size_or_neg(s_cfg.upload_path);
     const int raw_sz    = http_stat_size_or_neg("/spiffs/image.bin");
 
@@ -286,27 +309,86 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     battery_status_t bat;
     battery_mon_get_status(&bat);
 
-    char json[832];
+    weather_config_t wx_cfg = {0};
+    weather_summary_t wx_sum = {0};
+    weather_get_config(&wx_cfg);
+    weather_get_summary_copy(&wx_sum);
+
+    int current_mode = button_get_current_mode();
+    const char *mode_name = display_mode_name(current_mode);
+    const char *mode_label = display_mode_label(current_mode);
+    epd_panel_t panel = epd_get_panel();
+
+    char esc_version[40];
+    char esc_idf[64];
+    char esc_running[24];
+    char esc_mode_name[24];
+    char esc_mode_label[32];
+    char esc_panel[80];
+    char esc_city[48];
+    char esc_wx_text[32];
+    char esc_wx_update[32];
+
+    json_escape(esc_version, sizeof(esc_version), desc ? desc->version : "");
+    json_escape(esc_idf, sizeof(esc_idf), desc ? desc->idf_ver : "");
+    json_escape(esc_running, sizeof(esc_running), running ? running->label : "unknown");
+    json_escape(esc_mode_name, sizeof(esc_mode_name), mode_name ? mode_name : "");
+    json_escape(esc_mode_label, sizeof(esc_mode_label), mode_label ? mode_label : "");
+    json_escape(esc_panel, sizeof(esc_panel), http_panel_name(panel));
+    json_escape(esc_city, sizeof(esc_city),
+                wx_cfg.city_name[0] ? wx_cfg.city_name : wx_cfg.location);
+    json_escape(esc_wx_text, sizeof(esc_wx_text), wx_sum.valid ? wx_sum.now.text : "");
+    json_escape(esc_wx_update, sizeof(esc_wx_update), wx_sum.valid ? wx_sum.update_time : "");
+
+    bool wx_configured = wx_cfg.api_key[0] && wx_cfg.api_host[0] && wx_cfg.location[0];
+
+    char json[2048];
     snprintf(json, sizeof(json),
-             "{\"upload_path\":\"%s\",\"upload_bytes\":%d,"
+             "{\"version\":\"%s\",\"idf\":\"%s\",\"build_date\":\"%s\",\"build_time\":\"%s\","
+             "\"running\":\"%s\","
+             "\"upload_path\":\"%s\",\"upload_bytes\":%d,"
              "\"raw_path\":\"/spiffs/image.bin\",\"raw_bytes\":%d,"
              "\"spiffs_ok\":%s,\"spiffs_total\":%u,\"spiffs_used\":%u,"
              "\"time\":\"%s\",\"time_synced\":%s,"
-             "\"current_mode\":%d,"
+             "\"current_mode\":%d,\"current_mode_name\":\"%s\","
+             "\"current_mode_label\":\"%s\",\"active_mode\":%d,"
+             "\"panel\":%d,\"panel_name\":\"%s\",\"panel_width\":%d,"
+             "\"panel_height\":%d,\"panel_has_red\":%s,\"busy_idle\":%d,\"epd_ready\":%s,"
              "\"free_heap\":%u,\"min_free_heap\":%u,"
+             "\"internal_free\":%u,\"psram_free\":%u,"
              "\"battery_pct\":%u,\"battery_valid\":%s,\"charging\":%s,"
-             "\"battery_adc\":%d,\"battery_mv\":%d}",
+             "\"battery_adc\":%d,\"battery_mv\":%d,"
+             "\"weather_enabled\":%s,\"weather_configured\":%s,"
+             "\"weather_city\":\"%s\",\"weather_refresh_min\":%lu,"
+             "\"weather_valid\":%s,\"weather_temp\":%d,"
+             "\"weather_text\":\"%s\",\"weather_update\":\"%s\"}",
+             esc_version, esc_idf,
+             desc ? desc->date : "", desc ? desc->time : "",
+             esc_running,
              s_cfg.upload_path, upload_sz, raw_sz,
              spiffs_ok ? "true" : "false", (unsigned)total, (unsigned)used,
              time_str, time_sync_is_synced() ? "true" : "false",
-             button_get_current_mode(),
+             current_mode, esc_mode_name, esc_mode_label, display_mode_active(),
+             (int)panel, esc_panel, epd_width(), epd_height(),
+             epd_has_red() ? "true" : "false", epd_busy_idle_level(),
+             epd_is_ready() ? "true" : "false",
              (unsigned)esp_get_free_heap_size(),
              (unsigned)esp_get_minimum_free_heap_size(),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
              (unsigned)bat.percent,
              bat.valid ? "true" : "false",
              bat.charging ? "true" : "false",
              bat.adc_raw,
-             bat.voltage_mv);
+             bat.voltage_mv,
+             wx_cfg.enabled ? "true" : "false",
+             wx_configured ? "true" : "false",
+             esc_city,
+             (unsigned long)wx_cfg.refresh_min,
+             wx_sum.valid ? "true" : "false",
+             wx_sum.valid ? wx_sum.now.temp : 0,
+             esc_wx_text,
+             esc_wx_update);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
