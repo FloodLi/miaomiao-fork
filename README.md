@@ -186,17 +186,19 @@ cd miaomiao   # 或你本地的 msp 目录名
 
 ### 3. 免编译一键烧录
 
-如果只是想把固件烧进设备，不需要安装 ESP-IDF，也不需要自己编译。仓库已提供整包固件：
+如果只是想把固件烧进设备，不需要安装 ESP-IDF，也不需要自己编译。仓库已提供整包固件。
 
-**推荐下载：** [下载烧录包 epaper_uploader_full_16MB.zip](https://gitee.com/gxp666111/miaomiao/raw/master/release/epaper_uploader_full_16MB.zip)
+**推荐下载：** [下载固件烧录包（文件名正常）](https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip)
 
-下载后先解压，使用里面的 `epaper_uploader_full_16MB.bin` 烧录。仓库内固件路径为：
+下载后先解压，使用里面的 `epaper_uploader_full_16MB.bin` 烧录。这个下载入口使用 Gitee 的仓库打包功能，不走 raw 单文件下载，文件名不会出现单引号。
+
+主仓库内固件路径为：
 
 ```text
 release/epaper_uploader_full_16MB.bin
 ```
 
-备用直链：[直接下载 bin](https://gitee.com/gxp666111/miaomiao/raw/master/release/epaper_uploader_full_16MB.bin)。如果直接下载后的文件名变成 `'epaper_uploader_full_16MB.bin'` 或 `epaper_uploader_full_16MB.bin'`，请手动重命名为 `epaper_uploader_full_16MB.bin`，或改用上面的 zip 包。
+备用入口：[查看 release 固件目录](https://gitee.com/gxp666111/miaomiao/tree/master/release)。如果你手动点 raw 下载，Gitee 可能把文件名保存成 `'epaper_uploader_full_16MB.bin'`、`epaper_uploader_full_16MB.bin'` 或类似带单引号的名字；这不是文件损坏，手动重命名为 `epaper_uploader_full_16MB.bin` 即可。
 
 在 Espressif Flash Download Tool 的 `SPIDownload` 页面只填一行：
 

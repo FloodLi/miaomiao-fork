@@ -10,6 +10,12 @@
 epaper_uploader_full_16MB.zip
 ```
 
+为了避免 Gitee raw 单文件下载把文件名保存成带单引号的形式，建议从主页的“下载固件烧录包”入口下载，或打开这个专用分支打包下载：
+
+```text
+https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip
+```
+
 解压后使用整包固件：
 
 ```text
@@ -30,7 +36,7 @@ Size:   1056314 bytes
 SHA256: E8DB81E17B2DDCE875A061BEB65733DFD759B3340B602C9106202D3E38CA1F52
 ```
 
-如果直接下载 `.bin` 后文件名带了单引号，例如：
+如果手动点 raw 下载后文件名带了单引号，例如：
 
 ```text
 'epaper_uploader_full_16MB.bin'
@@ -43,7 +49,8 @@ epaper_uploader_full_16MB.bin'
 epaper_uploader_full_16MB.bin
 ```
 
-或者直接下载 `.zip`，解压出来的文件名会是正常的。
+这不是文件损坏，只是 Gitee raw 下载响应头导致的文件名问题。
+
 
 适用范围：
 
