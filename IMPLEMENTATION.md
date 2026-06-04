@@ -89,6 +89,7 @@ msp/
 ├── .gitignore
 ├── main/
 │   ├── CMakeLists.txt          # 组件注册、源文件列表、EMBED_FILES
+│   ├── idf_component.yml       # ESP-IDF 组件依赖与版本约束
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 + UC8179，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
@@ -100,6 +101,7 @@ msp/
 │   ├── wifi_manager.c/h       # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h          # 画廊轮播调度器
 │   ├── weather.c/h            # 和风天气 HTTPS
+│   ├── weather_icons_qw.c/h   # 和风天气离线 1-bit 图标库
 │   ├── clock_display.c/h      # 时钟表盘
 │   ├── calendar_display.c/h   # 万年历 + 农历
 │   ├── lunar.c/h              # 农历算法
@@ -111,9 +113,11 @@ msp/
 │   ├── canvas_board.c/h       # WYSIWYG 画布留言板（JSON→fb_t 渲染）
 │   ├── canvas_icons.h         # 内置 1-bit 画布图标库
 │   ├── button.c/h             # 三键驱动
+│   ├── battery_mon.c/h        # 电池电压检测与百分比估算
 │   ├── power_mgr.c/h          # 深度睡眠与电源管理
 │   ├── fb_render.c/h          # 帧缓冲渲染引擎
 │   ├── font_data.h            # 点阵字库（ASCII + 中文）
+│   ├── ui_theme.c/h           # 墨水屏页面通用 UI 主题组件
 │   ├── display_policy.c/h     # 显示策略协调
 │   ├── display_mode.c/h       # 显示模式注册与切换
 │   ├── device_identity.c/h    # 设备标识
@@ -126,7 +130,8 @@ msp/
 │   ├── config.html            # 配置：WiFi / 轮播 / 天气 / OTA / 低功耗
 │   ├── timetable.html         # 课程表编辑
 │   ├── todo.html              # 待办事项管理
-│   └── countdown.html         # 倒计时配置
+│   ├── countdown.html         # 倒计时配置
+│   └── board.html             # 画布留言板可视化编辑器
 ├── README.md
 ├── IMPLEMENTATION.md           # 本文档
 └── ROADMAP.md                  # 开发规划
@@ -143,6 +148,7 @@ msp/
 | **WiFi 管理** | `wifi_manager.c/h` | AP+STA 共存、NVS 凭据、自动重连 |
 | **轮播调度** | `scheduler.c/h` | 画廊顺序/随机自动轮播 |
 | **天气** | `weather.c/h` | 和风天气 HTTPS，实时+3 天预报 |
+| **天气图标** | `weather_icons_qw.c/h` | 和风天气离线 1-bit 图标库 |
 | **时钟** | `clock_display.c/h` | 数字时钟，自动刷新 |
 | **万年历** | `calendar_display.c/h` + `lunar.c/h` | 月视图 + 农历/节气/节日 |
 | **课程表** | `timetable.c/h` | 7×12 网格 + 学期周次 + 单日/全周视图 |
@@ -150,8 +156,10 @@ msp/
 | **留言板** | `message_board.c/h` | 自定义文字/字号/对齐/颜色 |
 | **画布留言板** | `canvas_board.c/h` + `canvas_icons.h` | WYSIWYG Web 编辑器→JSON→帧缓冲渲染（文本/形状/图标/图片） |
 | **按键驱动** | `button.c/h` | 3 键轮询+去抖+模式切换 |
+| **电池检测** | `battery_mon.c/h` | 电池电压采样与百分比估算 |
 | **电源管理** | `power_mgr.c/h` | 深度睡眠、闲置检测、唤醒、模式记忆 |
 | **帧缓冲渲染** | `fb_render.c/h` | 像素/线/矩形/UTF-8 文字 |
+| **UI 主题** | `ui_theme.c/h` | 墨水屏页面框架、标题栏、卡片和页脚 |
 | **显示策略** | `display_policy.c/h` | EPD 互斥 + 手动屏标记 |
 | **时间同步** | `time_sync.c/h` | SNTP（NTP 阿里云 + pool.ntp.org）|
 | **SPIFFS 存储** | `spiffs_mount.c/h` | 挂载/健康检查/画廊目录，挂载失败不自动格式化用户数据 |

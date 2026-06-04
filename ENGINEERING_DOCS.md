@@ -1048,24 +1048,29 @@ idf.py -p COM3 monitor
 - `main/http_app.c` - HTTP 服务器核心 + Basic Auth + OTA
 - `main/http_gallery.c` - 画廊 HTTP 路由
 - `main/http_features.c` - 功能模块 HTTP 路由
+- `main/http_internal.h` - HTTP 子模块共享声明
 - `main/wifi_manager.c` - WiFi 管理
 - `main/image_convert.c` - 图片转换
 - `main/fb_render.c` - 帧缓冲渲染
 - `main/weather.c` - 天气模块
+- `main/weather_icons_qw.c` - 和风天气离线 1-bit 图标库
 - `main/clock_display.c` - 时钟显示
 - `main/calendar_display.c` - 日历显示
 - `main/lunar.c` - 农历算法
 - `main/timetable.c` - 课程表（7×12 网格 + 学期周次）
 - `main/todo.c` - 待办事项
 - `main/countdown.c` - 倒计时
+- `main/codex_quota.c` - Codex / 中转站额度看板
 - `main/message_board.c` - 留言板
 - `main/canvas_board.c` - WYSIWYG 画布留言板渲染器
 - `main/http_canvas.c` - 画布 HTTP 路由与图标管理
 - `main/button.c` - 按键驱动
+- `main/battery_mon.c` - 电池电压检测与百分比估算
 - `main/power_mgr.c` - 电源管理
 - `main/scheduler.c` - 任务调度
 - `main/display_mode.c` - 显示模式注册与切换
 - `main/display_policy.c` - 显示策略协调
+- `main/ui_theme.c` - 墨水屏页面通用 UI 主题组件
 - `main/time_sync.c` - SNTP 时间同步
 - `main/device_identity.c` - 设备标识
 - `main/nvs_utils.c` - NVS 工具函数

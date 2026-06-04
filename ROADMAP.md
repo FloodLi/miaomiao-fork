@@ -456,34 +456,44 @@
 
 ```
 msp/
-├── main/                          # 固件源码（21 个 .c 模块）
+├── main/                          # 固件源码（C 模块，含 HTTP / EPD / 业务）
+│   ├── CMakeLists.txt             # 组件注册、源文件列表、EMBED_FILES
+│   ├── idf_component.yml          # ESP-IDF 组件依赖与版本约束
 │   ├── app_main.c                 # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h        # EPD 驱动（SSD1619 4.2" + UC8179 5.83"，SPI DMA）
 │   ├── image_convert.c/h         # JPEG/PNG/BMP → EPD 帧缓冲（Floyd-Steinberg 抖色）
 │   ├── http_app.c/h              # HTTP 服务 + 约 63 条 API 路由 + Basic Auth + OTA
+│   ├── http_gallery.c             # 画廊 HTTP 路由
+│   ├── http_features.c            # 功能模块 HTTP 路由
+│   ├── http_internal.h            # HTTP 子模块共享声明
 │   ├── wifi_manager.c/h          # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h             # 画廊轮播调度器
 │   ├── weather.c/h               # 和风天气 HTTPS 拉取与渲染
+│   ├── weather_icons_qw.c/h       # 和风天气离线 1-bit 图标库
 │   ├── clock_display.c/h         # 时钟表盘
 │   ├── calendar_display.c/h      # 万年历（月视图 + 农历/节气/节日）
 │   ├── lunar.c/h                 # 农历算法（1900-2100）
 │   ├── timetable.c/h             # 课程表（周期制 + 单日视图）
 │   ├── todo.c/h                  # 待办事项（NVS 持久化 + 进度条）
 │   ├── countdown.c/h             # 倒计时
+│   ├── codex_quota.c/h           # Codex / 中转站额度看板
 │   ├── message_board.c/h         # 留言板（自定义文字/对齐/字号）
 │   ├── canvas_board.c/h          # WYSIWYG 画布留言板解析与渲染
 │   ├── http_canvas.c             # 画布 Web 编辑器路由与素材管理
 │   ├── canvas_icons.h            # 内置 1-bit 画布图标字库
 │   ├── button.c/h                # 三键驱动（GPIO 轮询 + 去抖 + 模式切换）
+│   ├── battery_mon.c/h           # 电池电压检测与百分比估算
 │   ├── power_mgr.c/h             # 深度睡眠与电源管理
 │   ├── fb_render.c/h             # 帧缓冲渲染引擎（像素/线/矩形/UTF-8）
 │   ├── font_data.h               # 点阵字库数据（ASCII + 中文）
+│   ├── ui_theme.c/h              # 墨水屏页面通用 UI 主题组件
+│   ├── display_mode.c/h          # 显示模式注册与切换
 │   ├── display_policy.c/h        # 显示策略协调（互斥 + 手动屏标记）
 │   ├── device_identity.c/h       # 设备标识（MAC → AP SSID / mDNS）
 │   ├── time_sync.c/h             # SNTP 时间同步
+│   ├── nvs_utils.c/h             # NVS 工具函数
 │   ├── spiffs_mount.c/h          # SPIFFS 挂载 + 健康检查（不自动格式化用户数据）
-│   ├── lodepng.c/h               # LodePNG 第三方 PNG 解码库
-│   └── CMakeLists.txt
+│   └── lodepng.c/h               # LodePNG 第三方 PNG 解码库
 ├── web/                           # Web UI（构建时嵌入固件）
 │   ├── index.html                 # 主页：上传 / 画廊 / 状态
 │   ├── config.html                # 配置：WiFi / 轮播 / 天气 / OTA / 低功耗
@@ -494,6 +504,7 @@ msp/
 ├── .gitignore
 ├── partitions.csv                 # 分区表（factory + 双 OTA + 10MB SPIFFS）
 ├── sdkconfig.defaults
+├── release/                       # 免编译烧录包与说明
 ├── CMakeLists.txt
 ├── README.md
 ├── IMPLEMENTATION.md              # 技术实现文档

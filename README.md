@@ -275,12 +275,15 @@ idf.py -p COM3 build flash monitor
 ```
 msp/
 ├── main/                        # 固件源码（C 模块，含 HTTP / EPD / 业务）
+│   ├── CMakeLists.txt           # 组件注册、源文件列表、EMBED_FILES
+│   ├── idf_component.yml        # ESP-IDF 组件依赖与版本约束
 │   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
 │   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179 / 微雪移植面板，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
 │   ├── http_app.c/h             # HTTP 服务（约 63 条 URI + Basic Auth + OTA）
 │   ├── http_gallery.c           # 画廊相关路由
 │   ├── http_features.c          # 功能模块路由
+│   ├── http_internal.h          # HTTP 子模块共享声明
 │   ├── wifi_manager.c/h         # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h            # 画廊轮播调度
 │   ├── weather.c/h              # 和风天气 HTTPS
@@ -297,8 +300,10 @@ msp/
 │   ├── http_canvas.c            # 画布 Web 编辑器路由与图标管理
 │   ├── canvas_icons.h           # 内置 1-bit 画布图标库
 │   ├── button.c/h               # 三键驱动（轮询 + 去抖）
+│   ├── battery_mon.c/h          # 电池电压检测与百分比估算
 │   ├── fb_render.c/h            # 帧缓冲渲染引擎
 │   ├── font_data.h              # 点阵字库（ASCII + 中文）
+│   ├── ui_theme.c/h             # 墨水屏页面通用 UI 主题组件
 │   ├── display_policy.c/h       # 显示策略协调
 │   ├── display_mode.c/h         # 显示模式注册与切换
 │   ├── power_mgr.c/h            # 深度睡眠与电源管理
@@ -316,12 +321,21 @@ msp/
 │   └── board.html               # 画布留言板可视化编辑器
 ├── tools/                       # 辅助脚本
 │   ├── gen_font.py              # 点阵字库生成工具
-│   └── gen_city_excel.py        # 和风天气城市码导出
+│   ├── gen_city_excel.py        # 和风天气城市码导出
+│   ├── font_extra_chars.txt     # 字库补字清单
+│   ├── unifont.hex.gz           # 字库生成输入
+│   └── update_gitee_about.ps1   # Gitee 仓库简介同步脚本
 ├── hardware/                    # 硬件提要（采购清单暂不公开）
 │   ├── 开发板接线图.png           # 开发板 / 屏 / 按键 / 电源接线示意
 │   ├── BOM_ACTUAL.md            # 与固件兼容性提要
 │   └── BOM.md                   # 与固件兼容性提要
-├── docs/images/                 # README 使用的硬件、实物与 Web 截图
+├── docs/                        # Gitee 简介与 README 使用的硬件、实物、Web 截图
+│   ├── gitee-about.md           # Gitee 仓库简介建议
+│   └── images/                  # README 使用图片
+├── release/                     # 免编译烧录包与小白烧录说明
+│   ├── README.md
+│   ├── epaper_uploader_full_16MB.bin
+│   └── epaper_uploader_full_16MB.zip
 ├── partitions.csv               # 分区表（factory + 双 OTA + ~10MB SPIFFS）
 ├── sdkconfig.defaults           # 项目默认配置
 └── CMakeLists.txt               # 顶层构建脚本
