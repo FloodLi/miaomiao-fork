@@ -284,6 +284,7 @@ msp/
 │   ├── wifi_manager.c/h         # WiFi AP/STA + 配网 + 自动重连
 │   ├── scheduler.c/h            # 画廊轮播调度
 │   ├── weather.c/h              # 和风天气 HTTPS
+│   ├── weather_icons_qw.c/h     # 和风天气离线 1-bit 图标库
 │   ├── clock_display.c/h        # 时钟表盘
 │   ├── calendar_display.c/h     # 万年历 + 农历
 │   ├── lunar.c/h                # 农历算法（1900-2100）
