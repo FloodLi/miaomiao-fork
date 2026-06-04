@@ -2,9 +2,18 @@
 
 这个下载包给不想安装 ESP-IDF、不会自己编译的小白用户使用。
 
+版本：v2.3.1 / 2026-06-04。当前包已包含 Codex/中转站额度看板、SPIFFS 恢复保护和启动栈稳定性修复。
+
 ## 文件
 
 - `epaper_uploader_full_16MB.bin`：整包固件，烧录地址 `0x0000`
+
+校验信息：
+
+```text
+Size:   2033568 bytes
+SHA256: 48724FFDB5BF05737E70186B09F47E0932172ECF9EC37E6C79244393DCDC71BE
+```
 
 ## 烧录方式
 
@@ -29,4 +38,4 @@ FLASH SIZE: 16MB
 
 这是整包固件，已经包含 bootloader、partition table、otadata 和 app，不需要再添加其它 bin 文件。
 
-如果是新板子或者配置混乱，可以先点 `ERASE` 再点 `START`；如果想保留 WiFi、天气、面板等配置，不要点 `ERASE`，直接点 `START`。
+如果是新板子或者配置混乱，可以先点 `ERASE` 再点 `START`；如果想保留 WiFi、天气、Codex 额度、面板等配置，不要点 `ERASE`，直接点 `START`。
