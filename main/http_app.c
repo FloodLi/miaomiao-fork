@@ -38,6 +38,7 @@
 #include "button.h"
 #include "display_mode.h"
 #include "countdown.h"
+#include "codex_quota.h"
 #include "spiffs_mount.h"
 #include "battery_mon.h"
 #include "cJSON.h"
@@ -871,6 +872,111 @@ static esp_err_t weather_show_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ── Codex quota config ───────────────────────────────────────────── */
+
+static esp_err_t codex_quota_config_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    codex_quota_config_t cfg;
+    codex_quota_data_t data;
+    codex_quota_get_config(&cfg);
+    codex_quota_get_data_copy(&data);
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
+    cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
+    cJSON_AddStringToObject(root, "api_url", cfg.api_url);
+    cJSON_AddStringToObject(root, "api_key", "");
+    cJSON_AddBoolToObject(root, "api_key_set", cfg.api_key[0] != '\0');
+    cJSON_AddStringToObject(root, "unit", cfg.unit);
+    cJSON_AddNumberToObject(root, "refresh_min", cfg.refresh_min);
+    cJSON_AddBoolToObject(root, "has_data", data.valid);
+    if (data.valid) {
+        cJSON_AddNumberToObject(root, "remaining", data.remaining);
+        cJSON_AddNumberToObject(root, "used", data.used);
+        cJSON_AddNumberToObject(root, "total", data.total);
+        cJSON_AddNumberToObject(root, "percent_used", data.percent_used);
+        cJSON_AddNumberToObject(root, "request_count", data.request_count);
+        cJSON_AddStringToObject(root, "update_time", data.update_time);
+        cJSON_AddStringToObject(root, "account", data.account);
+        cJSON_AddStringToObject(root, "message", data.message);
+    }
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, str, HTTPD_RESP_USE_STRLEN);
+    free(str);
+    return ESP_OK;
+}
+
+static esp_err_t codex_quota_config_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    char buf[768] = {0};
+    if (!http_read_request_body(req, buf, sizeof(buf), "请求体错误"))
+        return ESP_OK;
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        return ESP_OK;
+    }
+
+    codex_quota_config_t cfg;
+    codex_quota_get_config(&cfg);
+
+    cJSON *j;
+    if ((j = cJSON_GetObjectItem(root, "enabled")) && cJSON_IsBool(j))
+        cfg.enabled = cJSON_IsTrue(j);
+    const char *s;
+    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "api_url"))))
+        snprintf(cfg.api_url, sizeof(cfg.api_url), "%s", s);
+    cJSON *jk = cJSON_GetObjectItem(root, "api_key");
+    if (jk && cJSON_IsString(jk) && jk->valuestring && jk->valuestring[0])
+        snprintf(cfg.api_key, sizeof(cfg.api_key), "%s", jk->valuestring);
+    j = cJSON_GetObjectItem(root, "api_key_clear");
+    if (j && cJSON_IsTrue(j))
+        cfg.api_key[0] = '\0';
+    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "unit"))))
+        snprintf(cfg.unit, sizeof(cfg.unit), "%s", s);
+    if ((j = cJSON_GetObjectItem(root, "refresh_min")) && cJSON_IsNumber(j))
+        cfg.refresh_min = (uint32_t)j->valuedouble;
+    cJSON_Delete(root);
+
+    codex_quota_set_config(&cfg);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
+static esp_err_t codex_quota_show_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    if (!http_require_epd_ready(req))
+        return ESP_OK;
+
+    drain_request_body(req);
+
+    esp_err_t err = codex_quota_show();
+    if (err == ESP_OK) {
+        button_set_current_mode(DISPLAY_MODE_CODEX_QUOTA);
+        power_mgr_save_mode(DISPLAY_MODE_CODEX_QUOTA);
+    }
+    char json[96];
+    snprintf(json, sizeof(json), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
 /* ── GET /clock_config ─────────────────────────────────────────────── */
 
 static esp_err_t clock_config_get_handler(httpd_req_t *req)
@@ -1316,6 +1422,9 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/weather_config", HTTP_GET,  weather_config_get_handler, NULL },
         { "/weather_config", HTTP_POST, weather_config_post_handler,NULL },
         { "/weather_show",   HTTP_POST, weather_show_post_handler,  NULL },
+        { "/codex_quota_config", HTTP_GET,  codex_quota_config_get_handler, NULL },
+        { "/codex_quota_config", HTTP_POST, codex_quota_config_post_handler,NULL },
+        { "/codex_quota_show",   HTTP_POST, codex_quota_show_post_handler,  NULL },
         { "/clock_config",   HTTP_GET,  clock_config_get_handler,   NULL },
         { "/clock_config",   HTTP_POST, clock_config_post_handler,  NULL },
         { "/clock_show",     HTTP_POST, clock_show_post_handler,    NULL },

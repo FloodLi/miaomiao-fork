@@ -24,6 +24,7 @@
 #include "timetable.h"
 #include "todo.h"
 #include "countdown.h"
+#include "codex_quota.h"
 #include "nvs_utils.h"
 #include "display_mode.h"
 #include "battery_mon.h"
@@ -417,6 +418,7 @@ static void quick_refresh_and_sleep(void)
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());
     ESP_ERROR_CHECK(countdown_init());
+    ESP_ERROR_CHECK(codex_quota_init());
 
     display_mode_register(&(display_mode_entry_t){ "clock",     "时钟",     clock_display_show });
     display_mode_register(&(display_mode_entry_t){ "calendar",  "日历",     calendar_display_show_current });
@@ -425,6 +427,7 @@ static void quick_refresh_and_sleep(void)
     display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
     display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
     display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
+    display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
 
     display_policy_set_manual_screen_active(true);
 
@@ -566,7 +569,7 @@ static void full_boot(void)
     {
         bool write_mode_back = false;
         int boot_mode = normalize_saved_mode(power_mgr_load_mode(),
-                                             DISPLAY_MODE_COUNTDOWN + 1,
+                                             DISPLAY_MODE_CODEX_QUOTA + 1,
                                              &write_mode_back);
         if (boot_mode == DISPLAY_MODE_WEATHER) {
             ESP_LOGI(TAG, "Boot target is weather; deferring initial weather fetch");
@@ -581,6 +584,7 @@ static void full_boot(void)
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());
     ESP_ERROR_CHECK(countdown_init());
+    ESP_ERROR_CHECK(codex_quota_init());
 
     display_mode_register(&(display_mode_entry_t){ "clock",     "时钟",     clock_display_show });
     display_mode_register(&(display_mode_entry_t){ "calendar",  "日历",     calendar_display_show_current });
@@ -589,6 +593,7 @@ static void full_boot(void)
     display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
     display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
     display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
+    display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
 
     if (epd_err == ESP_OK) {
         boot_display_route();

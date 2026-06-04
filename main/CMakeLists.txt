@@ -30,6 +30,7 @@ idf_component_register(
         "button.c"
         "power_mgr.c"
         "countdown.c"
+        "codex_quota.c"
         "nvs_utils.c"
         "http_gallery.c"
         "http_features.c"

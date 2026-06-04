@@ -415,6 +415,54 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
     </div>
   </div>
 
+  <!-- Codex Quota -->
+  <div class="card">
+    <div class="hd">
+      <div class="title" style="font-size:16px">Codex 额度</div>
+      <div class="sub">通过你的中转站额度接口获取余额/用量，并在墨水屏上显示。可直接填写中转站域名，例如 <b>https://dash.classicriver.cn</b>，系统会自动补全 <b>/v1/usage</b>。</div>
+    </div>
+    <div class="bd">
+      <div class="kv">
+        <div class="k">额度状态</div><div class="v" id="cq_status">-</div>
+        <div class="k">最新数据</div><div class="v" id="cq_data">-</div>
+      </div>
+      <div class="form-row">
+        <label>启用额度页</label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
+          <span class="toggle"><input type="checkbox" id="cqEnabled"><span class="sl"></span></span>
+          <span id="cqLabel" style="font-size:13px">已关闭</span>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>额度 API URL</label>
+        <input type="text" id="cqApiUrl" placeholder="https://dash.classicriver.cn/v1/usage">
+      </div>
+      <div class="form-row">
+        <label>API Key</label>
+        <input type="password" id="cqApiKey" placeholder="sk-...">
+      </div>
+      <div class="form-row">
+        <label>显示单位</label>
+        <input type="text" id="cqUnit" placeholder="USD / 元 / credits">
+      </div>
+      <div class="form-row">
+        <label>自动刷新</label>
+        <select id="cqRefresh">
+          <option value="0">仅手动刷新</option>
+          <option value="5">自动：每 5 分钟</option>
+          <option value="15">自动：每 15 分钟</option>
+          <option value="30">自动：每 30 分钟</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="saveCodexQuota()">保存设置</button>
+        <button class="btn ghost sm" onclick="showCodexQuota()">立即显示额度</button>
+        <button class="btn ghost sm" onclick="loadCodexQuota()">刷新</button>
+      </div>
+      <div class="log" id="cqLog">加载中…</div>
+    </div>
+  </div>
+
   <!-- Clock Display -->
   <div class="card">
     <div class="hd">
@@ -1032,6 +1080,94 @@ async function showWeather(){
   }finally{clearTimeout(t);}
 }
 
+function cqLog(s,cls){const el=document.getElementById('cqLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+var codexQuotaKeyConfigured=false;
+
+function normalizeCodexQuotaUrl(url){
+  url=(url||'').trim();
+  if(!url) return '';
+  if(url.indexOf('/v1/usage')>=0) return url;
+  url=url.replace(/\/api\/usage\/token\/?$/,'').replace(/\/api\/user\/self\/?$/,'');
+  url=url.replace(/\/+$/,'');
+  if(url.endsWith('/v1')) return url+'/usage';
+  return url+'/v1/usage';
+}
+
+function collectCodexQuotaCfg(){
+  var cfg={
+    enabled:document.getElementById('cqEnabled').checked,
+    api_url:normalizeCodexQuotaUrl(document.getElementById('cqApiUrl').value),
+    api_key:document.getElementById('cqApiKey').value.trim(),
+    unit:document.getElementById('cqUnit').value.trim()||'USD',
+    refresh_min:parseInt(document.getElementById('cqRefresh').value,10)||0
+  };
+  document.getElementById('cqApiUrl').value=cfg.api_url;
+  if(!cfg.api_key&&codexQuotaKeyConfigured) delete cfg.api_key;
+  return cfg;
+}
+
+function formatQuotaAmount(v,unit){
+  if(v===undefined||v===null||isNaN(Number(v))) return '--';
+  var n=Number(v);
+  var s=Math.abs(n)>=1000?String(Math.round(n)):n.toFixed(2);
+  return s+' '+(unit||'');
+}
+
+async function loadCodexQuota(){
+  try{
+    const r=await fetch('/codex_quota_config',epdFetchOpts());const j=await r.json();
+    codexQuotaKeyConfigured=!!j.api_key_set;
+    document.getElementById('cqEnabled').checked=!!j.enabled;
+    document.getElementById('cqLabel').textContent=j.enabled?'已开启':'已关闭';
+    document.getElementById('cqApiUrl').value=j.api_url||'';
+    document.getElementById('cqApiKey').value=j.api_key||'';
+    document.getElementById('cqApiKey').placeholder=codexQuotaKeyConfigured?'已保存，留空不修改':'中转站 API Key';
+    document.getElementById('cqUnit').value=j.unit||'USD';
+    document.getElementById('cqRefresh').value=String(j.refresh_min===undefined?5:j.refresh_min);
+    const st=document.getElementById('cq_status');
+    if(j.enabled){st.textContent=(j.refresh_min?('运行中，每 '+j.refresh_min+' 分钟自动刷新'):'运行中，手动刷新');st.className='v ok';}
+    else{st.textContent='已关闭';st.className='v warn';}
+    const data=document.getElementById('cq_data');
+    if(j.has_data){
+      data.textContent='剩余 '+formatQuotaAmount(j.remaining,j.unit)+'，已用 '+(j.percent_used||0)+'% ('+(j.update_time||'--')+')';
+      data.className='v';
+    }else{
+      data.textContent='暂无数据';
+      data.className='v warn';
+    }
+    cqLog('设置已加载。');
+  }catch(e){cqLog('加载失败: '+e,'bad');}
+}
+
+async function saveCodexQuota(){
+  var cfg=collectCodexQuotaCfg();
+  if(cfg.enabled&&(!cfg.api_url||!(cfg.api_key||codexQuotaKeyConfigured))){
+    cqLog('请填写额度 API URL 和 API Key','bad');
+    return;
+  }
+  cqLog('保存中…');
+  try{
+    const r=await fetch('/codex_quota_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
+    const j=await r.json();
+    if(j.ok){cqLog('设置已保存。开启自动刷新后，停留在“额度”模式会按间隔刷新。','ok');await loadCodexQuota();}
+    else cqLog('保存失败','bad');
+  }catch(e){cqLog('请求失败: '+e,'bad');}
+}
+
+async function showCodexQuota(){
+  cqLog('正在请求额度接口并渲染…墨水屏较慢，请耐心等待');
+  var ctrl=new AbortController();
+  var t=setTimeout(function(){ctrl.abort();},120000);
+  try{
+    const r=await fetch('/codex_quota_show',epdFetchOpts({method:'POST',signal:ctrl.signal}));
+    const j=await r.json();
+    if(j.ok){cqLog('额度已显示在墨水屏上！','ok');await loadCodexQuota();}
+    else cqLog('额度获取失败，请检查 API URL、Key 和接口返回字段。','bad');
+  }catch(e){
+    cqLog('请求失败: '+(e.name==='AbortError'?'超时（墨水屏仍在刷新可稍后再试）':e),'bad');
+  }finally{clearTimeout(t);}
+}
+
 function ckLog(s,cls){const el=document.getElementById('ckLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
 async function loadClock(){
@@ -1387,8 +1523,8 @@ function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'
 async function exportConfig(){
   bkLog('正在收集所有配置…');
   try{
-    var endpoints=['/weather_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config'];
-    var names=['weather','clock','message','slideshow','timetable','todo','countdown','power'];
+    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config'];
+    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power'];
     var backup={_version:1,_date:new Date().toISOString()};
     for(var i=0;i<endpoints.length;i++){
       try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -1410,7 +1546,7 @@ async function importConfig(input){
     var text=await input.files[0].text();
     var backup=JSON.parse(text);
     if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
-    var map={weather:'/weather_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
+    var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
       timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config'};
     var ok=0,fail=0;
     for(var key in map){
@@ -1431,6 +1567,7 @@ loadStatus();
 loadPanel();
 loadSlideshow();
 loadWeather();
+loadCodexQuota();
 loadClock();
 loadMsg();
 loadVersion();

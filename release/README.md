@@ -22,18 +22,20 @@ https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip
 epaper_uploader_full_16MB.bin
 ```
 
+ZIP 内只包含上述整包固件文件；校验信息以本文件为准。
+
 校验信息：
 
 ```text
-Size:   2017520 bytes
-SHA256: D9E3F6D23158A442CF8597A2998E9F878DD1F4C5FAF960AE3F82503E0039B5B1
+Size:   2033568 bytes
+SHA256: 48724FFDB5BF05737E70186B09F47E0932172ECF9EC37E6C79244393DCDC71BE
 ```
 
 ZIP 校验信息：
 
 ```text
-Size:   1056314 bytes
-SHA256: E8DB81E17B2DDCE875A061BEB65733DFD759B3340B602C9106202D3E38CA1F52
+Size:   1062810 bytes
+SHA256: 7D126A0C69E82220E8B20C22CC1897EBA551D85274F56564A1EABEAA1AE105C5
 ```
 
 如果手动点 raw 下载后文件名带了单引号，例如：
@@ -159,7 +161,7 @@ SSID: ESP32_EPD_xxxxxx
 Web:  http://192.168.4.1/
 ```
 
-连接 AP 后进入网页配置 WiFi、天气和屏幕参数。
+连接 AP 后进入网页配置 WiFi、天气、Codex 额度和屏幕参数。
 
 ## 开发者重新生成整包
 

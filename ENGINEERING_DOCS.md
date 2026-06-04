@@ -44,9 +44,9 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
 - ✅ **WiFi 连接**: STA/AP 模式，mDNS 发现，自动重连
 - ✅ **图片显示**: JPEG/PNG/BMP 格式，Floyd-Steinberg 抖动算法
 - ✅ **Web 管理**: 响应式 UI，三套主题，OTA 升级
-- ✅ **内容丰富**: 天气、时钟、日历、课程表、待办、倒计时、留言板、WYSIWYG 画布
+- ✅ **内容丰富**: 天气、时钟、日历、课程表、待办、倒计时、Codex 额度看板、留言板、WYSIWYG 画布
 - ✅ **低功耗**: 深度睡眠，定时器/按键唤醒，80+ 天续航
-- ✅ **物理交互**: 三键循环切换 **7 种**已注册 `display_mode`（时钟/日历/课程表/天气/轮播/待办/倒计时）；**留言板与画布**由网页推屏，不参与按键轮显
+- ✅ **物理交互**: 三键循环切换 **8 种**已注册 `display_mode`（时钟/日历/课程表/天气/轮播/待办/倒计时/额度）；**留言板与画布**由网页推屏，不参与按键轮显
 
 ### 1.3 技术栈
 
@@ -495,11 +495,11 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 
 ### 5.4 HTTP 服务器模块 (`http_app.c` + `http_gallery.c` + `http_features.c` + `http_canvas.c`)
 
-**路由数量:** 60 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
+**路由数量:** 63 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
 **认证方式:** HTTP Basic Auth
 **最大连接:** 5 个并发
 
-**路由分组（共 60 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
+**路由分组（共 63 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
 
 | 分组 | 路径示例 |
 |------|-----------|
@@ -508,7 +508,7 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 | 网络与面板 | `GET /wifi_status` `/scan` · `POST /wifi_connect` `/wifi_forget` · `GET|POST /panel_config` |
 | 轮播 / 认证 / 电源 | `GET|POST /slideshow` · `GET|POST /auth_config` · `GET|POST /power_config` |
 | 画布留言板 | `GET /board` · `GET|POST /canvas_layout` · `POST /canvas_show` · 图标图片资源管理 |
-| 天气 / 时钟 / 留言 | `GET|POST /weather_config` · `POST /weather_show` · `GET|POST /clock_config` · `POST /clock_show` · `GET|POST /msg_config` · `POST /msg_show` |
+| 天气 / 时钟 / 额度 / 留言 | `GET|POST /weather_config` · `POST /weather_show` · `GET|POST /clock_config` · `POST /clock_show` · `GET|POST /codex_quota_config` · `POST /codex_quota_show` · `GET|POST /msg_config` · `POST /msg_show` |
 | 日历 / 课程表 / 待办 / 倒计时 | `POST /calendar_show` · `GET /timetable` `/timetable.json` · `POST /timetable` `/timetable_show` · `GET /todo` `/todo.json` · `POST /todo` `/todo_show` · `GET /countdown` · `GET|POST /countdown_config` · `POST /countdown_show` |
 | 系统 | `GET /version` · `POST /epd_test` · `POST /spiffs_remount` `/spiffs_format` · `POST /ota` |
 

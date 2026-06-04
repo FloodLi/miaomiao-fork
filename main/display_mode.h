@@ -13,6 +13,7 @@ typedef enum {
     DISPLAY_MODE_SLIDESHOW,
     DISPLAY_MODE_TODO,
     DISPLAY_MODE_COUNTDOWN,
+    DISPLAY_MODE_CODEX_QUOTA,
 } display_mode_index_t;
 
 typedef esp_err_t (*display_mode_show_fn)(void);

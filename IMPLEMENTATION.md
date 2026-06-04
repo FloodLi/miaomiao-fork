@@ -1,8 +1,8 @@
 # ESP32-S3 三色墨水屏图片上传显示系统 — 实现文档
 
-## 实现状态快照（2026-05-02）
+## 实现状态快照（2026-06-04）
 
-当前实现已经覆盖图片转换、图库、轮播、天气、时钟、课程表、待办、倒计时、留言板、画布、OTA 和低功耗。稳定性基线包括：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容；挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志。2026-05-02 增补 PSRAM 友好的图片转换、画板渲染让出 CPU、前端图片预处理实时预览、图层/模板/二维码名片和公开仓库结构整理。
+当前实现已经覆盖图片转换、图库、轮播、天气、时钟、课程表、待办、倒计时、Codex 额度看板、留言板、画布、OTA 和低功耗。稳定性基线包括：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容；挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志。2026-06-04 增补 Codex/中转站额度页和启动 main task 栈稳定性修复；2026-05-02 增补 PSRAM 友好的图片转换、画板渲染让出 CPU、前端图片预处理实时预览、图层/模板/二维码名片和公开仓库结构整理。
 
 后续实现重点：OTA 与低功耗长稳测试、统一 display queue、更多屏幕型号适配，以及将公开 Release 包和二进制刷机包流程标准化。
 
@@ -92,7 +92,7 @@ msp/
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 + UC8179，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
-│   ├── http_app.c/h           # HTTP 服务器（约 60 条路由 + Basic Auth + OTA）
+│   ├── http_app.c/h           # HTTP 服务器（约 63 条路由 + Basic Auth + OTA）
 │   ├── http_gallery.c         # 画廊 HTTP 路由
 │   ├── http_features.c        # 功能模块 HTTP 路由
 │   ├── http_canvas.c          # 画布留言板 HTTP 路由与素材管理
@@ -106,6 +106,7 @@ msp/
 │   ├── timetable.c/h          # 课程表（7×12 网格 + 学期周次）
 │   ├── todo.c/h               # 待办事项（NVS 持久化 + 进度条）
 │   ├── countdown.c/h          # 倒计时
+│   ├── codex_quota.c/h        # Codex / 中转站额度看板
 │   ├── message_board.c/h      # 留言板
 │   ├── canvas_board.c/h       # WYSIWYG 画布留言板（JSON→fb_t 渲染）
 │   ├── canvas_icons.h         # 内置 1-bit 画布图标库
@@ -138,7 +139,7 @@ msp/
 | **应用入口** | `app_main.c` | 双启动路径：完整启动（WiFi+HTTP+全功能）/ 深睡快速刷新 |
 | **EPD 驱动** | `epd_stub.c` / `epd.h` | SSD1619 + UC8179 双屏支持，SPI DMA，BWR 三色 |
 | **图片转换** | `image_convert.c/h` | JPEG/PNG/BMP 解码、拉伸全屏、Floyd-Steinberg 抖色 |
-| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 约 60 条路由 + Basic Auth + OTA |
+| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 约 63 条路由 + Basic Auth + OTA |
 | **WiFi 管理** | `wifi_manager.c/h` | AP+STA 共存、NVS 凭据、自动重连 |
 | **轮播调度** | `scheduler.c/h` | 画廊顺序/随机自动轮播 |
 | **天气** | `weather.c/h` | 和风天气 HTTPS，实时+3 天预报 |
@@ -659,7 +660,7 @@ SPIFFS 使用率进度条颜色自适应：<70% 绿色、70~90% 黄色、>90% �
 | POST | `/ota` | 固件升级 |
 | GET | `/version` | 固件版本 |
 | POST | `/spiffs_remount` / `/spiffs_format` | 文件系统诊断恢复；格式化必须提交 `{"confirm":"FORMAT_SPIFFS"}` |
-| *… 共约 60 条路由，以 `http_app.c` 为准* | | |
+| *… 共约 63 条路由，以 `http_app.c` 为准* | | |
 
 ---
 
@@ -717,7 +718,7 @@ image_convert_file_to_epd_raw(input_path, out_path);
 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 config.recv_wait_timeout  = 5;      // 接收超时 5 秒，快速释放空闲连接
 config.send_wait_timeout  = 5;      // 发送超时 5 秒
-config.max_uri_handlers   = 64;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前约 60）
+config.max_uri_handlers   = 64;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前约 63）
 config.stack_size         = 16384;  // HTTP 任务栈 16KB（图片转换需要较深调用栈）
 config.lru_purge_enable   = true;   // 当连接数满时，关闭最久未使用的连接
 ```
@@ -947,7 +948,7 @@ app_main()
     │
     ├─ 内容模块初始化                天气/时钟/日历/课程表/待办/留言板/画布/轮播
     │
-    ├─ http_app_start()              HTTP 服务器（约 60 条路由，Basic Auth）
+    ├─ http_app_start()              HTTP 服务器（约 63 条路由，Basic Auth）
     │
     ├─ 显示欢迎屏
     │

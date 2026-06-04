@@ -15,7 +15,14 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
     throw "Missing Gitee token. Set `$env:GITEE_TOKEN first, then rerun this script."
 }
 
-$Description = 'ESP32-S3 智能三色墨水屏终端（epaper_uploader），面向 4.2"/5.83" BWR 电子纸的源码公开、非商业许可固件。支持图片上传与画廊、画板/二维码名片、天气/时钟/万年历、课程表、待办、倒计时、留言板、轮播、低功耗、OTA 与 Web 配网管理；已补齐多屏适配、字库补强、SPIFFS 诊断/格式化和实机 UI 优化。基于 ESP-IDF v5.5.x，当前 v2.3.1。许可：PolyForm Noncommercial 1.0.0；商用/量产需提前取得书面授权。'
+$AboutPath = Join-Path (Split-Path -Parent $PSScriptRoot) "docs\gitee-about.md"
+$About = Get-Content -LiteralPath $AboutPath -Encoding UTF8 -Raw
+$Match = [regex]::Match($About, '```text\s*(.*?)\s*```',
+                        [System.Text.RegularExpressions.RegexOptions]::Singleline)
+if (-not $Match.Success) {
+    throw "Could not find description text block in docs/gitee-about.md"
+}
+$Description = $Match.Groups[1].Value.Trim()
 
 $Body = @{
     access_token = $Token
