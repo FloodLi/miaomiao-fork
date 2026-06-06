@@ -273,7 +273,18 @@ static const char *http_panel_name(epd_panel_t panel)
     switch (panel) {
     case EPD_PANEL_42_BWR: return "4.2 BWR SSD1619";
     case EPD_PANEL_583_BWR: return "5.83 BWR UC8179";
+    case EPD_PANEL_WS_29_BW: return "Waveshare 2.9 BW V2";
+    case EPD_PANEL_WS_29_BWR: return "Waveshare 2.9 BWR B V4";
+    case EPD_PANEL_WS_266_BW: return "Waveshare 2.66 BW";
+    case EPD_PANEL_WS_266_BWR: return "Waveshare 2.66 BWR";
+    case EPD_PANEL_WS_27_BW: return "Waveshare 2.7 BW V2";
+    case EPD_PANEL_WS_27_BWR: return "Waveshare 2.7 BWR B V2";
+    case EPD_PANEL_WS_426_BW: return "Waveshare 4.26 BW";
+    case EPD_PANEL_WS_583_BW: return "Waveshare 5.83 BW V2";
     case EPD_PANEL_WS_583_BWR: return "Waveshare 5.83 BWR B V2";
+    case EPD_PANEL_WS_75_BW: return "Waveshare 7.5 BW V2";
+    case EPD_PANEL_WS_75_BWR: return "Waveshare/GDEW075Z08 7.5 BWR";
+    case EPD_PANEL_WS_42_BWR_UC8176: return "Waveshare 4.2 BWR UC8176";
     default: return "Unknown panel";
     }
 }

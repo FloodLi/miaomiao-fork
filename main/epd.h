@@ -9,10 +9,21 @@ typedef enum {
     EPD_PANEL_42_BWR        = 0,  /* 4.2" 400x300 BW+Red, SSD1619 */
     EPD_PANEL_583_BWR       = 1,  /* 5.83" 648x480 BW+Red, UC8179 */
 
-    /* Keep value 10 stable for devices that already saved this panel in NVS. */
+    /* Waveshare reference drivers ported from E-Paper_ESP32_Driver_Board_Code. */
+    EPD_PANEL_WS_29_BW      = 2,  /* 2.9" 128x296 BW V2 */
+    EPD_PANEL_WS_29_BWR     = 3,  /* 2.9" 128x296 BW+Red B V4 */
+    EPD_PANEL_WS_266_BW     = 4,  /* 2.66" 152x296 BW */
+    EPD_PANEL_WS_266_BWR    = 5,  /* 2.66" 152x296 BW+Red */
+    EPD_PANEL_WS_27_BW      = 6,  /* 2.7" 176x264 BW V2 */
+    EPD_PANEL_WS_27_BWR     = 7,  /* 2.7" 176x264 BW+Red B V2 */
+    EPD_PANEL_WS_426_BW     = 8,  /* 4.26" 800x480 BW */
+    EPD_PANEL_WS_583_BW     = 9,  /* 5.83" 648x480 BW V2 */
     EPD_PANEL_WS_583_BWR    = 10, /* 5.83" 648x480 BW+Red B V2 */
+    EPD_PANEL_WS_75_BW      = 11, /* 7.5" 800x480 BW V2 */
+    EPD_PANEL_WS_75_BWR     = 12, /* 7.5" 800x480 BW+Red B V2 */
+    EPD_PANEL_WS_42_BWR_UC8176 = 13, /* 4.2" 400x300 BW+Red, UC8176 */
 
-    EPD_PANEL_COUNT = 11
+    EPD_PANEL_COUNT
 } epd_panel_t;
 
 /**

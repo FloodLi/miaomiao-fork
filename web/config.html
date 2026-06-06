@@ -282,7 +282,18 @@ input[type=file]{padding:8px;background:var(--sf);border:1px solid var(--sb);col
         <select id="pnPanel">
           <option value="0">4.2 寸 黑白红 (400×300, SSD1619)</option>
           <option value="1">5.83 寸 黑白红 (648×480, UC8179)</option>
+          <option value="2">微雪 2.9 寸 黑白 V2 (128×296)</option>
+          <option value="3">微雪 2.9 寸 黑白红 B V4 (128×296)</option>
+          <option value="4">微雪 2.66 寸 黑白 (152×296)</option>
+          <option value="5">微雪 2.66 寸 黑白红 (152×296)</option>
+          <option value="6">微雪 2.7 寸 黑白 V2 (176×264)</option>
+          <option value="7">微雪 2.7 寸 黑白红 B V2 (176×264)</option>
+          <option value="8">微雪 4.26 寸 黑白 (800×480)</option>
+          <option value="9">微雪 5.83 寸 黑白 V2 (648×480)</option>
           <option value="10">微雪 5.83 寸 黑白红 B V2 (648×480)</option>
+          <option value="11">微雪 7.5 寸 黑白 V2 (800×480)</option>
+          <option value="12">微雪/GDEW075Z08 7.5 寸 黑白红 UC8179 (800×480)</option>
+          <option value="13">微雪 4.2 寸 黑白红 UC8176 (400×300)</option>
         </select>
       </div>
       <div class="row">
@@ -1361,10 +1372,22 @@ function uploadOTA(){
 
 function pnLog(s,cls){const el=document.getElementById('pnLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
-const panelNames=[];
-panelNames[0]='4.2 寸 黑白红 (400×300)';
-panelNames[1]='5.83 寸 黑白红 (648×480)';
-panelNames[10]='微雪 5.83 寸 黑白红 B V2 (648×480)';
+const panelNames=[
+  '4.2 寸 黑白红 (400×300)',
+  '5.83 寸 黑白红 (648×480)',
+  '微雪 2.9 寸 黑白 V2 (128×296)',
+  '微雪 2.9 寸 黑白红 B V4 (128×296)',
+  '微雪 2.66 寸 黑白 (152×296)',
+  '微雪 2.66 寸 黑白红 (152×296)',
+  '微雪 2.7 寸 黑白 V2 (176×264)',
+  '微雪 2.7 寸 黑白红 B V2 (176×264)',
+  '微雪 4.26 寸 黑白 (800×480)',
+  '微雪 5.83 寸 黑白 V2 (648×480)',
+  '微雪 5.83 寸 黑白红 B V2 (648×480)',
+  '微雪 7.5 寸 黑白 V2 (800×480)',
+  '微雪/GDEW075Z08 7.5 寸 黑白红 UC8179 (800×480)',
+  '微雪 4.2 寸 黑白红 UC8176 (400×300)'
+];
 
 async function loadPanel(){
   try{
