@@ -1,5 +1,5 @@
 /**
- * EPD 驱动 — 主测 SSD1619 / UC8179，并接入多款 Waveshare 面板配置
+ * EPD 驱动 — 主测 SSD1619 / UC8179，并保留已验证 Waveshare 5.83" BWR B V2
  *
  * 引脚与工程原理图一致：SCK=4 MOSI=5 DC=7 CS=15 RST=6 BUSY=16，SPI2，Mode0，2MHz。
  * BUSY：Waveshare SSD1619 4.2 B（epd4in2b_V2 ReadBusy，flag=新）为「忙=高、空闲=低」，默认 idle=0。
@@ -47,23 +47,12 @@ static spi_device_handle_t s_spi;
 static SemaphoreHandle_t   s_epd_mutex;
 static epd_panel_t         s_panel = EPD_PANEL_42_BWR;
 
-static uint8_t            *s_z08_prev_bw;
-static int                 s_z08_prev_pb;
-static bool                s_z08_prev_valid;
-
 /** 已为当前面板跑过完整上电初始化序列（避免每次刷屏都硬件复位） */
 static bool s_panel_seq_done;
 
 /** epd_init() 完全结束后再为 true，供 HTTP 与其它任务判断 */
 static bool s_epd_ready;
 
-/*
- * If BUSY gets stuck because of a loose pull-up/pull-down or cable contact,
- * do not keep trusting partial-refresh state.  The panel can often still draw
- * with conservative fixed waits, but the previous-frame cache is no longer
- * safe enough for fast BW refresh.
- */
-static bool s_busy_line_unreliable;
 static atomic_bool s_force_full_refresh_next = ATOMIC_VAR_INIT(false);
 
 /**
@@ -79,9 +68,6 @@ static int busy_idle_effective(void);
 typedef enum {
     EPD_CMD_DATA_24_26,          /* black:0x24, red:0x26, red bit 1 = red */
     EPD_CMD_DATA_10_13,          /* black:0x10, red:0x13, red bit 1 = red */
-    EPD_CMD_DATA_10_92_13,       /* black:0x10, 0x92, red:0x13, red bit 1 = red */
-    EPD_CMD_DATA_10_13_INV_BW,   /* black:0x10, second pass is inverted BW */
-    EPD_CMD_DATA_10_13_INV_RED,  /* black:0x10, red:0x13, red bit 0 = red */
 } epd_data_mode_t;
 
 typedef struct epd_panel_desc {
@@ -102,45 +88,15 @@ static void ssd1619_refresh(void);
 static void ssd1619_cursor_home(void);
 static void uc8179_init_sequence(void);
 static void uc8179_refresh(void);
-static void ws_29_bw_init(void);
-static void ws_29_bwr_init(void);
-static void ws_266_bw_init(void);
-static void ws_266_bwr_init(void);
-static void ws_27_bw_init(void);
-static void ws_27_bwr_init(void);
-static void ws_426_bw_init(void);
-static void ws_583_bw_init(void);
 static void ws_583_bwr_init(void);
-static void ws_75_bw_init(void);
-static void ws_75_bwr_init(void);
-static void ws_42_uc8176_bwr_init(void);
-static void refresh_0x20(void);
-static void refresh_22_f7_20(void);
 static void refresh_12(void);
-static void z08_refresh_bw_area(int x, int y, int w, int h);
-static void z08_prev_cache_drop(void);
 static void panel_ensure_ready(void);
-static void cursor_x8_y16_home(void);
-static void cursor_x8_y9_home(void);
-static void cursor_x8_y9_x1_home(void);
-static void cursor_x16_y16_home(void);
 static void cursor_none(void);
 
 static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_42_BWR]     = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26,         "SSD1619 4.2\" BWR",         ssd1619_init_sequence, ssd1619_refresh, cursor_none },
     [EPD_PANEL_583_BWR]    = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "UC8179 5.83\" BWR",         uc8179_init_sequence,  uc8179_refresh,  cursor_none },
-    [EPD_PANEL_WS_29_BW]   = { 128, 296, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.9\" BW V2",     ws_29_bw_init,        refresh_22_f7_20, cursor_x8_y16_home },
-    [EPD_PANEL_WS_29_BWR]  = { 128, 296, true,  0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.9\" BWR B V4",  ws_29_bwr_init,       refresh_22_f7_20, cursor_x8_y16_home },
-    [EPD_PANEL_WS_266_BW]  = { 152, 296, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.66\" BW",       ws_266_bw_init,       refresh_0x20,     cursor_x8_y9_x1_home },
-    [EPD_PANEL_WS_266_BWR] = { 152, 296, true,  0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.66\" BWR",      ws_266_bwr_init,      refresh_0x20,     cursor_x8_y9_home },
-    [EPD_PANEL_WS_27_BW]   = { 176, 264, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.7\" BW V2",     ws_27_bw_init,        refresh_22_f7_20, cursor_x8_y16_home },
-    [EPD_PANEL_WS_27_BWR]  = { 176, 264, true,  0, false, EPD_CMD_DATA_24_26,         "Waveshare 2.7\" BWR B V2",  ws_27_bwr_init,       refresh_0x20,     cursor_x8_y16_home },
-    [EPD_PANEL_WS_426_BW]  = { 800, 480, false, 0, false, EPD_CMD_DATA_24_26,         "Waveshare 4.26\" BW",       ws_426_bw_init,       refresh_22_f7_20, cursor_x16_y16_home },
-    [EPD_PANEL_WS_583_BW]  = { 648, 480, false, 1, false, EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BW V2",    ws_583_bw_init,       refresh_12,       cursor_none },
     [EPD_PANEL_WS_583_BWR] = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BWR B V2", ws_583_bwr_init,      refresh_12,       cursor_none },
-    [EPD_PANEL_WS_75_BW]   = { 800, 480, false, 1, false, EPD_CMD_DATA_10_13_INV_BW,  "Waveshare 7.5\" BW V2",     ws_75_bw_init,        refresh_12,       cursor_none },
-    [EPD_PANEL_WS_75_BWR]  = { 800, 480, true,  1, true,  EPD_CMD_DATA_10_92_13,      "Waveshare/GDEW075Z08 7.5\" BWR UC8179", ws_75_bwr_init, refresh_12, cursor_none },
-    [EPD_PANEL_WS_42_BWR_UC8176] = { 400, 300, true, 1, false, EPD_CMD_DATA_10_13_INV_RED, "Waveshare 4.2\" BWR UC8176", ws_42_uc8176_bwr_init, refresh_12, cursor_none },
 };
 
 static bool panel_valid(epd_panel_t panel)
@@ -195,7 +151,6 @@ esp_err_t epd_set_panel(epd_panel_t panel)
 
     if (s_panel != panel) {
         fb_release_reserved_planes();
-        z08_prev_cache_drop();
         s_panel_seq_done = false;
         ESP_LOGW(TAG, "Panel changed to %s, will re-init on next display",
                  s_specs[panel].name);
@@ -414,10 +369,8 @@ static void epd_wait_ready(bool after_update_cmd)
         if (waited >= EPD_BUSY_TIMEOUT_MS) {
             ESP_LOGW(TAG, "BUSY timeout %d ms (expect idle=%d, gpio=%d). "
                           "Try NVS key busy_idle=0 or 1 on namespace 'epd'. "
-                          "Fast partial refresh will be disabled until next clean init.",
+                          "Continuing with conservative fixed waits.",
                      waited, idle, (int)gpio_get_level(PIN_EPD_BUSY));
-            s_busy_line_unreliable = true;
-            z08_prev_cache_drop();
             timed_out = true;
             break;
         }
@@ -441,14 +394,6 @@ static void cmd2(uint8_t c, uint8_t v1, uint8_t v2)
     epd_dat(v2);
 }
 
-static void cmd3(uint8_t c, uint8_t v1, uint8_t v2, uint8_t v3)
-{
-    epd_cmd(c);
-    epd_dat(v1);
-    epd_dat(v2);
-    epd_dat(v3);
-}
-
 static void cmd4(uint8_t c, uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4)
 {
     epd_cmd(c);
@@ -458,70 +403,8 @@ static void cmd4(uint8_t c, uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4)
     epd_dat(v4);
 }
 
-static void cmd5(uint8_t c, uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4, uint8_t v5)
-{
-    epd_cmd(c);
-    epd_dat(v1);
-    epd_dat(v2);
-    epd_dat(v3);
-    epd_dat(v4);
-    epd_dat(v5);
-}
-
 static void cursor_none(void)
 {
-}
-
-static void cursor_x8_y16_home(void)
-{
-    epd_cmd(0x4E);
-    epd_dat(0x00);
-    epd_cmd(0x4F);
-    epd_dat(0x00);
-    epd_dat(0x00);
-}
-
-static void cursor_x8_y9_home(void)
-{
-    epd_cmd(0x4E);
-    epd_dat(0x00);
-    epd_cmd(0x4F);
-    epd_dat(0x00);
-    epd_dat(0x00);
-}
-
-static void cursor_x8_y9_x1_home(void)
-{
-    epd_cmd(0x4E);
-    epd_dat(0x01);
-    epd_cmd(0x4F);
-    epd_dat(0x00);
-    epd_dat(0x00);
-}
-
-static void cursor_x16_y16_home(void)
-{
-    epd_cmd(0x4E);
-    epd_dat(0x00);
-    epd_dat(0x00);
-    epd_cmd(0x4F);
-    epd_dat(0x00);
-    epd_dat(0x00);
-}
-
-static void refresh_0x20(void)
-{
-    epd_cmd(0x20);
-    epd_wait_ready(true);
-    delay_ms(200);
-}
-
-static void refresh_22_f7_20(void)
-{
-    cmd1(0x22, 0xF7);
-    epd_cmd(0x20);
-    epd_wait_ready(true);
-    delay_ms(200);
 }
 
 static void refresh_12(void)
@@ -579,19 +462,6 @@ static void panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, int p
         panel_write_plane(0x10, bw, 0xFF, false, pb);
         panel_write_plane(0x13, d->has_red ? red : bw, d->has_red ? 0x00 : 0xFF, false, pb);
         break;
-    case EPD_CMD_DATA_10_92_13:
-        panel_write_plane(0x10, bw, 0xFF, false, pb);
-        epd_cmd(0x92);
-        panel_write_plane(0x13, red, 0x00, false, pb);
-        break;
-    case EPD_CMD_DATA_10_13_INV_BW:
-        panel_write_plane(0x10, bw, 0xFF, false, pb);
-        panel_write_plane(0x13, bw, 0x00, true, pb);
-        break;
-    case EPD_CMD_DATA_10_13_INV_RED:
-        panel_write_plane(0x10, bw, 0xFF, false, pb);
-        panel_write_plane(0x13, red, 0xFF, true, pb);
-        break;
     }
 }
 
@@ -599,89 +469,6 @@ static void panel_write_bw_red(const uint8_t *bw, const uint8_t *red, int pb)
 {
     panel_write_bw_red_data(bw, red, pb);
     panel_desc()->refresh();
-}
-
-/* GDEW075Z08 / UC8179 black-white fast partial path:
- * https://github.com/yanyuandi/FastFreshBWOnColor */
-#define Z08_LUT_T1 30
-#define Z08_LUT_T2 5
-#define Z08_LUT_T3 30
-#define Z08_LUT_T4 5
-
-static const uint8_t Z08_LUT_20_LUTC_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
-static const uint8_t Z08_LUT_21_LUTWW_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
-static const uint8_t Z08_LUT_22_LUTKW_PARTIAL[42] = { 0x5A, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
-static const uint8_t Z08_LUT_23_LUTWK_PARTIAL[42] = { 0xA5, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
-static const uint8_t Z08_LUT_24_LUTKK_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
-static const uint8_t Z08_LUT_25_LUTBD_PARTIAL[42] = { 0x00, Z08_LUT_T1, Z08_LUT_T2, Z08_LUT_T3, Z08_LUT_T4, 1 };
-
-static void z08_write_lut_cmd(uint8_t cmd, const uint8_t *lut)
-{
-    epd_cmd(cmd);
-    epd_bulk(lut, 42);
-}
-
-static void z08_set_partial_ram_area(int x, int y, int w, int h)
-{
-    int xe = (x + w - 1) | 0x07;
-    int ye = y + h - 1;
-    x &= ~0x07;
-    xe |= 0x07;
-
-    epd_cmd(0x90);
-    epd_dat((uint8_t)(x >> 8));
-    epd_dat((uint8_t)x);
-    epd_dat((uint8_t)(xe >> 8));
-    epd_dat((uint8_t)xe);
-    epd_dat((uint8_t)(y >> 8));
-    epd_dat((uint8_t)y);
-    epd_dat((uint8_t)(ye >> 8));
-    epd_dat((uint8_t)ye);
-    epd_dat(0x01);
-}
-
-static void z08_refresh_bw_area(int x, int y, int w, int h)
-{
-    int w1 = (x < 0) ? (w + x) : w;
-    int h1 = (y < 0) ? (h + y) : h;
-    int x1 = (x < 0) ? 0 : x;
-    int y1 = (y < 0) ? 0 : y;
-    int W = epd_width();
-    int H = epd_height();
-
-    w1 = (x1 + w1 < W) ? w1 : (W - x1);
-    h1 = (y1 + h1 < H) ? h1 : (H - y1);
-    if (w1 <= 0 || h1 <= 0)
-        return;
-
-    w1 += x1 % 8;
-    if (w1 % 8 > 0)
-        w1 += 8 - (w1 % 8);
-    x1 -= x1 % 8;
-
-    z08_write_lut_cmd(0x20, Z08_LUT_20_LUTC_PARTIAL);
-    z08_write_lut_cmd(0x21, Z08_LUT_21_LUTWW_PARTIAL);
-    z08_write_lut_cmd(0x22, Z08_LUT_22_LUTKW_PARTIAL);
-    z08_write_lut_cmd(0x23, Z08_LUT_23_LUTWK_PARTIAL);
-    z08_write_lut_cmd(0x24, Z08_LUT_24_LUTKK_PARTIAL);
-    z08_write_lut_cmd(0x25, Z08_LUT_25_LUTBD_PARTIAL);
-
-    cmd1(0x00, 0x3F);
-    cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
-    cmd4(0x61, 0x03, 0x20, 0x01, 0xE0);
-    cmd1(0x15, 0x00);
-    cmd1(0x60, 0x22);
-    cmd1(0x82, 0x31);
-    cmd2(0x50, 0x39, 0x07);
-
-    epd_cmd(0x04);
-    epd_wait_ready(false);
-    epd_cmd(0x91);
-    z08_set_partial_ram_area(x1, y1, w1, h1);
-    epd_cmd(0x12);
-    epd_wait_ready(true);
-    epd_cmd(0x92);
-    delay_ms(200);
 }
 
 static esp_err_t file_send_plane(FILE *f, int pb, bool invert)
@@ -755,37 +542,6 @@ static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file)
             ret = file_send_plane(f, pb, false);
         }
         break;
-    case EPD_CMD_DATA_10_92_13:
-        epd_cmd(0x10);
-        ret = file_send_plane(f, pb, false);
-        if (ret != ESP_OK)
-            return ret;
-        epd_cmd(0x92);
-        epd_cmd(0x13);
-        ret = has_red_file ? file_send_plane(f, pb, false)
-                           : (epd_fill(0x00, (size_t)pb), ESP_OK);
-        break;
-    case EPD_CMD_DATA_10_13_INV_BW:
-        epd_cmd(0x10);
-        ret = file_send_plane(f, pb, false);
-        if (ret != ESP_OK)
-            return ret;
-        if (fseek(f, 0, SEEK_SET) != 0)
-            return ESP_FAIL;
-        epd_cmd(0x13);
-        ret = file_send_plane(f, pb, true);
-        break;
-    case EPD_CMD_DATA_10_13_INV_RED:
-        epd_cmd(0x10);
-        ret = file_send_plane(f, pb, false);
-        if (ret != ESP_OK)
-            return ret;
-        epd_cmd(0x13);
-        if (has_red_file)
-            ret = file_send_plane(f, pb, true);
-        else
-            ret = (epd_fill(0xFF, (size_t)pb), ESP_OK);
-        break;
     }
 
     if (ret == ESP_OK)
@@ -812,143 +568,9 @@ static void panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
         panel_write_plane(0x10, NULL, bw_byte, false, pb);
         panel_write_plane(0x13, NULL, d->has_red ? red_byte : bw_byte, false, pb);
         break;
-    case EPD_CMD_DATA_10_92_13:
-        panel_write_plane(0x10, NULL, bw_byte, false, pb);
-        epd_cmd(0x92);
-        panel_write_plane(0x13, NULL, red_byte, false, pb);
-        break;
-    case EPD_CMD_DATA_10_13_INV_BW:
-        panel_write_plane(0x10, NULL, bw_byte, false, pb);
-        panel_write_plane(0x13, NULL, (uint8_t)~bw_byte, false, pb);
-        break;
-    case EPD_CMD_DATA_10_13_INV_RED:
-        panel_write_plane(0x10, NULL, bw_byte, false, pb);
-        panel_write_plane(0x13, NULL, (uint8_t)~red_byte, false, pb);
-        break;
     }
 
     d->refresh();
-}
-
-static void ws_common_2in9_bw_address(void)
-{
-    cmd3(0x01, 0x27, 0x01, 0x00);
-    cmd1(0x11, 0x03);
-    cmd2(0x44, 0x00, 0x0F);
-    cmd4(0x45, 0x00, 0x00, 0x27, 0x01);
-    cmd2(0x21, 0x00, 0x80);
-    cursor_x8_y16_home();
-}
-
-static void ws_common_2in9_bwr_address(void)
-{
-    ws_common_2in9_bw_address();
-    cmd1(0x3C, 0x05);
-    cmd1(0x18, 0x80);
-}
-
-static void ws_29_bw_init(void)
-{
-    epd_hw_reset();
-    epd_wait_ready(false);
-    epd_cmd(0x12);
-    epd_wait_ready(false);
-    ws_common_2in9_bw_address();
-    ESP_LOGI(TAG, "Waveshare 2.9 BW V2 init OK");
-}
-
-static void ws_29_bwr_init(void)
-{
-    epd_hw_reset();
-    epd_wait_ready(false);
-    epd_cmd(0x12);
-    epd_wait_ready(false);
-    ws_common_2in9_bwr_address();
-    ESP_LOGI(TAG, "Waveshare 2.9 BWR B V4 init OK");
-}
-
-static void ws_266_bw_init(void)
-{
-    epd_hw_reset();
-    epd_wait_ready(false);
-    epd_cmd(0x12);
-    epd_wait_ready(false);
-    cmd1(0x11, 0x03);
-    cmd2(0x44, 0x01, 0x13);
-    cmd4(0x45, 0x00, 0x00, 0x28, 0x01);
-    cursor_x8_y9_x1_home();
-    ESP_LOGI(TAG, "Waveshare 2.66 BW init OK");
-}
-
-static void ws_266_bwr_init(void)
-{
-    epd_hw_reset();
-    epd_wait_ready(false);
-    epd_cmd(0x12);
-    epd_wait_ready(false);
-    cmd1(0x11, 0x03);
-    cmd2(0x44, 0x00, 0x12);
-    cmd4(0x45, 0x00, 0x00, 0x27, 0x01);
-    cmd2(0x21, 0x00, 0x80);
-    cursor_x8_y9_home();
-    ESP_LOGI(TAG, "Waveshare 2.66 BWR init OK");
-}
-
-static void ws_27_bw_init(void)
-{
-    epd_hw_reset();
-    epd_wait_ready(false);
-    epd_cmd(0x12);
-    epd_wait_ready(false);
-    cmd4(0x45, 0x00, 0x00, 0x07, 0x01);
-    cmd2(0x4F, 0x00, 0x00);
-    cmd1(0x11, 0x03);
-    ESP_LOGI(TAG, "Waveshare 2.7 BW V2 init OK");
-}
-
-static void ws_27_bwr_init(void)
-{
-    epd_hw_reset();
-    epd_wait_ready(false);
-    epd_cmd(0x12);
-    epd_wait_ready(false);
-    cmd3(0x00, 0x27, 0x01, 0x00);
-    cmd1(0x11, 0x03);
-    cmd2(0x44, 0x00, 0x15);
-    cmd4(0x45, 0x00, 0x00, 0x07, 0x01);
-    cursor_x8_y16_home();
-    ESP_LOGI(TAG, "Waveshare 2.7 BWR B V2 init OK");
-}
-
-static void ws_426_bw_init(void)
-{
-    epd_hw_reset();
-    delay_ms(100);
-    epd_wait_ready(false);
-    epd_cmd(0x12);
-    epd_wait_ready(false);
-    cmd1(0x18, 0x80);
-    cmd5(0x0C, 0xAE, 0xC7, 0xC3, 0xC0, 0x80);
-    cmd3(0x01, 0xDF, 0x01, 0x02);
-    cmd1(0x3C, 0x01);
-    cmd1(0x11, 0x01);
-    epd_cmd(0x44);
-    epd_dat(0x00); epd_dat(0x00); epd_dat(0x1F); epd_dat(0x03);
-    epd_cmd(0x45);
-    epd_dat(0xDF); epd_dat(0x01); epd_dat(0x00); epd_dat(0x00);
-    cursor_x16_y16_home();
-    ESP_LOGI(TAG, "Waveshare 4.26 BW init OK");
-}
-
-static void ws_583_bw_init(void)
-{
-    epd_hw_reset();
-    cmd1(0x00, 0x1F);
-    cmd2(0x50, 0x21, 0x07);
-    epd_cmd(0x04);
-    delay_ms(100);
-    epd_wait_ready(false);
-    ESP_LOGI(TAG, "Waveshare 5.83 BW V2 init OK");
 }
 
 static void ws_583_bwr_init(void)
@@ -964,53 +586,6 @@ static void ws_583_bwr_init(void)
     cmd2(0x50, 0x11, 0x07);
     cmd1(0x60, 0x22);
     ESP_LOGI(TAG, "Waveshare 5.83 BWR B V2 init OK");
-}
-
-static void ws_75_bw_init(void)
-{
-    epd_hw_reset();
-    cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
-    cmd4(0x06, 0x17, 0x17, 0x28, 0x17);
-    epd_cmd(0x04);
-    delay_ms(100);
-    epd_wait_ready(false);
-    cmd1(0x00, 0x1F);
-    cmd4(0x61, 0x03, 0x20, 0x01, 0xE0);
-    cmd1(0x15, 0x00);
-    cmd2(0x50, 0x10, 0x07);
-    cmd1(0x60, 0x22);
-    ESP_LOGI(TAG, "Waveshare 7.5 BW V2 init OK");
-}
-
-static void ws_75_bwr_init(void)
-{
-    epd_hw_reset();
-    ESP_LOGI(TAG, "Z08: BUSY gpio after reset = %d (idle expect %d)",
-             (int)gpio_get_level(PIN_EPD_BUSY), busy_idle_effective());
-    if (busy_idle_effective() == 1 && gpio_get_level(PIN_EPD_BUSY) == 0)
-        ESP_LOGW(TAG, "Z08 BUSY is low while idle=1. Check BUSY pull-up/contact, or set busy_idle=0 only if this board is wired idle-low.");
-    cmd4(0x01, 0x07, 0x07, 0x3F, 0x3F);
-    epd_cmd(0x04);
-    delay_ms(100);
-    epd_wait_ready(false);
-    cmd1(0x00, 0x0F);
-    cmd4(0x61, 0x03, 0x20, 0x01, 0xE0);
-    cmd1(0x15, 0x00);
-    cmd2(0x50, 0x11, 0x07);
-    cmd1(0x60, 0x22);
-    epd_cmd(0x65);
-    epd_dat(0x00); epd_dat(0x00); epd_dat(0x00); epd_dat(0x00);
-    ESP_LOGI(TAG, "Waveshare 7.5 BWR B V2 init OK");
-}
-
-static void ws_42_uc8176_bwr_init(void)
-{
-    epd_hw_reset();
-    cmd3(0x06, 0x17, 0x17, 0x17);
-    epd_cmd(0x04);
-    epd_wait_ready(false);
-    cmd1(0x00, 0x0F);
-    ESP_LOGI(TAG, "Waveshare 4.2 BWR UC8176 init OK");
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1228,78 +803,8 @@ static void uc8179_refresh(void)
 
 static void panel_run_full_init(void)
 {
-    s_busy_line_unreliable = false;
     panel_desc()->init();
     s_panel_seq_done = true;
-    z08_prev_cache_drop();
-}
-
-static bool z08_fast_capable(void)
-{
-    return s_panel == EPD_PANEL_WS_75_BWR && !s_busy_line_unreliable;
-}
-
-static bool plane_all_value(const uint8_t *data, int len, uint8_t value)
-{
-    if (!data)
-        return true;
-    for (int i = 0; i < len; i++) {
-        if (data[i] != value)
-            return false;
-    }
-    return true;
-}
-
-static esp_err_t z08_prev_cache_ensure(int pb)
-{
-    if (s_z08_prev_bw && s_z08_prev_pb == pb)
-        return ESP_OK;
-
-    free(s_z08_prev_bw);
-    s_z08_prev_bw = heap_caps_malloc((size_t)pb, MALLOC_CAP_8BIT);
-    if (!s_z08_prev_bw) {
-        s_z08_prev_pb = 0;
-        s_z08_prev_valid = false;
-        return ESP_ERR_NO_MEM;
-    }
-    s_z08_prev_pb = pb;
-    memset(s_z08_prev_bw, 0xFF, (size_t)pb);
-    s_z08_prev_valid = false;
-    return ESP_OK;
-}
-
-static void z08_prev_cache_drop(void)
-{
-    free(s_z08_prev_bw);
-    s_z08_prev_bw = NULL;
-    s_z08_prev_pb = 0;
-    s_z08_prev_valid = false;
-}
-
-static void z08_prev_cache_update(const uint8_t *bw, int pb)
-{
-    if (!z08_fast_capable() || !bw || z08_prev_cache_ensure(pb) != ESP_OK)
-        return;
-    memcpy(s_z08_prev_bw, bw, (size_t)pb);
-    s_z08_prev_valid = true;
-}
-
-static void z08_prev_cache_fill(uint8_t value, int pb)
-{
-    if (!z08_fast_capable() || z08_prev_cache_ensure(pb) != ESP_OK)
-        return;
-    memset(s_z08_prev_bw, value, (size_t)pb);
-    s_z08_prev_valid = true;
-}
-
-static void z08_note_full_refresh(const uint8_t *bw, const uint8_t *red, int pb)
-{
-    if (!z08_fast_capable())
-        return;
-    if (plane_all_value(red, pb, 0x00))
-        z08_prev_cache_update(bw, pb);
-    else
-        z08_prev_cache_drop();
 }
 
 static bool consume_force_full_refresh_request(void)
@@ -1309,12 +814,6 @@ static bool consume_force_full_refresh_request(void)
 
 static void prepare_for_forced_full_refresh(void)
 {
-    z08_prev_cache_drop();
-    /*
-     * The Z08 fast path installs a partial LUT.  A mode change must reload the
-     * panel's full waveform before the next full refresh, otherwise the call
-     * path is "full" but the panel still behaves like a partial update.
-     */
     s_panel_seq_done = false;
 }
 
@@ -1344,40 +843,6 @@ static esp_err_t epd_display_from_buffer_fast_locked(const fb_t *fb)
         return ESP_OK;
     }
 
-    if (z08_fast_capable()) {
-        if (!plane_all_value(fb->red, pb, 0x00)) {
-            ESP_LOGW(TAG, "7.5 fast refresh requires empty red plane, falling back to full");
-            return ESP_ERR_NOT_SUPPORTED;
-        }
-
-        esp_err_t ret = z08_prev_cache_ensure(pb);
-        if (ret != ESP_OK)
-            return ret;
-
-        if (!s_z08_prev_valid) {
-            ESP_LOGW(TAG, "7.5 fast refresh has no trusted previous BW frame, falling back to full");
-            return ESP_ERR_NOT_SUPPORTED;
-        }
-
-        epd_cmd(0x91);
-        z08_set_partial_ram_area(0, 0, fb->width, fb->height);
-        epd_cmd(0x10);
-        epd_bulk(s_z08_prev_valid ? s_z08_prev_bw : fb->black, (size_t)pb);
-        epd_cmd(0x13);
-        epd_bulk(fb->black, (size_t)pb);
-        z08_refresh_bw_area(0, 0, fb->width, fb->height);
-
-        epd_cmd(0x91);
-        z08_set_partial_ram_area(0, 0, fb->width, fb->height);
-        epd_cmd(0x13);
-        epd_fill(0x00, (size_t)pb);
-        epd_cmd(0x92);
-
-        z08_prev_cache_update(fb->black, pb);
-        ESP_LOGI(TAG, "display from buffer (fast Z08 BW)");
-        return ESP_OK;
-    }
-
     ESP_LOGW(TAG, "fast refresh unsupported on this panel, falling back to full");
     return ESP_ERR_NOT_SUPPORTED;
 }
@@ -1389,15 +854,11 @@ static void panel_ensure_ready(void)
 }
 
 /** 调用方已持有 s_epd_mutex */
-static void epd_clear_to_white_locked(bool seed_fast_cache)
+static void epd_clear_to_white_locked(void)
 {
     int pb = epd_plane_bytes();
     panel_ensure_ready();
     panel_fill_bw_red(0xFF, 0x00, pb);
-    if (seed_fast_cache)
-        z08_prev_cache_fill(0xFF, pb);
-    else
-        z08_prev_cache_drop();
 }
 
 bool epd_is_ready(void)
@@ -1482,7 +943,7 @@ esp_err_t epd_init(void)
               s_specs[s_panel].name, epd_width(), epd_height(), busy_idle_effective());
 
     panel_run_full_init();
-    epd_clear_to_white_locked(false);
+    epd_clear_to_white_locked();
 
     s_epd_ready = true;
     xSemaphoreGive(s_epd_mutex);
@@ -1501,7 +962,7 @@ esp_err_t epd_clear_screen(void)
         return ESP_ERR_INVALID_STATE;
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
-    epd_clear_to_white_locked(true);
+    epd_clear_to_white_locked();
     xSemaphoreGive(s_epd_mutex);
     return ESP_OK;
 }
@@ -1557,7 +1018,6 @@ esp_err_t epd_display_test_pattern(void)
     panel_ensure_ready();
 
     panel_write_bw_red(buf, red, pb);
-    z08_note_full_refresh(buf, red, pb);
 
     free(red);
     free(buf);
@@ -1603,7 +1063,6 @@ esp_err_t epd_display_from_file(const char *path)
         prepare_for_forced_full_refresh();
     panel_ensure_ready();
     esp_err_t ret = panel_write_bw_red_file(f, pb, has_red_file);
-    z08_prev_cache_drop();
     xSemaphoreGive(s_epd_mutex);
     fclose(f);
     if (ret != ESP_OK)
@@ -1633,7 +1092,6 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
     panel_ensure_ready();
 
     panel_write_bw_red(fb->black, fb->red, pb);
-    z08_note_full_refresh(fb->black, fb->red, pb);
 
     xSemaphoreGive(s_epd_mutex);
 
@@ -1664,19 +1122,8 @@ esp_err_t epd_display_fb_free(fb_t *fb)
         prepare_for_forced_full_refresh();
     panel_ensure_ready();
 
-    if (!force_full && z08_fast_capable() && plane_all_value(fb->red, pb, 0x00)) {
-        esp_err_t fast_ret = epd_display_from_buffer_fast_locked(fb);
-        if (fast_ret == ESP_OK) {
-            fb_destroy(fb);
-            xSemaphoreGive(s_epd_mutex);
-            return ESP_OK;
-        }
-        ESP_LOGW(TAG, "7.5 fast path failed: %s, falling back to full", esp_err_to_name(fast_ret));
-    }
-
     panel_write_bw_red_data(fb->black, fb->red, pb);
     panel_desc()->refresh();
-    z08_note_full_refresh(fb->black, fb->red, pb);
     fb_destroy(fb);
 
     xSemaphoreGive(s_epd_mutex);
