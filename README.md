@@ -91,6 +91,8 @@
 
 主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；主测墨水屏为 **4.2" SSD1619（400×300 BWR）** 与 **5.83" UC8179（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。固件可保存面板配置，建议**保存后重启生效**，避免热切换期间 framebuffer/raw cache 尺寸不一致。
 
+4.2" SSD1619 复刻可参考立创开源硬件工程：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。该工程用于 PCB、外壳附件与硬件结构参考；固件烧录、屏幕型号选择和引脚说明仍以本仓库 README 为准。
+
 ### 屏幕驱动支持状态
 
 | 状态 | 面板 | 分辨率 | 颜色 | 说明 |
@@ -104,7 +106,7 @@
 > 除已验证的微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已按当前维护范围移除；7.5" / 4.2" UC8176 等改为 EPD-nRF5 参考实验入口，编号从 26 开始，若 NVS 中仍保存旧面板编号，固件会回退到默认 4.2" 面板。
 > ATC/Solum 实验入口只移植屏控初始化与刷屏数据路径，不包含 nRF52811 项目的 UICR 自动识别、EPD 电源脚、BS 脚、3 线回读与外挂 EPD EEPROM 支持；请按配置页面板名手动选择。
 
-以下为复刻时常用器件的**示意配图**（文件名与下图一致）；**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
+以下为复刻时常用器件的**示意配图**（文件名与下图一致）；**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，开源硬件工程见 [OSHWHub](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
 
 ### 模组（乐鑫原装）
 
@@ -411,4 +413,4 @@ msp/
 
 ---
 
-> 💡 **复刻提示**：当前仓库公开固件、Web、硬件接线提要和展示素材；若你需要 PCB、外壳或采购级 BOM，请通过 Issue / 交流群确认最新发布状态。
+> 💡 **复刻提示**：当前仓库公开固件、Web、硬件接线提要和展示素材；4.2" SSD1619 PCB/外壳参考见 [OSHWHub 开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。若你需要采购级 BOM 或其他屏幕硬件版本，请通过 Issue / 交流群确认最新发布状态。

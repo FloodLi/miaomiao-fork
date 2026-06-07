@@ -3,7 +3,7 @@
 用于 Gitee 仓库右侧「简介」区域：
 
 ```text
-ESP32-S3 智能三色墨水屏终端（epaper_uploader），面向 4.2"/5.83" BWR 电子纸的源码公开、非商业许可固件。支持图片上传与画廊、画板/二维码名片、天气/时钟/万年历、课程表、待办、倒计时、Codex 额度看板、留言板、轮播、低功耗、OTA 与 Web 配网管理；已补齐多屏适配、字库补强、SPIFFS 诊断/格式化、启动栈稳定性和实机 UI 优化。基于 ESP-IDF v5.5.x，当前 v2.3.1。许可：PolyForm Noncommercial 1.0.0；商用/量产需提前取得书面授权。
+ESP32-S3 智能三色墨水屏终端（epaper_uploader），面向 4.2"/5.83" BWR 电子纸的源码公开、非商业许可固件。支持图片上传与画廊、画板/二维码名片、天气/时钟/万年历、课程表、待办、倒计时、Codex 额度看板、留言板、轮播、低功耗、OTA 与 Web 配网管理；已补齐多屏适配、字库补强、SPIFFS 诊断/格式化、启动栈稳定性和实机 UI 优化。4.2" SSD1619 硬件参考见 https://oshwhub.com/team_voosogmo/project_fxbcjhaa；基于 ESP-IDF v5.5.x，当前 v2.3.1。许可：PolyForm Noncommercial 1.0.0；商用/量产需提前取得书面授权。
 ```
 
 建议标签：
