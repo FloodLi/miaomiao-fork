@@ -4,7 +4,7 @@
 
 本文件仅保留与固件兼容相关的硬件摘要。复刻前请确认器件替代、屏幕批次、BUSY 极性、低功耗电流和排障口径。固件侧已避免运行时热切屏，保护 SPIFFS 用户数据不被挂载失败自动格式化，并在 EPD 初始化失败时保留基础网络诊断能力。
 
-> **说明**：班级/立创等**实采明细（含 LCSC 编号、批次具体屏型料号等）暂不公开**。4.2" SSD1619 PCB/外壳参考见立创开源硬件工程：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。下列仅为与固件**兼容性**相关的提要，避免买错 Flash 或屏驱。
+> **说明**：班级/立创等**实采明细（含 LCSC 编号、批次具体屏型料号等）暂不公开**。配套 4.2" SSD1619 PCB/外壳已开源到嘉立创：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。下列仅为与固件**兼容性**相关的提要，避免买错 Flash 或屏驱。
 
 ## 与 epaper_uploader（本仓库固件）的对应关系
 

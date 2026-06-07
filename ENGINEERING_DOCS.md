@@ -164,7 +164,7 @@ EPD 驱动刷新
 
 ## 三、硬件设计
 
-4.2" SSD1619 PCB、外壳附件与整机结构可参考立创开源硬件工程：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。该工程作为硬件复刻参考；固件侧的引脚、屏幕配置、分区表和烧录流程以本仓库 README / `partitions.csv` 为准。
+本仓库负责 ESP32-S3 固件、Web 管理端与烧录文档；配套 4.2" SSD1619 PCB、外壳附件与整机结构已开源到嘉立创开源硬件工程：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。固件侧的引脚、屏幕配置、分区表和烧录流程以本仓库 README / `partitions.csv` 为准。
 
 ### 3.1 核心元器件
 
@@ -1108,7 +1108,7 @@ idf.py -p COM3 monitor
 - `ROADMAP.md` - 开发规划
 - `COURSE_TABLE_README.md` - 课程表专题
 - `hardware/BOM_ACTUAL.md` / `hardware/BOM.md` - 硬件与固件对齐提要（采购级 BOM 不公开）
-- `https://oshwhub.com/team_voosogmo/project_fxbcjhaa` - 4.2" SSD1619 PCB/外壳参考工程
+- `https://oshwhub.com/team_voosogmo/project_fxbcjhaa` - 配套嘉立创开源硬件工程（4.2" SSD1619 PCB/外壳）
 
 ### B. 术语表
 

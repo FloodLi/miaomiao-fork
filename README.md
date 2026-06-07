@@ -12,10 +12,19 @@
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
 [![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)](#-硬件要求)
+[![JLC Hardware](https://img.shields.io/badge/JLCEDA-%E5%98%89%E7%AB%8B%E5%88%9B%E5%BC%80%E6%BA%90%E7%A1%AC%E4%BB%B6-red)](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)
 
 > 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。  
 > **发布版本：v2.3.1**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 > **构建环境**：**ESP-IDF 最低要求 v5.5.1**；同大版本内更高发行版（如 5.5.4）一般可直接使用，若遇兼容问题以 5.5.1 为对照。
+
+## 🔗 项目入口
+
+| 入口 | 用途 |
+|------|------|
+| [Gitee 固件仓库](https://gitee.com/gxp666111/miaomiao) | ESP32-S3 固件源码、Web 管理页面、文档与免编译烧录包 |
+| [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa) | 配套 4.2" SSD1619 PCB、外壳附件与硬件结构 |
+| [下载固件烧录包](https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip) | 直接获取整合烧录 bin，适合不编译直接刷机 |
 
 ## 💬 交流群（QQ）
 
@@ -91,7 +100,7 @@
 
 主控为 **ESP32-S3**（建议 **16MB Flash**，常见 **N16** 无 PSRAM 或 **N16R8**）；主测墨水屏为 **4.2" SSD1619（400×300 BWR）** 与 **5.83" UC8179（648×480 BWR）**；电源使用低静态电流 **HE9073A** 及锂电池充放电 IC、烧录可用 **CH340** 或开发板自带 **USB** 等。固件可保存面板配置，建议**保存后重启生效**，避免热切换期间 framebuffer/raw cache 尺寸不一致。
 
-4.2" SSD1619 复刻可参考立创开源硬件工程：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。该工程用于 PCB、外壳附件与硬件结构参考；固件烧录、屏幕型号选择和引脚说明仍以本仓库 README 为准。
+本仓库是固件与 Web 管理端；配套硬件已开源到嘉立创开源硬件平台：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。嘉立创工程提供 4.2" SSD1619 PCB、外壳附件与硬件结构，固件烧录、屏幕型号选择和引脚说明仍以本仓库 README 为准。
 
 ### 屏幕驱动支持状态
 
@@ -106,7 +115,7 @@
 > 除已验证的微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已按当前维护范围移除；7.5" / 4.2" UC8176 等改为 EPD-nRF5 参考实验入口，编号从 26 开始，若 NVS 中仍保存旧面板编号，固件会回退到默认 4.2" 面板。
 > ATC/Solum 实验入口只移植屏控初始化与刷屏数据路径，不包含 nRF52811 项目的 UICR 自动识别、EPD 电源脚、BS 脚、3 线回读与外挂 EPD EEPROM 支持；请按配置页面板名手动选择。
 
-以下为复刻时常用器件的**示意配图**（文件名与下图一致）；**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，开源硬件工程见 [OSHWHub](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
+以下为复刻时常用器件的**示意配图**（文件名与下图一致）；配套 PCB / 外壳见 [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)，**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
 
 ### 模组（乐鑫原装）
 
@@ -413,4 +422,4 @@ msp/
 
 ---
 
-> 💡 **复刻提示**：当前仓库公开固件、Web、硬件接线提要和展示素材；4.2" SSD1619 PCB/外壳参考见 [OSHWHub 开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。若你需要采购级 BOM 或其他屏幕硬件版本，请通过 Issue / 交流群确认最新发布状态。
+> 💡 **复刻提示**：当前 Gitee 仓库公开固件、Web、硬件接线提要和展示素材；配套 4.2" SSD1619 PCB / 外壳已发布在 [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。若你需要采购级 BOM 或其他屏幕硬件版本，请通过 Issue / 交流群确认最新发布状态。

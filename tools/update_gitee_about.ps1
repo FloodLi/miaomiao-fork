@@ -27,7 +27,7 @@ $Description = $Match.Groups[1].Value.Trim()
 $Body = @{
     access_token = $Token
     description  = $Description
-    homepage     = "https://gitee.com/$Owner/$Repo"
+    homepage     = "https://oshwhub.com/team_voosogmo/project_fxbcjhaa"
 } | ConvertTo-Json -Compress
 
 $Uri = "https://gitee.com/api/v5/repos/$Owner/$Repo"
