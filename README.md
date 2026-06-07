@@ -1,14 +1,5 @@
 # epaper_uploader — ESP32-S3 智能墨水屏终端
 
-## 项目状态（v2.3.1 / 2026-06-04）
-
-本项目是一个面向复刻和二次开发的源码公开、非商业许可 ESP32-S3 墨水屏终端固件。当前版本已完成公开发布整理：主测 4.2"/5.83" BWR 屏幕配置，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板入口；完成 PSRAM 友好的图片转换与画板渲染优化，增强画板素材、模板、图层和二维码名片能力，并清理了外部参考包与重复原始素材目录。
-
-2026-05-09 这一轮按实机反馈补齐了稳定性和小屏显示问题：时钟模式在 SNTP 同步后会自动重绘，SPIFFS 格式化有网页提示并自动重启，4.2" 待办页不再挤压页脚，日历今日圈不遮挡节日/农历文字，英文与全角英文数字显示更完整，SETUP 页 WiFi 热点、密码、网页地址和 mDNS 信息在 400×300 屏上更容易读全。核心固件本地已通过 `idf.py build` 验证。
-
-2026-06-04 增补 Codex/中转站额度看板：配置页可填写额度 API URL、API Key、显示单位和自动刷新间隔，设备可在墨水屏上显示余额、已用额度、今日用量、请求数和令牌数。启动路径同步显示时已提高 ESP-IDF main task 栈，避免欢迎页切到时钟页时因栈不足重启；当前构建和 release 整包已重新生成并通过 `idf.py build` 验证。
-
-不同批次的屏幕、驱动 IC、BUSY 电平、供电方案和外壳结构可能存在差异。首次复刻建议先按本文档完成基础烧录与网页配置，再根据实际硬件在配置页选择屏幕型号、确认 BUSY 电平和刷屏效果。欢迎提交 Issue、改进建议或适配更多屏幕型号。
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
 [![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)](#-硬件要求)
@@ -25,6 +16,16 @@
 | [Gitee 固件仓库](https://gitee.com/gxp666111/miaomiao) | ESP32-S3 固件源码、Web 管理页面、文档与免编译烧录包 |
 | [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa) | 配套 4.2" SSD1619 PCB、外壳附件与硬件结构 |
 | [下载固件烧录包](https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip) | 直接获取整合烧录 bin，适合不编译直接刷机 |
+
+## 项目状态（v2.3.1 / 2026-06-04）
+
+本项目是一个面向复刻和二次开发的源码公开、非商业许可 ESP32-S3 墨水屏终端固件。当前版本已完成公开发布整理：主测 4.2"/5.83" BWR 屏幕配置，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板入口；完成 PSRAM 友好的图片转换与画板渲染优化，增强画板素材、模板、图层和二维码名片能力，并清理了外部参考包与重复原始素材目录。
+
+2026-06-04 增补 Codex/中转站额度看板：配置页可填写额度 API URL、API Key、显示单位和自动刷新间隔，设备可在墨水屏上显示余额、已用额度、今日用量、请求数和令牌数。启动路径同步显示时已提高 ESP-IDF main task 栈，避免欢迎页切到时钟页时因栈不足重启；当前构建和 release 整包已重新生成并通过 `idf.py build` 验证。
+
+2026-05-09 这一轮按实机反馈补齐了稳定性和小屏显示问题：时钟模式在 SNTP 同步后会自动重绘，SPIFFS 格式化有网页提示并自动重启，4.2" 待办页不再挤压页脚，日历今日圈不遮挡节日/农历文字，英文与全角英文数字显示更完整，SETUP 页 WiFi 热点、密码、网页地址和 mDNS 信息在 400×300 屏上更容易读全。核心固件本地已通过 `idf.py build` 验证。
+
+不同批次的屏幕、驱动 IC、BUSY 电平、供电方案和外壳结构可能存在差异。首次复刻建议先按本文档完成基础烧录与网页配置，再根据实际硬件在配置页选择屏幕型号、确认 BUSY 电平和刷屏效果。欢迎提交 Issue、改进建议或适配更多屏幕型号。
 
 ## 💬 交流群（QQ）
 

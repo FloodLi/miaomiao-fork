@@ -2,18 +2,25 @@
 
 本文档给不熟悉 ESP-IDF 的用户使用。只需要一个整包固件文件和 Espressif 下载工具即可完成烧录。
 
-## 固件文件
-
-推荐下载烧录包：
+## 项目入口
 
 ```text
-epaper_uploader_full_16MB.zip
+Gitee 固件仓库:       https://gitee.com/gxp666111/miaomiao
+嘉立创开源硬件工程:  https://oshwhub.com/team_voosogmo/project_fxbcjhaa
 ```
 
-为了避免 Gitee raw 单文件下载把文件名保存成带单引号的形式，建议从主页的“下载固件烧录包”入口下载，或打开这个专用分支打包下载：
+## 固件文件
+
+推荐下载入口：
 
 ```text
 https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip
+```
+
+为了避免 Gitee raw 单文件下载把文件名保存成带单引号的形式，建议从主页的“下载固件烧录包”入口下载，或打开这个专用分支打包下载。Gitee 下载到本地的文件通常叫：
+
+```text
+firmware-download.zip
 ```
 
 解压后使用整包固件：

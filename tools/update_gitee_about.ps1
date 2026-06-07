@@ -17,17 +17,22 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
 
 $AboutPath = Join-Path (Split-Path -Parent $PSScriptRoot) "docs\gitee-about.md"
 $About = Get-Content -LiteralPath $AboutPath -Encoding UTF8 -Raw
-$Match = [regex]::Match($About, '```text\s*(.*?)\s*```',
-                        [System.Text.RegularExpressions.RegexOptions]::Singleline)
-if (-not $Match.Success) {
+$Matches = [regex]::Matches($About, '```text\s*(.*?)\s*```',
+                            [System.Text.RegularExpressions.RegexOptions]::Singleline)
+if ($Matches.Count -lt 1) {
     throw "Could not find description text block in docs/gitee-about.md"
 }
-$Description = $Match.Groups[1].Value.Trim()
+$Description = $Matches[0].Groups[1].Value.Trim()
+$Homepage = if ($Matches.Count -ge 2) {
+    $Matches[1].Groups[1].Value.Trim()
+} else {
+    "https://oshwhub.com/team_voosogmo/project_fxbcjhaa"
+}
 
 $Body = @{
     access_token = $Token
     description  = $Description
-    homepage     = "https://oshwhub.com/team_voosogmo/project_fxbcjhaa"
+    homepage     = $Homepage
 } | ConvertTo-Json -Compress
 
 $Uri = "https://gitee.com/api/v5/repos/$Owner/$Repo"
