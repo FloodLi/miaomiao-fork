@@ -273,18 +273,31 @@ static const char *http_panel_name(epd_panel_t panel)
     switch (panel) {
     case EPD_PANEL_42_BWR: return "4.2 BWR SSD1619";
     case EPD_PANEL_583_BWR: return "5.83 BWR UC8179";
-    case EPD_PANEL_WS_29_BW: return "Waveshare 2.9 BW V2";
-    case EPD_PANEL_WS_29_BWR: return "Waveshare 2.9 BWR B V4";
-    case EPD_PANEL_WS_266_BW: return "Waveshare 2.66 BW";
-    case EPD_PANEL_WS_266_BWR: return "Waveshare 2.66 BWR";
-    case EPD_PANEL_WS_27_BW: return "Waveshare 2.7 BW V2";
-    case EPD_PANEL_WS_27_BWR: return "Waveshare 2.7 BWR B V2";
-    case EPD_PANEL_WS_426_BW: return "Waveshare 4.26 BW";
-    case EPD_PANEL_WS_583_BW: return "Waveshare 5.83 BW V2";
     case EPD_PANEL_WS_583_BWR: return "Waveshare 5.83 BWR B V2";
-    case EPD_PANEL_WS_75_BW: return "Waveshare 7.5 BW V2";
-    case EPD_PANEL_WS_75_BWR: return "Waveshare/GDEW075Z08 7.5 BWR";
-    case EPD_PANEL_WS_42_BWR_UC8176: return "Waveshare 4.2 BWR UC8176";
+    case EPD_PANEL_ATC_SSD1619_16_BWR: return "ATC/Solum 1.6 BWR SSD1619 exp";
+    case EPD_PANEL_ATC_SSD1619_22_BWR: return "ATC/Solum 2.2 BWR SSD1619 exp";
+    case EPD_PANEL_ATC_SSD1619_26_BWR: return "ATC/Solum 2.6 BWR SSD1619 exp";
+    case EPD_PANEL_ATC_SSD1619_29_BWR: return "ATC/Solum 2.9 BWR SSD1619 exp";
+    case EPD_PANEL_ATC_UC8151_29_BWR: return "ATC/Solum 2.9 BWR UC8151 exp";
+    case EPD_PANEL_ATC_UCVAR43_BWR: return "ATC/Solum 4.3 BWR UC variant exp";
+    case EPD_PANEL_ATC_DUALSSD_585_BWR: return "ATC/Solum 5.85 BWR dual SSD exp";
+    case EPD_PANEL_ATC_DUALSSD_585_BW: return "ATC/Solum 5.85 BW dual SSD exp";
+    case EPD_PANEL_ATC_UC8159_60_BWR: return "ATC/Solum 6.0 BWR UC8159 exp";
+    case EPD_PANEL_ATC_UC8179_74_BWR: return "ATC/Solum 7.4 BWR UC8179 exp";
+    case EPD_PANEL_ATC_SSD_97_BWR: return "ATC/Solum 9.7 BWR SSD exp";
+    case EPD_PANEL_ATC_PEGHOOK_13_BWR: return "ATC/Solum 1.3 peghook BWR SSD exp";
+    case EPD_PANEL_REF_UC8176_42_BW: return "Ref UC8176 4.2 BW exp";
+    case EPD_PANEL_REF_UC8176_42_BWR: return "Ref UC8176 4.2 BWR exp";
+    case EPD_PANEL_REF_UC8179_75_BW: return "Ref UC8179 7.5 BW exp";
+    case EPD_PANEL_REF_UC8179_75_BWR: return "Ref UC8179 7.5 BWR exp";
+    case EPD_PANEL_REF_UC8159_583_BW: return "Ref UC8159 5.83 BW exp";
+    case EPD_PANEL_REF_UC8159_75_LOW_BWR: return "Ref UC8159 7.5 low BWR exp";
+    case EPD_PANEL_REF_SSD1677_75_HD_BW: return "Ref SSD1677 7.5 HD BW exp";
+    case EPD_PANEL_REF_SSD1677_75_HD_BWR: return "Ref SSD1677 7.5 HD BWR exp";
+    case EPD_PANEL_REF_JD79665_75_BWRY: return "Ref JD79665 7.5 BWRY exp";
+    case EPD_PANEL_REF_SSD1619_42_BW: return "Ref SSD1619 4.2 BW exp";
+    case EPD_PANEL_REF_SSD1619_42_BWR: return "Ref SSD1619 4.2 BWR exp";
+    case EPD_PANEL_REF_JD79668_42_BWRY: return "Ref JD79668 4.2 BWRY exp";
     default: return "Unknown panel";
     }
 }
@@ -1363,7 +1376,23 @@ static esp_err_t spiffs_format_post_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_Parse(buf);
     const char *confirm = root ? cJSON_GetStringValue(cJSON_GetObjectItem(root, "confirm")) : NULL;
-    if (!confirm || strcmp(confirm, "FORMAT_SPIFFS") != 0) {
+    char confirm_norm[32] = {0};
+    if (confirm) {
+        size_t start = 0;
+        size_t len = strlen(confirm);
+        while (start < len && (unsigned char)confirm[start] <= ' ')
+            start++;
+        while (len > start && (unsigned char)confirm[len - 1] <= ' ')
+            len--;
+        size_t out_len = len - start;
+        if (out_len >= sizeof(confirm_norm))
+            out_len = sizeof(confirm_norm) - 1;
+        for (size_t i = 0; i < out_len; i++) {
+            char ch = confirm[start + i];
+            confirm_norm[i] = (ch >= 'a' && ch <= 'z') ? (char)(ch - 'a' + 'A') : ch;
+        }
+    }
+    if (strcmp(confirm_norm, "FORMAT_SPIFFS") != 0) {
         if (root) cJSON_Delete(root);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "missing confirm");
         return ESP_OK;

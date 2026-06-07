@@ -26,6 +26,7 @@
  */
 
 #include "esp_err.h"
+#include "fb_render.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -103,7 +104,7 @@ esp_err_t canvas_board_delete_user_icon(const char *name);
  * 新格式：旧头 + "BW" + flags + reserved + 黑色平面 + 红色平面。
  */
 #define CANVAS_IMAGES_DIR       "/spiffs/cimg"
-#define CANVAS_IMAGE_MAX_BYTES  100000  /* 支持最大 800×480 黑/红双平面 + header */
+#define CANVAS_IMAGE_MAX_BYTES  (8 + FB_MAX_PLANE_BYTES * 2)  /* header + max black/red planes */
 
 /**
  * 获取已上传图片名列表（JSON 数组，调用者提供缓冲区）。

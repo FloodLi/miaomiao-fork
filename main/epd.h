@@ -9,19 +9,35 @@ typedef enum {
     EPD_PANEL_42_BWR        = 0,  /* 4.2" 400x300 BW+Red, SSD1619 */
     EPD_PANEL_583_BWR       = 1,  /* 5.83" 648x480 BW+Red, UC8179 */
 
-    /* Waveshare reference drivers ported from E-Paper_ESP32_Driver_Board_Code. */
-    EPD_PANEL_WS_29_BW      = 2,  /* 2.9" 128x296 BW V2 */
-    EPD_PANEL_WS_29_BWR     = 3,  /* 2.9" 128x296 BW+Red B V4 */
-    EPD_PANEL_WS_266_BW     = 4,  /* 2.66" 152x296 BW */
-    EPD_PANEL_WS_266_BWR    = 5,  /* 2.66" 152x296 BW+Red */
-    EPD_PANEL_WS_27_BW      = 6,  /* 2.7" 176x264 BW V2 */
-    EPD_PANEL_WS_27_BWR     = 7,  /* 2.7" 176x264 BW+Red B V2 */
-    EPD_PANEL_WS_426_BW     = 8,  /* 4.26" 800x480 BW */
-    EPD_PANEL_WS_583_BW     = 9,  /* 5.83" 648x480 BW V2 */
-    EPD_PANEL_WS_583_BWR    = 10, /* 5.83" 648x480 BW+Red B V2 */
-    EPD_PANEL_WS_75_BW      = 11, /* 7.5" 800x480 BW V2 */
-    EPD_PANEL_WS_75_BWR     = 12, /* 7.5" 800x480 BW+Red B V2 */
-    EPD_PANEL_WS_42_BWR_UC8176 = 13, /* 4.2" 400x300 BW+Red, UC8176 */
+    EPD_PANEL_WS_583_BWR    = 10, /* Verified Waveshare 5.83" 648x480 BW+Red B V2 */
+
+    /* Experimental Solum/ATC tag drivers ported from atc1441/Tag_FW_nRF52811. */
+    EPD_PANEL_ATC_SSD1619_16_BWR = 14, /* 1.6" 200x200 BW+Red, SSD1619 family */
+    EPD_PANEL_ATC_SSD1619_22_BWR = 15, /* 2.2" 160x296 BW+Red, SSD1619 family */
+    EPD_PANEL_ATC_SSD1619_26_BWR = 16, /* 2.6" 184x360 BW+Red, SSD1619 family */
+    EPD_PANEL_ATC_SSD1619_29_BWR = 17, /* 2.9" 168x384 BW+Red, SSD1619 family */
+    EPD_PANEL_ATC_UC8151_29_BWR  = 18, /* 2.9" 168x384 BW+Red, UC8151 variant */
+    EPD_PANEL_ATC_UCVAR43_BWR    = 19, /* 4.3" 152x522 BW+Red, UC variant */
+    EPD_PANEL_ATC_DUALSSD_585_BWR = 20, /* 5.85" 792x272 BW+Red, dual SSD */
+    EPD_PANEL_ATC_DUALSSD_585_BW  = 21, /* 5.85" 792x272 BW, dual SSD */
+    EPD_PANEL_ATC_UC8159_60_BWR  = 22, /* 6.0" 600x448 BW+Red, UC8159 */
+    EPD_PANEL_ATC_UC8179_74_BWR  = 23, /* 7.4" 800x480 BW+Red, UC8179 */
+    EPD_PANEL_ATC_SSD_97_BWR     = 24, /* 9.7" 960x672 BW+Red, SSD family */
+    EPD_PANEL_ATC_PEGHOOK_13_BWR = 25, /* 1.3" 144x200 BW+Red, SSD family */
+
+    /* Experimental reference drivers reimplemented from EPD-nRF5 command models. */
+    EPD_PANEL_REF_UC8176_42_BW       = 26, /* 4.2" 400x300 BW, UC8176 */
+    EPD_PANEL_REF_UC8176_42_BWR      = 27, /* 4.2" 400x300 BW+Red, UC8176 */
+    EPD_PANEL_REF_UC8179_75_BW       = 28, /* 7.5" 800x480 BW, UC8179 */
+    EPD_PANEL_REF_UC8179_75_BWR      = 29, /* 7.5" 800x480 BW+Red, UC8179 */
+    EPD_PANEL_REF_UC8159_583_BW      = 30, /* 5.83" 600x448 BW, UC8159 */
+    EPD_PANEL_REF_UC8159_75_LOW_BWR  = 31, /* 7.5" 640x384 BW+Red low-res, UC8159 */
+    EPD_PANEL_REF_SSD1677_75_HD_BW   = 32, /* 7.5" 880x528 BW HD, SSD1677 */
+    EPD_PANEL_REF_SSD1677_75_HD_BWR  = 33, /* 7.5" 880x528 BW+Red HD, SSD1677 */
+    EPD_PANEL_REF_JD79665_75_BWRY    = 34, /* 7.5" 800x480 BWRY, JD79665; yellow shares color plane */
+    EPD_PANEL_REF_SSD1619_42_BW      = 35, /* 4.2" 400x300 BW, SSD1619 */
+    EPD_PANEL_REF_SSD1619_42_BWR     = 36, /* 4.2" 400x300 BW+Red, SSD1619 */
+    EPD_PANEL_REF_JD79668_42_BWRY    = 37, /* 4.2" 400x300 BWRY, JD79668; yellow shares color plane */
 
     EPD_PANEL_COUNT
 } epd_panel_t;
