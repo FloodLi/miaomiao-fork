@@ -11,7 +11,7 @@
 > **项目版本**: v2.3.1（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）
 > **文档版本**: 2.3.5（实机问题修复整理）
 > **最后更新**: 2026-05-09
-> **硬件平台**: ESP32-S3 + SSD1619(4.2") / UC8179(5.83")，并接入 ATC/Solum 实验面板配置入口
+> **硬件平台**: ESP32-S3 + SSD1619(4.2") / UC8179(5.83")，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板配置入口
 > **软件框架**: ESP-IDF（**最低要求 v5.5.1**；5.5.x 更高发行版通常兼容）
 > **文档状态**: ✅ 完整
 
@@ -40,7 +40,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
 
 ### 1.2 核心特性
 
-- ✅ **多面板支持**: 主测 4.2" (400×300) 和 5.83" (648×480) 三色墨水屏；配置页另接入 ATC/Solum 实验面板
+- ✅ **多面板支持**: 主测 4.2" (400×300) 和 5.83" (648×480) 三色墨水屏；配置页另接入 ATC/Solum 与 EPD-nRF5 参考实验面板
 - ✅ **WiFi 连接**: STA/AP 模式，mDNS 发现，自动重连
 - ✅ **图片显示**: JPEG/PNG/BMP 格式，Floyd-Steinberg 抖动算法
 - ✅ **Web 管理**: 响应式 UI，三套主题，OTA 升级
@@ -819,7 +819,7 @@ POST /show?name=img_20260101.jpg
 
 **配置项:**
 1. WiFi 配置
-2. 屏幕选择（主测 4.2" / 5.83" 与 ATC/Solum 实验面板）
+2. 屏幕选择（主测 4.2" / 5.83" 与 ATC/Solum、EPD-nRF5 参考实验面板）
 3. 轮播配置
 4. 天气配置
 5. 时钟配置
@@ -1048,7 +1048,7 @@ idf.py -p COM3 monitor
 
 **源代码:**
 - `main/app_main.c` - 主入口（双启动路径）
-- `main/epd_stub.c` - EPD 驱动（SSD1619 / UC8179）
+- `main/epd_stub.c` - EPD 驱动（SSD1619 / UC8179 / ATC-Solum / EPD-nRF5 参考面板）
 - `main/http_app.c` - HTTP 服务器核心 + Basic Auth + OTA
 - `main/http_gallery.c` - 画廊 HTTP 路由
 - `main/http_features.c` - 功能模块 HTTP 路由

@@ -2,7 +2,7 @@
 
 ## 项目状态（v2.3.1 / 2026-06-04）
 
-本项目是一个面向复刻和二次开发的源码公开、非商业许可 ESP32-S3 墨水屏终端固件。当前版本已完成公开发布整理：主测 4.2"/5.83" BWR 屏幕配置，并接入 ATC/Solum 实验面板入口；完成 PSRAM 友好的图片转换与画板渲染优化，增强画板素材、模板、图层和二维码名片能力，并清理了外部参考包与重复原始素材目录。
+本项目是一个面向复刻和二次开发的源码公开、非商业许可 ESP32-S3 墨水屏终端固件。当前版本已完成公开发布整理：主测 4.2"/5.83" BWR 屏幕配置，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板入口；完成 PSRAM 友好的图片转换与画板渲染优化，增强画板素材、模板、图层和二维码名片能力，并清理了外部参考包与重复原始素材目录。
 
 2026-05-09 这一轮按实机反馈补齐了稳定性和小屏显示问题：时钟模式在 SNTP 同步后会自动重绘，SPIFFS 格式化有网页提示并自动重启，4.2" 待办页不再挤压页脚，日历今日圈不遮挡节日/农历文字，英文与全角英文数字显示更完整，SETUP 页 WiFi 热点、密码、网页地址和 mDNS 信息在 400×300 屏上更容易读全。核心固件本地已通过 `idf.py build` 验证。
 
@@ -273,7 +273,7 @@ msp/
 │   ├── CMakeLists.txt           # 组件注册、源文件列表、EMBED_FILES
 │   ├── idf_component.yml        # ESP-IDF 组件依赖与版本约束
 │   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
-│   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179 / ATC-Solum 实验面板，SPI DMA）
+│   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179 / ATC-Solum / EPD-nRF5 参考面板，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
 │   ├── http_app.c/h             # HTTP 服务（约 63 条 URI + Basic Auth + OTA）
 │   ├── http_gallery.c           # 画廊相关路由
@@ -393,7 +393,7 @@ msp/
 | [hardware/BOM.md](hardware/BOM.md) | 硬件与固件对齐提要（无采购表） | 复刻者 |
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
 
-> **说明**：屏幕切换、ATC/Solum 实验面板适配状态和排障步骤见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md)；若你本地另有 `docs/` 子目录教辅材料，以实际仓库文件为准。
+> **说明**：屏幕切换、ATC/Solum 与 EPD-nRF5 参考实验面板适配状态和排障步骤见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md)；若你本地另有 `docs/` 子目录教辅材料，以实际仓库文件为准。
 
 ## 🤝 参与贡献
 
