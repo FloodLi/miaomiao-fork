@@ -10,10 +10,13 @@
 - 推荐命令：
 
 ```powershell
+idf.py fullclean
 idf.py set-target esp32s3
 idf.py build
 idf.py -p COMx flash monitor
 ```
+
+如果从 Gitee 下载源码 ZIP 后用 VSCode 打开，先确认没有旧的 `build/`、`sdkconfig`、`managed_components/` 残留；这些目录/文件是本地生成物，不应提交。
 
 ## 提交 Issue 前
 

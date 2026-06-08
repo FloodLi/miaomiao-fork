@@ -232,6 +232,8 @@ BAUD: 115200 或 460800
 
 ### 4. 开发者编译与烧录
 
+本项目目标芯片固定为 **ESP32-S3**。仓库已在 `CMakeLists.txt` 和 `.vscode/settings.json` 中写入默认目标；如果你是从 Gitee 源码 ZIP 解压后首次用 VSCode 打开，建议先执行一次“干净配置”，避免旧目录残留的 `build/CMakeCache.txt`、`sdkconfig` 或 VSCode 缓存继续按普通 ESP32 编译。
+
 ```powershell
 # 首次配置目标芯片，只需要执行一次
 
@@ -248,11 +250,14 @@ idf.py -p COM3 build flash monitor
 
 ```powershell
 idf.py fullclean
+Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
 idf.py set-target esp32s3
 idf.py -p COM3 build flash monitor
 ```
 
 典型错误特征是日志出现 `Building ESP-IDF components for target esp32`、`GPIO_NUM_46 undeclared` 或 `hal/usb_serial_jtag_ll.h: No such file or directory`。这些都表示当前按普通 ESP32 编译了本 ESP32-S3 固件。
+
+> 不建议把新下载的源码 ZIP 直接覆盖到旧工程目录；如果覆盖后 VSCode 仍然报错，删掉 `build/` 后重新 `idf.py set-target esp32s3` 即可。更稳的方式是用 `git clone` 获取源码。
 
 ### 5. 关于 erase-flash
 
