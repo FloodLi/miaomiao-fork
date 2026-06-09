@@ -3,6 +3,8 @@
 #include <string.h>
 #include <dirent.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <sys/stat.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -11,6 +13,8 @@
 #include "nvs.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_heap_caps.h"
+#include "sdkconfig.h"
 
 #include "image_convert.h"
 #include "epd.h"
@@ -44,6 +48,101 @@ static char  s_current_image[64];
 static int   s_current_index;
 
 #define NVS_KEY_INDEX  "cur_idx"
+
+static uint8_t *slideshow_alloc_plane(int plane_bytes, const char *label)
+{
+    if (plane_bytes <= 0)
+        return NULL;
+
+    uint8_t *buf = NULL;
+#ifdef CONFIG_SPIRAM
+    buf = heap_caps_malloc((size_t)plane_bytes,
+                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buf)
+        return buf;
+    ESP_LOGW(TAG, "%s PSRAM alloc(%d) failed", label, plane_bytes);
+#endif
+
+    buf = heap_caps_malloc((size_t)plane_bytes, MALLOC_CAP_8BIT);
+    if (!buf)
+        ESP_LOGW(TAG, "%s alloc(%d) failed", label, plane_bytes);
+    return buf;
+}
+
+static bool raw_has_plane_count(const char *path, int plane_bytes, int count)
+{
+    if (!path || plane_bytes <= 0 || count <= 0)
+        return false;
+
+    struct stat st;
+    if (stat(path, &st) != 0)
+        return false;
+    return st.st_size >= (off_t)plane_bytes * count;
+}
+
+static uint8_t *raw_load_yellow_plane(const char *path, int plane_bytes)
+{
+    if (!epd_has_yellow() || !raw_has_plane_count(path, plane_bytes, 3))
+        return NULL;
+
+    uint8_t *yellow = slideshow_alloc_plane(plane_bytes, "slideshow yellow plane");
+    if (!yellow)
+        return NULL;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        free(yellow);
+        return NULL;
+    }
+
+    bool ok = fseek(f, (long)plane_bytes * 2L, SEEK_SET) == 0 &&
+              fread(yellow, 1, (size_t)plane_bytes, f) == (size_t)plane_bytes;
+    fclose(f);
+    if (!ok) {
+        free(yellow);
+        return NULL;
+    }
+    return yellow;
+}
+
+static bool raw_append_yellow_plane(const char *path, const uint8_t *yellow,
+                                    int plane_bytes)
+{
+    if (!path || !yellow || plane_bytes <= 0)
+        return false;
+
+    FILE *f = fopen(path, "ab");
+    if (!f)
+        return false;
+    bool ok = fwrite(yellow, 1, (size_t)plane_bytes, f) == (size_t)plane_bytes;
+    if (fclose(f) != 0)
+        ok = false;
+    return ok;
+}
+
+static void raw_clear_yellow_rect(uint8_t *yellow, int x, int y, int w, int h)
+{
+    if (!yellow || w <= 0 || h <= 0)
+        return;
+
+    int W = epd_width();
+    int H = epd_height();
+    int rb = W / 8;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w;
+    int y1 = y + h;
+    if (x1 > W) x1 = W;
+    if (y1 > H) y1 = H;
+    if (x0 >= x1 || y0 >= y1)
+        return;
+
+    for (int yy = y0; yy < y1; yy++) {
+        size_t row = (size_t)yy * (size_t)rb;
+        for (int xx = x0; xx < x1; xx++)
+            yellow[row + (size_t)(xx >> 3)] &= (uint8_t)~(0x80u >> (xx & 7));
+    }
+}
 
 /* ── NVS helpers ──────────────────────────────────────────────────── */
 
@@ -186,21 +285,39 @@ static void show_next_image(void)
     }
 
     if (clock_ovl && time_sync_is_synced()) {
-        fb_t *fb = fb_create();
-        if (fb) {
-            fb_import(fb, raw_path);
-            struct tm tm;
-            if (time_sync_get_local(&tm)) {
-                char ts[8];
-                snprintf(ts, sizeof(ts), "%02d:%02d", tm.tm_hour, tm.tm_min);
-                int W = epd_width();
-                int tx = W - 8 * 2 * 5 - 8;
-                fb_fill_rect(fb, tx - 4, 2, 8 * 2 * 5 + 12, 22, COLOR_WHITE);
-                fb_utf8_scaled(fb, tx, 4, ts, COLOR_BLACK, 2);
+        int pb = epd_plane_bytes();
+        bool has_yellow_raw = epd_has_yellow() && raw_has_plane_count(raw_path, pb, 3);
+        uint8_t *yellow_plane = has_yellow_raw ? raw_load_yellow_plane(raw_path, pb) : NULL;
+        if (has_yellow_raw && !yellow_plane) {
+            ESP_LOGW(TAG, "clock overlay skipped: yellow plane buffer unavailable");
+        } else {
+            fb_t *fb = fb_create();
+            if (fb) {
+                esp_err_t imp_err = fb_import(fb, raw_path);
+                if (imp_err == ESP_OK) {
+                    struct tm tm;
+                    if (time_sync_get_local(&tm)) {
+                        char ts[8];
+                        snprintf(ts, sizeof(ts), "%02d:%02d", tm.tm_hour, tm.tm_min);
+                        int W = epd_width();
+                        int tx = W - 8 * 2 * 5 - 8;
+                        fb_fill_rect(fb, tx - 4, 2, 8 * 2 * 5 + 12, 22, COLOR_WHITE);
+                        raw_clear_yellow_rect(yellow_plane, tx - 4, 2,
+                                              8 * 2 * 5 + 12, 22);
+                        fb_utf8_scaled(fb, tx, 4, ts, COLOR_BLACK, 2);
+                    }
+                    esp_err_t exp_err = fb_export(fb, raw_path);
+                    if (exp_err == ESP_OK && yellow_plane &&
+                        !raw_append_yellow_plane(raw_path, yellow_plane, pb)) {
+                        ESP_LOGW(TAG, "failed to restore yellow plane after clock overlay");
+                    }
+                } else {
+                    ESP_LOGW(TAG, "clock overlay import failed: %s", esp_err_to_name(imp_err));
+                }
+                fb_destroy(fb);
             }
-            fb_export(fb, raw_path);
-            fb_destroy(fb);
         }
+        free(yellow_plane);
     }
 
     if (display_policy_manual_screen_active() ||
