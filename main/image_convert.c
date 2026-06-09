@@ -253,7 +253,7 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
                                       uint8_t *yellow,
                                       int x, int y, int w,
                                       uint8_t r, uint8_t g, uint8_t b,
-                                      bool has_red, bool has_yellow)
+                                      bool has_yellow)
 {
     size_t bp = (size_t)y * (w / 8) + (size_t)(x >> 3);
     uint8_t bit = (uint8_t)(0x80u >> (x & 7));
@@ -265,7 +265,7 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
     int chroma = max_c - min_c;
     uint8_t lum = (uint8_t)((ri * 77u + gi * 150u + bi * 29u) >> 8);
 
-    int red_strength = has_red ? red_ink_strength(r, g, b) : 0;
+    int red_strength = red_ink_strength(r, g, b);
     if (red_strength > (int)threshold) {
         red[bp] |= bit;
         black[bp] |= bit;
@@ -279,7 +279,7 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
         return;
     }
 
-    if (has_red && chroma >= 30 && max_c >= 40) {
+    if (chroma >= 30 && max_c >= 40) {
         int hue6 = 0;
         if (max_c == ri)      hue6 = ((gi - bi) * 60) / chroma;
         else if (max_c == gi) hue6 = 120 + ((bi - ri) * 60) / chroma;
@@ -494,8 +494,7 @@ static UINT jpeg_outfunc_bayer(JDEC *jd, void *bitmap, JRECT *rect)
             for (int ey = ey0; ey < ey1; ey++)
                 for (int ex = ex0; ex < ex1; ex++)
                     dither_pixel_bayer(o->black, o->red, o->yellow, ex, ey,
-                                       o->w, r, g, b,
-                                       o->has_red, o->has_yellow);
+                                       o->w, r, g, b, o->has_yellow);
         }
     }
     return 1;
@@ -667,9 +666,7 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     ctx->out = (epd_out_t){
         .black = black, .red = red, .yellow = yellow,
         .w = EW, .h = EH,
-        .sw = decoded_w, .sh = decoded_h,
-        .has_red = has_red,
-        .has_yellow = has_yellow
+        .sw = decoded_w, .sh = decoded_h
     };
 
     /* Try red-first Floyd-Steinberg; fall back to Bayer if OOM */
@@ -823,7 +820,7 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
                     b = (uint8_t)((b * a + 255u * (255u - a)) / 255u);
                 }
                 dither_pixel_bayer(black, red, yellow, ex, ey, EW, r, g, b,
-                                   has_red, has_yellow);
+                                   has_yellow);
             }
         }
     }
@@ -1018,7 +1015,7 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                 int pi = src_x * bpp_bytes;
                 dither_pixel_bayer(black, red, yellow, ex, ey, EW,
                                    row[pi + 2], row[pi + 1], row[pi + 0],
-                                   has_red_bmp, has_yellow_bmp);
+                                   has_yellow_bmp);
             }
         }
     }
