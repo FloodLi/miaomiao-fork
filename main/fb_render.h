@@ -14,6 +14,9 @@ typedef enum {
     COLOR_RED   = 2,
 } fb_color_t;
 
+/* Built-in UI rendering is currently two-plane (black + red).
+ * Native yellow panels use the third plane only in image conversion/raw output.
+ */
 typedef struct {
     uint8_t *black;
     uint8_t *red;

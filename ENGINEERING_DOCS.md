@@ -360,7 +360,8 @@ EPD 初始化失败时，完整启动路径不再直接 `ESP_ERROR_CHECK()` 重�
 - SSD1619 (4.2" 400×300 BWR) / UC8179 (5.83" 648×480 BWR) 驱动
 - 已验证微雪 5.83" BWR B V2 (648×480 BWR) 驱动
 - ATC/Solum 实验面板：SSD1619 1.3"/1.6"/2.2"/2.6"/2.9"、UC8151 2.9"、UC 4.3"、dual SSD 5.85"、UC8159 6.0"、UC8179 7.4"、SSD 9.7"
-- EPD-nRF5 参考实验面板：SSD1619 4.2" BW/BWR、UC8176 4.2" BW/BWR、UC8179 7.5" BW/BWR、UC8159 5.83" BW、UC8159 7.5" low BWR、SSD1677 7.5" HD BW/BWR、JD79668 4.2" BWRY、JD79665 7.5" BWRY（黄色暂映射到现有彩色平面）
+- EPD-nRF5 参考实验面板：SSD1619 4.2" BW/BWR、UC8176 4.2" BW/BWR、UC8179 7.5" BW/BWR、UC8159 5.83" BW、UC8159 7.5" low BWR、SSD1677 7.5" HD BW/BWR、JD79668 4.2" BWRY、JD79665 7.5" BWRY（图片转换生成独立黄色平面，JD796xx 按 2bpp 输出）
+- JD79668/JD79665 黄色平面当前覆盖图片上传、画廊转换和测试图案；内置业务页面仍沿用黑/红两平面 framebuffer
 - 除已验证微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已移除，旧 NVS 面板编号会回退默认 4.2"
 - SPI DMA 批量传输
 - BUSY 信号处理

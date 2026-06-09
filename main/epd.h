@@ -34,10 +34,10 @@ typedef enum {
     EPD_PANEL_REF_UC8159_75_LOW_BWR  = 31, /* 7.5" 640x384 BW+Red low-res, UC8159 */
     EPD_PANEL_REF_SSD1677_75_HD_BW   = 32, /* 7.5" 880x528 BW HD, SSD1677 */
     EPD_PANEL_REF_SSD1677_75_HD_BWR  = 33, /* 7.5" 880x528 BW+Red HD, SSD1677 */
-    EPD_PANEL_REF_JD79665_75_BWRY    = 34, /* 7.5" 800x480 BWRY, JD79665; yellow shares color plane */
+    EPD_PANEL_REF_JD79665_75_BWRY    = 34, /* 7.5" 800x480 BWRY, JD79665; native 2bpp red/yellow */
     EPD_PANEL_REF_SSD1619_42_BW      = 35, /* 4.2" 400x300 BW, SSD1619 */
     EPD_PANEL_REF_SSD1619_42_BWR     = 36, /* 4.2" 400x300 BW+Red, SSD1619 */
-    EPD_PANEL_REF_JD79668_42_BWRY    = 37, /* 4.2" 400x300 BWRY, JD79668; yellow shares color plane */
+    EPD_PANEL_REF_JD79668_42_BWRY    = 37, /* 4.2" 400x300 BWRY, JD79668; native 2bpp red/yellow */
 
     EPD_PANEL_COUNT
 } epd_panel_t;
@@ -84,3 +84,4 @@ int          epd_width(void);
 int          epd_height(void);
 int          epd_plane_bytes(void);
 bool         epd_has_red(void);
+bool         epd_has_yellow(void);

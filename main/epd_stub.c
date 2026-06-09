@@ -92,6 +92,7 @@ typedef struct epd_panel_desc {
     void (*cursor_home)(void);
     uint16_t x_offset;
     bool mirror_v;
+    bool has_yellow;
 } epd_panel_desc_t;
 
 static void ssd1619_init_sequence(void);
@@ -152,10 +153,10 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_REF_UC8159_75_LOW_BWR] = { 640, 384, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "Ref UC8159 7.5\" low BWR exp", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BW]  = { 880, 528, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1677 7.5\" HD BW exp", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BWR] = { 880, 528, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1677 7.5\" HD BWR exp", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
-    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "Ref JD79665 7.5\" BWRY exp", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home },
+    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "Ref JD79665 7.5\" BWRY exp", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
     [EPD_PANEL_REF_SSD1619_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1619 4.2\" BW exp", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
     [EPD_PANEL_REF_SSD1619_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1619 4.2\" BWR exp", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
-    [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "Ref JD79668 4.2\" BWRY exp", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home },
+    [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "Ref JD79668 4.2\" BWRY exp", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
 };
 
 static bool panel_valid(epd_panel_t panel)
@@ -174,6 +175,7 @@ int  epd_width(void)       { return panel_desc()->w; }
 int  epd_height(void)      { return panel_desc()->h; }
 int  epd_plane_bytes(void) { return panel_desc()->w * panel_desc()->h / 8; }
 bool epd_has_red(void)     { return panel_desc()->has_red; }
+bool epd_has_yellow(void)  { return panel_desc()->has_yellow; }
 epd_panel_t epd_get_panel(void) { return s_panel; }
 
 esp_err_t epd_save_panel_config(epd_panel_t panel, int busy_idle)
@@ -803,7 +805,7 @@ static void panel_write_uc8159_interleaved(const uint8_t *bw, const uint8_t *red
     epd_cmd(0x11);
 }
 
-static uint8_t jd796xx_pack4(uint8_t bw, uint8_t red, int start_bit)
+static uint8_t jd796xx_pack4(uint8_t bw, uint8_t red, uint8_t yellow, int start_bit)
 {
     uint8_t out = 0;
     for (int i = 0; i < 4; i++) {
@@ -811,15 +813,19 @@ static uint8_t jd796xx_pack4(uint8_t bw, uint8_t red, int start_bit)
         uint8_t px = 0x01; /* white, matching the reference clear pattern 0x55 */
         if (!plane_bit_set(bw, bit))
             px = 0x00;     /* black */
+        else if (plane_bit_set(yellow, bit))
+            px = 0x02;     /* yellow */
         else if (plane_bit_set(red, bit))
-            px = 0x03;     /* color plane: red/yellow class is approximated as color */
+            px = 0x03;     /* red */
         out = (uint8_t)((out << 2) | px);
     }
     return out;
 }
 
 static void panel_write_jd796xx_2bpp(const uint8_t *bw, const uint8_t *red,
-                                     uint8_t bw_fill, uint8_t red_fill)
+                                     const uint8_t *yellow,
+                                     uint8_t bw_fill, uint8_t red_fill,
+                                     uint8_t yellow_fill)
 {
     int rb = epd_width() / 8;
     int H = epd_height();
@@ -835,8 +841,9 @@ static void panel_write_jd796xx_2bpp(const uint8_t *bw, const uint8_t *red,
         for (int x = 0; x < rb; x++) {
             uint8_t b = plane_byte_or_fill(bw, row + (size_t)x, bw_fill);
             uint8_t r = plane_byte_or_fill(red, row + (size_t)x, red_fill);
-            line[(size_t)x * 2u] = jd796xx_pack4(b, r, 0);
-            line[(size_t)x * 2u + 1u] = jd796xx_pack4(b, r, 4);
+            uint8_t yel = plane_byte_or_fill(yellow, row + (size_t)x, yellow_fill);
+            line[(size_t)x * 2u] = jd796xx_pack4(b, r, yel, 0);
+            line[(size_t)x * 2u + 1u] = jd796xx_pack4(b, r, yel, 4);
         }
         epd_bulk(line, (size_t)rb * 2u);
     }
@@ -906,7 +913,7 @@ static void panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, int p
         panel_write_uc8159_interleaved(bw, red, 0xFF, 0x00);
         break;
     case EPD_CMD_DATA_JD796XX_2BPP:
-        panel_write_jd796xx_2bpp(bw, red, 0xFF, 0x00);
+        panel_write_jd796xx_2bpp(bw, red, NULL, 0xFF, 0x00, 0x00);
         break;
     }
 }
@@ -1046,21 +1053,25 @@ static esp_err_t file_send_uc8159_interleaved(FILE *f, int pb, bool has_red_file
     return ret;
 }
 
-static esp_err_t file_send_jd796xx_2bpp(FILE *f, int pb, bool has_red_file)
+static esp_err_t file_send_jd796xx_2bpp(FILE *f, int pb, bool has_red_file,
+                                        bool has_yellow_file)
 {
     int rb = epd_width() / 8;
     int H = epd_height();
     uint8_t *bw = heap_caps_malloc((size_t)rb, MALLOC_CAP_8BIT);
     uint8_t *red = heap_caps_malloc((size_t)rb, MALLOC_CAP_8BIT);
+    uint8_t *yellow = heap_caps_malloc((size_t)rb, MALLOC_CAP_8BIT);
     uint8_t *out = heap_caps_malloc((size_t)rb * 2u, MALLOC_CAP_DMA);
-    if (!bw || !red || !out) {
+    if (!bw || !red || !yellow || !out) {
         free(bw);
         free(red);
+        free(yellow);
         free(out);
         return ESP_ERR_NO_MEM;
     }
 
     long red_base = has_red_file ? (long)pb : -1;
+    long yellow_base = has_yellow_file ? (long)pb * 2L : -1;
     epd_cmd(0x10);
     esp_err_t ret = ESP_OK;
     for (int y = 0; y < H; y++) {
@@ -1070,20 +1081,25 @@ static esp_err_t file_send_jd796xx_2bpp(FILE *f, int pb, bool has_red_file)
         ret = file_read_row(f, red_base, y, rb, red, 0x00);
         if (ret != ESP_OK)
             break;
+        ret = file_read_row(f, yellow_base, y, rb, yellow, 0x00);
+        if (ret != ESP_OK)
+            break;
         for (int x = 0; x < rb; x++) {
-            out[(size_t)x * 2u] = jd796xx_pack4(bw[x], red[x], 0);
-            out[(size_t)x * 2u + 1u] = jd796xx_pack4(bw[x], red[x], 4);
+            out[(size_t)x * 2u] = jd796xx_pack4(bw[x], red[x], yellow[x], 0);
+            out[(size_t)x * 2u + 1u] = jd796xx_pack4(bw[x], red[x], yellow[x], 4);
         }
         epd_bulk(out, (size_t)rb * 2u);
     }
 
     free(bw);
     free(red);
+    free(yellow);
     free(out);
     return ret;
 }
 
-static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file)
+static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file,
+                                         bool has_yellow_file)
 {
     const epd_panel_desc_t *d = panel_desc();
     esp_err_t ret = ESP_OK;
@@ -1198,7 +1214,7 @@ static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file)
         ret = file_send_uc8159_interleaved(f, pb, has_red_file);
         break;
     case EPD_CMD_DATA_JD796XX_2BPP:
-        ret = file_send_jd796xx_2bpp(f, pb, has_red_file);
+        ret = file_send_jd796xx_2bpp(f, pb, has_red_file, has_yellow_file);
         break;
     }
 
@@ -1264,7 +1280,7 @@ static void panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
         panel_write_uc8159_interleaved(NULL, NULL, bw_byte, red_byte);
         break;
     case EPD_CMD_DATA_JD796XX_2BPP:
-        panel_write_jd796xx_2bpp(NULL, NULL, bw_byte, red_byte);
+        panel_write_jd796xx_2bpp(NULL, NULL, NULL, bw_byte, red_byte, 0x00);
         break;
     }
 
@@ -1477,7 +1493,7 @@ static void ref_jd796xx_init(void)
     ref_jd796xx_full_window();
     epd_cmd(0x04);
     epd_wait_ready(false);
-    ESP_LOGW(TAG, "%s init OK (experimental; yellow maps onto the existing color plane)", d->name);
+    ESP_LOGW(TAG, "%s init OK (experimental BWRY 2bpp)", d->name);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1908,7 +1924,10 @@ esp_err_t epd_display_test_pattern(void)
     }
 
     uint8_t *red = heap_caps_calloc(1, (size_t)pb, MALLOC_CAP_DMA);
-    if (!red) {
+    uint8_t *yellow = epd_has_yellow() ? heap_caps_calloc(1, (size_t)pb, MALLOC_CAP_DMA) : NULL;
+    if (!red || (epd_has_yellow() && !yellow)) {
+        free(red);
+        free(yellow);
         free(buf);
         xSemaphoreGive(s_epd_mutex);
         return ESP_ERR_NO_MEM;
@@ -1921,11 +1940,27 @@ esp_err_t epd_display_test_pattern(void)
             buf[off] |= bit;
         }
     }
+    if (yellow) {
+        for (int y = mid_y + 20; y < H - 20; y++) {
+            for (int x = 20; x < mid_x - 20; x++) {
+                size_t off = (size_t)y * rb + (size_t)(x >> 3);
+                uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+                yellow[off] |= bit;
+                buf[off] |= bit;
+            }
+        }
+    }
 
     panel_ensure_ready();
 
-    panel_write_bw_red(buf, red, pb);
+    if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP) {
+        panel_write_jd796xx_2bpp(buf, red, yellow, 0xFF, 0x00, 0x00);
+        panel_desc()->refresh();
+    } else {
+        panel_write_bw_red(buf, red, pb);
+    }
 
+    free(yellow);
     free(red);
     free(buf);
     xSemaphoreGive(s_epd_mutex);
@@ -1955,8 +1990,11 @@ esp_err_t epd_display_from_file(const char *path)
         return ESP_ERR_INVALID_SIZE;
     }
     bool has_red_file = have_size && st.st_size >= (off_t)pb * 2;
+    bool has_yellow_file = have_size && st.st_size >= (off_t)pb * 3;
     if (epd_has_red() && !has_red_file)
         ESP_LOGW(TAG, "red plane missing, zero fill");
+    if (epd_has_yellow() && !has_yellow_file)
+        ESP_LOGW(TAG, "yellow plane missing, zero fill");
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
     if (pb != epd_plane_bytes()) {
@@ -1969,7 +2007,7 @@ esp_err_t epd_display_from_file(const char *path)
     if (consume_force_full_refresh_request())
         prepare_for_forced_full_refresh();
     panel_ensure_ready();
-    esp_err_t ret = panel_write_bw_red_file(f, pb, has_red_file);
+    esp_err_t ret = panel_write_bw_red_file(f, pb, has_red_file, has_yellow_file);
     xSemaphoreGive(s_epd_mutex);
     fclose(f);
     if (ret != ESP_OK)
