@@ -16,7 +16,7 @@
 ### 上线前整理
 
 - 清理本地 build、managed_components、sdkconfig、spiffs_image、outputs、Playwright/Cursor 缓存等可再生成文件，保留 release、开源字库源文件和参考素材目录。
-- 基于历史 `compile_commands.json` 对 `main/*.c` 完成语法级检查，33 个 C 文件通过；当前 PowerShell 里未直接提供 `idf.py` 命令，完整构建需在 ESP-IDF 终端重新执行。
+- 完成公开发布前静态检查；后续发布新固件时需在 ESP-IDF v5.5.x 环境重新执行完整 `idf.py build`。
 - 修正 `release/README.md` 中 `fontfs.bin` 合并地址：当前分区表 `0x920000` 是 `coredump`，`fontfs` 应烧录到 `0x940000`。
 - 紧凑内置字库重新由 OFL 开源字体 `LXGW975YuanSC-400W.ttf` 生成，避免公开固件继续携带 Windows 系统字体派生产物标记。
 - 同步文档中的 HTTP 路由数量、字库来源、分区表、release 固件状态和上线检查结果。
