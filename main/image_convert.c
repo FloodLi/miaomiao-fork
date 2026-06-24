@@ -18,9 +18,41 @@
 static const char *TAG = "img";
 
 #define JPEG_FS_BAND_ROWS       16
+#define PNG_MAX_FILE_BYTES      (1024u * 1024u)
 #define PNG_MAX_DECODE_PIXELS   (1000u * 1000u)
 #define PNG_MAX_SIDE_PIXELS     4096u
 #define RAW_WRITE_CHUNK         4096u
+
+typedef struct {
+    int x;
+    int y;
+    int w;
+    int h;
+} image_fit_rect_t;
+
+static image_fit_rect_t image_fit_contain_rect(int src_w, int src_h,
+                                               int dst_w, int dst_h)
+{
+    image_fit_rect_t r = { 0, 0, dst_w, dst_h };
+    if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0)
+        return r;
+
+    if ((int64_t)dst_w * src_h <= (int64_t)dst_h * src_w) {
+        r.w = dst_w;
+        r.h = (int)(((int64_t)dst_w * src_h + src_w / 2) / src_w);
+    } else {
+        r.h = dst_h;
+        r.w = (int)(((int64_t)dst_h * src_w + src_h / 2) / src_h);
+    }
+
+    if (r.w < 1) r.w = 1;
+    if (r.h < 1) r.h = 1;
+    if (r.w > dst_w) r.w = dst_w;
+    if (r.h > dst_h) r.h = dst_h;
+    r.x = (dst_w - r.w) / 2;
+    r.y = (dst_h - r.h) / 2;
+    return r;
+}
 
 static void log_heap_state(const char *label)
 {
@@ -106,6 +138,46 @@ static bool write_raw_planes(const char *out_path, const uint8_t *black,
         remove(out_path);
     }
     return ok;
+}
+
+static void flip_plane_rows(uint8_t *plane, int row_bytes, int height)
+{
+    if (!plane || row_bytes <= 0 || height <= 1)
+        return;
+    uint8_t *tmp = (uint8_t *)img_alloc((size_t)row_bytes, "row flip temp");
+    if (!tmp) {
+        ESP_LOGW(TAG, "row flip skipped: temp alloc failed");
+        return;
+    }
+    for (int y = 0; y < height / 2; y++) {
+        uint8_t *top = plane + (size_t)y * (size_t)row_bytes;
+        uint8_t *bot = plane + (size_t)(height - 1 - y) * (size_t)row_bytes;
+        memcpy(tmp, top, (size_t)row_bytes);
+        memcpy(top, bot, (size_t)row_bytes);
+        memcpy(bot, tmp, (size_t)row_bytes);
+    }
+    free(tmp);
+}
+
+static void compensate_panel_image_orientation(uint8_t *black, uint8_t *red,
+                                               uint8_t *yellow, int plane_bytes,
+                                               bool has_red, bool has_yellow)
+{
+    if (epd_get_panel() != EPD_PANEL_HINK_SSD1619_29_BWR)
+        return;
+
+    int w = epd_width();
+    int h = epd_height();
+    int row_bytes = w / 8;
+    if (w <= 0 || h <= 0 || row_bytes <= 0 || plane_bytes != row_bytes * h)
+        return;
+
+    flip_plane_rows(black, row_bytes, h);
+    if (has_red)
+        flip_plane_rows(red, row_bytes, h);
+    if (has_yellow)
+        flip_plane_rows(yellow, row_bytes, h);
+    ESP_LOGI(TAG, "HINK 2.9 image orientation compensation: flip Y");
 }
 
 /* ── Bayer 8x8 matrix (fallback when F-S allocation fails) ────────── */
@@ -253,7 +325,7 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
                                       uint8_t *yellow,
                                       int x, int y, int w,
                                       uint8_t r, uint8_t g, uint8_t b,
-                                      bool has_yellow)
+                                      bool has_red, bool has_yellow)
 {
     size_t bp = (size_t)y * (w / 8) + (size_t)(x >> 3);
     uint8_t bit = (uint8_t)(0x80u >> (x & 7));
@@ -265,16 +337,16 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
     int chroma = max_c - min_c;
     uint8_t lum = (uint8_t)((ri * 77u + gi * 150u + bi * 29u) >> 8);
 
-    int red_strength = red_ink_strength(r, g, b);
-    if (red_strength > (int)threshold) {
-        red[bp] |= bit;
+    int yellow_strength = has_yellow ? yellow_ink_strength(r, g, b) : 0;
+    if (yellow_strength > (int)threshold) {
+        yellow[bp] |= bit;
         black[bp] |= bit;
         return;
     }
 
-    int yellow_strength = has_yellow ? yellow_ink_strength(r, g, b) : 0;
-    if (yellow_strength > (int)threshold) {
-        yellow[bp] |= bit;
+    int red_strength = has_red ? red_ink_strength(r, g, b) : 0;
+    if (red_strength > (int)threshold) {
+        red[bp] |= bit;
         black[bp] |= bit;
         return;
     }
@@ -288,7 +360,7 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
         int sat256 = (chroma * 256) / max_c;
         if ((hue6 <= 30 || hue6 >= 330) && sat256 > 80) {
             int red_str = (sat256 * max_c) >> 8;
-            if (red_str > (int)threshold) {
+            if (has_red && red_str > (int)threshold) {
                 red[bp] |= bit;
                 black[bp] |= bit;
             } else if (lum < threshold) {
@@ -312,6 +384,307 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
  * ══════════════════════════════════════════════════════════════════════ */
 
 typedef struct { int16_t r, g, b; } fs_err_t;
+
+typedef enum {
+    PQ_WHITE = 0,
+    PQ_BLACK,
+    PQ_RED,
+    PQ_YELLOW,
+    PQ_OTHER,
+} prequantized_color_t;
+
+static void rgba_on_white(uint8_t *r, uint8_t *g, uint8_t *b, uint8_t a)
+{
+    if (a >= 255)
+        return;
+    *r = (uint8_t)(((unsigned)*r * a + 255u * (255u - a) + 127u) / 255u);
+    *g = (uint8_t)(((unsigned)*g * a + 255u * (255u - a) + 127u) / 255u);
+    *b = (uint8_t)(((unsigned)*b * a + 255u * (255u - a) + 127u) / 255u);
+}
+
+static prequantized_color_t prequantized_pixel_class(uint8_t r, uint8_t g,
+                                                     uint8_t b, uint8_t a,
+                                                     bool has_red,
+                                                     bool has_yellow)
+{
+    rgba_on_white(&r, &g, &b, a);
+
+    if (r >= 235 && g >= 235 && b >= 235)
+        return PQ_WHITE;
+    if (r <= 36 && g <= 36 && b <= 36)
+        return PQ_BLACK;
+
+    bool red_like = r >= 140 && g <= 110 && b <= 110 &&
+                    r >= g + 45 && r >= b + 45;
+    if (red_like)
+        return has_red ? PQ_RED : PQ_BLACK;
+
+    bool yellow_like = r >= 150 && g >= 120 && b <= 110 &&
+                       r >= b + 45 && g >= b + 35;
+    if (yellow_like)
+        return has_yellow ? PQ_YELLOW : PQ_BLACK;
+
+    return PQ_OTHER;
+}
+
+static bool bw_or_color_quantized_pixel(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
+                                        bool has_red, bool has_yellow,
+                                        prequantized_color_t *out)
+{
+    prequantized_color_t cls = prequantized_pixel_class(r, g, b, a,
+                                                        has_red, has_yellow);
+    if (cls != PQ_OTHER) {
+        if (out)
+            *out = cls;
+        return true;
+    }
+
+    rgba_on_white(&r, &g, &b, a);
+    int max_c = r;
+    if (g > max_c) max_c = g;
+    if (b > max_c) max_c = b;
+    int min_c = r;
+    if (g < min_c) min_c = g;
+    if (b < min_c) min_c = b;
+    if (max_c - min_c > 12)
+        return false;
+
+    int lum = ((int)r * 77 + (int)g * 150 + (int)b * 29) >> 8;
+    if (lum <= 72) {
+        if (out)
+            *out = PQ_BLACK;
+        return true;
+    }
+    if (lum >= 183) {
+        if (out)
+            *out = PQ_WHITE;
+        return true;
+    }
+    return false;
+}
+
+static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
+                                                  unsigned pw, unsigned ph,
+                                                  const char *out_path)
+{
+    const int EW = epd_width();
+    const int EH = epd_height();
+    const int EC = EW * EH / 8;
+    const int RB = EW / 8;
+    bool has_red = epd_has_red();
+    bool has_yellow = epd_has_yellow();
+
+    if (!rgba || !out_path || pw != (unsigned)EW || ph != (unsigned)EH)
+        return ESP_ERR_NOT_SUPPORTED;
+
+    unsigned black_count = 0;
+    unsigned red_count = 0;
+    unsigned yellow_count = 0;
+    unsigned white_count = 0;
+    for (unsigned i = 0; i < pw * ph; i++) {
+        const uint8_t *p = rgba + (size_t)i * 4u;
+        prequantized_color_t cls;
+        if (!bw_or_color_quantized_pixel(p[0], p[1], p[2], p[3],
+                                         has_red, has_yellow, &cls))
+            return ESP_ERR_NOT_SUPPORTED;
+        switch (cls) {
+        case PQ_WHITE:  white_count++; break;
+        case PQ_BLACK:  black_count++; break;
+        case PQ_RED:    red_count++; break;
+        case PQ_YELLOW: yellow_count++; break;
+        case PQ_OTHER:  return ESP_ERR_NOT_SUPPORTED;
+        }
+    }
+
+    uint8_t *black = (uint8_t *)img_alloc(EC, "png passthrough black");
+    uint8_t *red = has_red ? (uint8_t *)img_alloc(EC, "png passthrough red") : NULL;
+    uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png passthrough yellow") : NULL;
+    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
+        free(black);
+        free(red);
+        free(yellow);
+        return ESP_ERR_NO_MEM;
+    }
+    memset(black, 0xFF, EC);
+    if (red)
+        memset(red, 0x00, EC);
+    if (yellow)
+        memset(yellow, 0x00, EC);
+
+    for (int y = 0; y < EH; y++) {
+        for (int x = 0; x < EW; x++) {
+            const uint8_t *p = rgba + ((size_t)y * (size_t)EW + (size_t)x) * 4u;
+            size_t bp = (size_t)y * (size_t)RB + (size_t)(x >> 3);
+            uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+            prequantized_color_t cls = PQ_WHITE;
+            (void)bw_or_color_quantized_pixel(p[0], p[1], p[2], p[3],
+                                              has_red, has_yellow, &cls);
+            switch (cls) {
+            case PQ_BLACK:
+                black[bp] &= (uint8_t)~bit;
+                break;
+            case PQ_RED:
+                red[bp] |= bit;
+                black[bp] |= bit;
+                break;
+            case PQ_YELLOW:
+                yellow[bp] |= bit;
+                black[bp] |= bit;
+                break;
+            case PQ_WHITE:
+            case PQ_OTHER:
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
+    if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
+        free(black);
+        free(red);
+        free(yellow);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG,
+             "PNG prequantized passthrough: %ux%u -> %s (%u bytes/plane, white=%u black=%u red=%u yellow=%u)",
+             pw, ph, out_path, (unsigned)EC, white_count, black_count,
+             red_count, yellow_count);
+    free(black);
+    free(red);
+    free(yellow);
+    return ESP_OK;
+}
+
+static void sample_rgba_on_white(const unsigned char *rgba, unsigned pw,
+                                 unsigned ph, int sx, int sy,
+                                 uint8_t *r, uint8_t *g, uint8_t *b)
+{
+    if (sx < 0) sx = 0;
+    if (sy < 0) sy = 0;
+    if (sx >= (int)pw) sx = (int)pw - 1;
+    if (sy >= (int)ph) sy = (int)ph - 1;
+    const uint8_t *p = rgba + ((size_t)sy * pw + (size_t)sx) * 4u;
+    uint8_t a = p[3];
+    if (a < 255) {
+        *r = (uint8_t)(((unsigned)p[0] * a + 255u * (255u - a) + 127u) / 255u);
+        *g = (uint8_t)(((unsigned)p[1] * a + 255u * (255u - a) + 127u) / 255u);
+        *b = (uint8_t)(((unsigned)p[2] * a + 255u * (255u - a) + 127u) / 255u);
+    } else {
+        *r = p[0];
+        *g = p[1];
+        *b = p[2];
+    }
+}
+
+static bool png_looks_bw_preprocessed(const unsigned char *rgba,
+                                      unsigned pw, unsigned ph)
+{
+    if (!rgba || pw == 0 || ph == 0)
+        return false;
+
+    unsigned total = pw * ph;
+    unsigned step = total / 4096u;
+    if (step < 1)
+        step = 1;
+
+    unsigned samples = 0;
+    unsigned bw_like = 0;
+    unsigned chroma_like = 0;
+    for (unsigned i = 0; i < total; i += step) {
+        const uint8_t *p = rgba + (size_t)i * 4u;
+        uint8_t r, g, b;
+        uint8_t a = p[3];
+        if (a < 255) {
+            r = (uint8_t)(((unsigned)p[0] * a + 255u * (255u - a) + 127u) / 255u);
+            g = (uint8_t)(((unsigned)p[1] * a + 255u * (255u - a) + 127u) / 255u);
+            b = (uint8_t)(((unsigned)p[2] * a + 255u * (255u - a) + 127u) / 255u);
+        } else {
+            r = p[0]; g = p[1]; b = p[2];
+        }
+        int max_c = r;
+        if (g > max_c) max_c = g;
+        if (b > max_c) max_c = b;
+        int min_c = r;
+        if (g < min_c) min_c = g;
+        if (b < min_c) min_c = b;
+        int lum = ((int)r * 77 + (int)g * 150 + (int)b * 29) >> 8;
+        if (max_c - min_c <= 18)
+            chroma_like++;
+        if (lum <= 48 || lum >= 207)
+            bw_like++;
+        samples++;
+    }
+
+    if (samples == 0)
+        return false;
+    return chroma_like * 100u >= samples * 96u &&
+           bw_like * 100u >= samples * 92u;
+}
+
+static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
+                                              unsigned pw, unsigned ph,
+                                              const char *out_path)
+{
+    const int EW = epd_width();
+    const int EH = epd_height();
+    const int EC = EW * EH / 8;
+    const int RB = EW / 8;
+    bool has_red = epd_has_red();
+    bool has_yellow = epd_has_yellow();
+
+    if (!png_looks_bw_preprocessed(rgba, pw, ph))
+        return ESP_ERR_NOT_SUPPORTED;
+
+    uint8_t *black = (uint8_t *)img_alloc(EC, "png bw black");
+    uint8_t *red = has_red ? (uint8_t *)img_alloc(EC, "png bw red clear") : NULL;
+    uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png bw yellow clear") : NULL;
+    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
+        free(black);
+        free(red);
+        free(yellow);
+        return ESP_ERR_NO_MEM;
+    }
+
+    memset(black, 0xFF, EC);
+    if (red)
+        memset(red, 0x00, EC);
+    if (yellow)
+        memset(yellow, 0x00, EC);
+
+    image_fit_rect_t fit = image_fit_contain_rect((int)pw, (int)ph, EW, EH);
+    for (int ey = fit.y; ey < fit.y + fit.h; ey++) {
+        int sy = (ey - fit.y) * (int)ph / fit.h;
+        for (int ex = fit.x; ex < fit.x + fit.w; ex++) {
+            int sx = (ex - fit.x) * (int)pw / fit.w;
+            uint8_t r, g, b;
+            sample_rgba_on_white(rgba, pw, ph, sx, sy, &r, &g, &b);
+            int lum = ((int)r * 77 + (int)g * 150 + (int)b * 29) >> 8;
+            if (lum < 128) {
+                size_t bp = (size_t)ey * (size_t)RB + (size_t)(ex >> 3);
+                uint8_t bit = (uint8_t)(0x80u >> (ex & 7));
+                black[bp] &= (uint8_t)~bit;
+            }
+        }
+    }
+
+    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
+    if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
+        free(black);
+        free(red);
+        free(yellow);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG,
+             "PNG BW threshold passthrough: %ux%u -> contain %dx%d at %d,%d (%u bytes/plane)",
+             pw, ph, fit.w, fit.h, fit.x, fit.y, (unsigned)EC);
+    free(black);
+    free(red);
+    free(yellow);
+    return ESP_OK;
+}
 
 /**
  * 允许映射红墨的像素：在拦住真灰（chroma 过低）的前提下尽量放宽。
@@ -354,7 +727,7 @@ static bool fs_red_eligible(uint8_t r, uint8_t g, uint8_t b)
     return hue_sat || r_led;
 }
 
-#define BW_LUMA_THRESHOLD 106
+#define BW_LUMA_THRESHOLD 96
 
 static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
                           uint8_t *blk, uint8_t *red_plane,
@@ -375,18 +748,18 @@ static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
         size_t bp = (size_t)y * rb + (x >> 3);
         uint8_t bit = 0x80u >> (x & 7);
 
-        int red_strength = has_red ? red_ink_strength(r0, g0, b0) : 0;
-        if (red_strength > 0 && (red_orange_pixel(r0, g0, b0) || fs_red_eligible(r0, g0, b0)) &&
-            red_strength > (int)bayer8[y & 7][x & 7]) {
-            red_plane[bp] |= bit;
-            blk[bp] |= bit;
-            continue;
-        }
-
         int yellow_strength = has_yellow ? yellow_ink_strength(r0, g0, b0) : 0;
         if (yellow_strength > 0 &&
             yellow_strength > (int)bayer8[y & 7][x & 7]) {
             yellow_plane[bp] |= bit;
+            blk[bp] |= bit;
+            continue;
+        }
+
+        int red_strength = has_red ? red_ink_strength(r0, g0, b0) : 0;
+        if (red_strength > 0 && (red_orange_pixel(r0, g0, b0) || fs_red_eligible(r0, g0, b0)) &&
+            red_strength > (int)bayer8[y & 7][x & 7]) {
+            red_plane[bp] |= bit;
             blk[bp] |= bit;
             continue;
         }
@@ -423,6 +796,7 @@ typedef struct {
     uint8_t *yellow;
     int w, h;               /* EPD screen size */
     int sw, sh;             /* decoded image size */
+    image_fit_rect_t fit;   /* target area for aspect-ratio preserving display */
     /* F-S band state */
     uint8_t  *band;         /* source-resolution band: band_w × band_h × 3 */
     uint8_t  *rgb_row;      /* screen-width row for F-S sampling */
@@ -479,22 +853,25 @@ static UINT jpeg_outfunc_bayer(JDEC *jd, void *bitmap, JRECT *rect)
 
     for (int y = 0; y < bh; y++) {
         int src_y = (int)rect->top + y;
-        int ey0 = src_y * o->h / o->sh;
-        int ey1 = (src_y + 1) * o->h / o->sh;
-        if (ey0 >= o->h) { px += (size_t)bw * 3; continue; }
-        if (ey1 > o->h) ey1 = o->h;
+        int fit_bottom = o->fit.y + o->fit.h;
+        int ey0 = o->fit.y + src_y * o->fit.h / o->sh;
+        int ey1 = o->fit.y + (src_y + 1) * o->fit.h / o->sh;
+        if (ey0 >= fit_bottom) { px += (size_t)bw * 3; continue; }
+        if (ey1 > fit_bottom) ey1 = fit_bottom;
         for (int x = 0; x < bw; x++) {
             int src_x = (int)rect->left + x;
-            int ex0 = src_x * o->w / o->sw;
-            int ex1 = (src_x + 1) * o->w / o->sw;
+            int fit_right = o->fit.x + o->fit.w;
+            int ex0 = o->fit.x + src_x * o->fit.w / o->sw;
+            int ex1 = o->fit.x + (src_x + 1) * o->fit.w / o->sw;
             uint8_t r = px[0], g = px[1], b = px[2];
             px += 3;
-            if (ex0 >= o->w) continue;
-            if (ex1 > o->w) ex1 = o->w;
+            if (ex0 >= fit_right) continue;
+            if (ex1 > fit_right) ex1 = fit_right;
             for (int ey = ey0; ey < ey1; ey++)
                 for (int ex = ex0; ex < ex1; ex++)
                     dither_pixel_bayer(o->black, o->red, o->yellow, ex, ey,
-                                       o->w, r, g, b, o->has_yellow);
+                                       o->w, r, g, b,
+                                       o->has_red, o->has_yellow);
         }
     }
     return 1;
@@ -506,17 +883,29 @@ static void fs_flush_band(epd_out_t *o)
 {
     int src_y0 = o->band_top;
     int src_y1 = src_y0 + o->band_rows;
-    int ey_start = (src_y0 * o->h + o->sh - 1) / o->sh;
-    int ey_end   = (src_y1 < o->sh) ? ((src_y1 * o->h + o->sh - 1) / o->sh) : o->h;
+    int fit_bottom = o->fit.y + o->fit.h;
+    int fit_right = o->fit.x + o->fit.w;
+    int ey_start = o->fit.y + (src_y0 * o->fit.h + o->sh - 1) / o->sh;
+    int ey_end = (src_y1 < o->sh)
+               ? o->fit.y + (src_y1 * o->fit.h + o->sh - 1) / o->sh
+               : fit_bottom;
+    if (ey_start < o->fit.y) ey_start = o->fit.y;
+    if (ey_end > fit_bottom) ey_end = fit_bottom;
 
     for (int ey = ey_start; ey < ey_end; ey++) {
-        if (ey < 0 || ey >= o->h) continue;
-        int sy = ey * o->sh / o->h;
+        if (ey < o->fit.y || ey >= fit_bottom) continue;
+        int sy = (ey - o->fit.y) * o->sh / o->fit.h;
         int by = sy - src_y0;
         if (by < 0 || by >= o->band_rows) continue;
 
         for (int ex = 0; ex < o->w; ex++) {
-            int sx = ex * o->sw / o->w;
+            if (ex < o->fit.x || ex >= fit_right) {
+                o->rgb_row[ex * 3]     = 255;
+                o->rgb_row[ex * 3 + 1] = 255;
+                o->rgb_row[ex * 3 + 2] = 255;
+                continue;
+            }
+            int sx = (ex - o->fit.x) * o->sw / o->fit.w;
             if (sx >= o->sw) sx = o->sw - 1;
             int si = (by * o->band_w + sx) * 3;
             o->rgb_row[ex * 3]     = o->band[si];
@@ -579,10 +968,8 @@ static uint8_t choose_scale(uint16_t in_w, uint16_t in_h,
                              int *out_w, int *out_h)
 {
     /*
-     * For stretch-to-fill: prefer decoded >= screen in both dims to
-     * avoid upscaling artifacts.  Among qualifying scales, pick the
-     * most-downscaled (largest s) to save memory and processing.
-     * If no scale satisfies both, pick the closest overall.
+     * For contain-fit conversion, decode close to the panel pixel count while
+     * avoiding tiny intermediate images that would be heavily upscaled.
      */
     uint8_t best_s = 0;
     int best_sw = (int)in_w, best_sh = (int)in_h;
@@ -591,12 +978,13 @@ static uint8_t choose_scale(uint16_t in_w, uint16_t in_h,
     for (uint8_t s = 0; s <= 3; s++) {
         int sw = (int)((in_w + ((1u << s) - 1u)) >> s);
         int sh = (int)((in_h + ((1u << s) - 1u)) >> s);
-        int32_t dx = sw - target_w;
-        int32_t dy = sh - target_h;
+        image_fit_rect_t fit = image_fit_contain_rect(sw, sh, target_w, target_h);
+        int32_t dx = fit.w - target_w;
+        int32_t dy = fit.h - target_h;
         int32_t cost = dx * dx + dy * dy;
-        if (sw < target_w || sh < target_h)
-            cost *= 3;
-        if (cost < best_cost) {
+        if (fit.w > sw || fit.h > sh)
+            cost = cost * 3 + 100000;
+        if (cost < best_cost || (cost == best_cost && s > best_s)) {
             best_cost = cost;
             best_s  = s;
             best_sw = sw;
@@ -642,16 +1030,17 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     bool has_red = epd_has_red();
     bool has_yellow = epd_has_yellow();
     uint8_t *black = (uint8_t *)img_alloc(EC, "jpeg black plane");
-    uint8_t *red   = (uint8_t *)img_alloc(EC, "jpeg red plane");
+    uint8_t *red   = has_red ? (uint8_t *)img_alloc(EC, "jpeg red plane") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "jpeg yellow plane") : NULL;
-    if (!black || !red || (has_yellow && !yellow)) {
+    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
         ESP_LOGE(TAG, "jpeg plane alloc failed: plane=%u bytes, panel=%dx%d, red=%d yellow=%d",
                  (unsigned)EC, EW, EH, has_red ? 1 : 0, has_yellow ? 1 : 0);
         free(pool); free(black); free(red); free(yellow);
         return ESP_ERR_NO_MEM;
     }
     memset(black, 0xFF, EC);
-    memset(red,   0x00, EC);
+    if (red)
+        memset(red,   0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
 
@@ -659,17 +1048,22 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     uint8_t scale = choose_scale(jd.width, jd.height, EW, EH,
                                  &decoded_w, &decoded_h);
 
-    ESP_LOGI(TAG, "jpeg %ux%u -> 1/%u => %dx%d, stretch to %dx%d",
+    image_fit_rect_t fit = image_fit_contain_rect(decoded_w, decoded_h, EW, EH);
+    ESP_LOGI(TAG, "jpeg %ux%u -> 1/%u => %dx%d, contain %dx%d at %d,%d on %dx%d",
              (unsigned)jd.width, (unsigned)jd.height,
-             (unsigned)(1u << scale), decoded_w, decoded_h, EW, EH);
+             (unsigned)(1u << scale), decoded_w, decoded_h,
+             fit.w, fit.h, fit.x, fit.y, EW, EH);
 
     ctx->out = (epd_out_t){
         .black = black, .red = red, .yellow = yellow,
         .w = EW, .h = EH,
-        .sw = decoded_w, .sh = decoded_h
+        .sw = decoded_w, .sh = decoded_h,
+        .fit = fit,
+        .has_red = has_red,
+        .has_yellow = has_yellow
     };
 
-    /* Try red-first Floyd-Steinberg; fall back to Bayer if OOM */
+    /* Try color-first Floyd-Steinberg; fall back to Bayer if OOM */
     int bh = JPEG_FS_BAND_ROWS;
     size_t bsz = (size_t)bh * decoded_w * 3;
     ctx->out.band    = (uint8_t *)img_alloc(bsz, "jpeg fs band");
@@ -685,9 +1079,9 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         ctx->out.band_h    = bh;
         ctx->out.band_top  = -1;
         ctx->out.band_rows = 0;
-        ctx->out.has_red   = has_red;
-        ctx->out.has_yellow = has_yellow;
-        ESP_LOGI(TAG, "red/yellow-first F-S (band=%u bytes)", (unsigned)bsz);
+        ESP_LOGI(TAG, "%s F-S (band=%u bytes)",
+                 has_yellow ? "yellow/red-first" : "red-first",
+                 (unsigned)bsz);
     } else {
         free(ctx->out.band); free(ctx->out.rgb_row);
         free(ctx->out.ec);   free(ctx->out.en);
@@ -711,13 +1105,14 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         return ESP_FAIL;
     }
 
+    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
     if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
         free(black); free(red); free(yellow);
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Converted JPEG -> %s (%u bytes/plane, %s%s, stretch)",
-             out_path, (unsigned)EC, use_fs ? "red/yellow-first F-S" : "Bayer",
+    ESP_LOGI(TAG, "Converted JPEG -> %s (%u bytes/plane, %s%s, contain)",
+             out_path, (unsigned)EC, use_fs ? (has_yellow ? "yellow/red-first F-S" : "red-first F-S") : "Bayer",
              has_yellow ? ", BWRY" : "");
 
     free(black);
@@ -757,22 +1152,45 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
 
     log_heap_state("png begin");
 
+    esp_err_t pass = png_try_prequantized_passthrough(rgba, pw, ph, out_path);
+    if (pass == ESP_OK) {
+        free(rgba);
+        return ESP_OK;
+    }
+    if (pass == ESP_ERR_NO_MEM) {
+        free(rgba);
+        return pass;
+    }
+
+    pass = png_threshold_bw_passthrough(rgba, pw, ph, out_path);
+    if (pass == ESP_OK) {
+        free(rgba);
+        return ESP_OK;
+    }
+    if (pass == ESP_ERR_NO_MEM) {
+        free(rgba);
+        return pass;
+    }
+
     bool has_red = epd_has_red();
     bool has_yellow = epd_has_yellow();
     uint8_t *black = (uint8_t *)img_alloc(EC, "png black plane");
-    uint8_t *red   = (uint8_t *)img_alloc(EC, "png red plane");
+    uint8_t *red   = has_red ? (uint8_t *)img_alloc(EC, "png red plane") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png yellow plane") : NULL;
-    if (!black || !red || (has_yellow && !yellow)) {
+    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
         ESP_LOGE(TAG, "png plane alloc failed: plane=%u bytes, panel=%dx%d, red=%d yellow=%d",
                  (unsigned)EC, EW, EH, has_red ? 1 : 0, has_yellow ? 1 : 0);
         free(black); free(red); free(yellow); free(rgba); return ESP_ERR_NO_MEM;
     }
     memset(black, 0xFF, EC);
-    memset(red,   0x00, EC);
+    if (red)
+        memset(red,   0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
 
-    ESP_LOGI(TAG, "PNG %ux%u -> stretch to %dx%d", pw, ph, EW, EH);
+    image_fit_rect_t fit = image_fit_contain_rect((int)pw, (int)ph, EW, EH);
+    ESP_LOGI(TAG, "PNG %ux%u -> contain %dx%d at %d,%d on %dx%d",
+             pw, ph, fit.w, fit.h, fit.x, fit.y, EW, EH);
 
     uint8_t  *rgb_row = (uint8_t *)img_alloc((size_t)EW * 3, "png rgb row");
     fs_err_t *ec = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "png fs err cur");
@@ -781,13 +1199,20 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
 
     if (use_fs) {
         for (int ey = 0; ey < EH; ey++) {
-            int sy = ey * (int)ph / EH;
+            int rel_y = ey - fit.y;
+            bool in_y = rel_y >= 0 && rel_y < fit.h;
+            int sy = in_y ? (rel_y * (int)ph / fit.h) : 0;
             if (sy >= (int)ph) sy = (int)ph - 1;
             for (int ex = 0; ex < EW; ex++) {
-                int sx = ex * (int)pw / EW;
-                if (sx >= (int)pw) sx = (int)pw - 1;
-                size_t si = ((size_t)sy * pw + (size_t)sx) * 4u;
-                uint8_t r = rgba[si], g = rgba[si + 1], b = rgba[si + 2], a = rgba[si + 3];
+                int rel_x = ex - fit.x;
+                bool in_x = rel_x >= 0 && rel_x < fit.w;
+                uint8_t r = 255, g = 255, b = 255, a = 255;
+                if (in_x && in_y) {
+                    int sx = rel_x * (int)pw / fit.w;
+                    if (sx >= (int)pw) sx = (int)pw - 1;
+                    size_t si = ((size_t)sy * pw + (size_t)sx) * 4u;
+                    r = rgba[si]; g = rgba[si + 1]; b = rgba[si + 2]; a = rgba[si + 3];
+                }
                 if (a < 255) {
                     r = (uint8_t)((r * a + 255u * (255u - a)) / 255u);
                     g = (uint8_t)((g * a + 255u * (255u - a)) / 255u);
@@ -807,20 +1232,27 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
         rgb_row = NULL; ec = NULL; en = NULL;
         ESP_LOGW(TAG, "F-S alloc failed, using Bayer");
         for (int ey = 0; ey < EH; ey++) {
-            int sy = ey * (int)ph / EH;
+            int rel_y = ey - fit.y;
+            bool in_y = rel_y >= 0 && rel_y < fit.h;
+            int sy = in_y ? (rel_y * (int)ph / fit.h) : 0;
             if (sy >= (int)ph) sy = (int)ph - 1;
             for (int ex = 0; ex < EW; ex++) {
-                int sx = ex * (int)pw / EW;
-                if (sx >= (int)pw) sx = (int)pw - 1;
-                size_t si = ((size_t)sy * pw + (size_t)sx) * 4u;
-                uint8_t r = rgba[si], g = rgba[si + 1], b = rgba[si + 2], a = rgba[si + 3];
+                int rel_x = ex - fit.x;
+                bool in_x = rel_x >= 0 && rel_x < fit.w;
+                uint8_t r = 255, g = 255, b = 255, a = 255;
+                if (in_x && in_y) {
+                    int sx = rel_x * (int)pw / fit.w;
+                    if (sx >= (int)pw) sx = (int)pw - 1;
+                    size_t si = ((size_t)sy * pw + (size_t)sx) * 4u;
+                    r = rgba[si]; g = rgba[si + 1]; b = rgba[si + 2]; a = rgba[si + 3];
+                }
                 if (a < 255) {
                     r = (uint8_t)((r * a + 255u * (255u - a)) / 255u);
                     g = (uint8_t)((g * a + 255u * (255u - a)) / 255u);
                     b = (uint8_t)((b * a + 255u * (255u - a)) / 255u);
                 }
                 dither_pixel_bayer(black, red, yellow, ex, ey, EW, r, g, b,
-                                   has_yellow);
+                                   has_red, has_yellow);
             }
         }
     }
@@ -828,6 +1260,7 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
     free(rgba);
     free(rgb_row); free(ec); free(en);
 
+    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
     if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
         free(black);
         free(red);
@@ -835,8 +1268,8 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Converted PNG -> %s (%u bytes/plane, %s%s, stretch)",
-             out_path, (unsigned)EC, use_fs ? "red/yellow-first F-S" : "Bayer",
+    ESP_LOGI(TAG, "Converted PNG -> %s (%u bytes/plane, %s%s, contain)",
+             out_path, (unsigned)EC, use_fs ? (has_yellow ? "yellow/red-first F-S" : "red-first F-S") : "Bayer",
              has_yellow ? ", BWRY" : "");
     free(black);
     free(red);
@@ -936,10 +1369,10 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     bool has_red_bmp = epd_has_red();
     bool has_yellow_bmp = epd_has_yellow();
     uint8_t *black = (uint8_t *)img_alloc(EC, "bmp black plane");
-    uint8_t *red   = (uint8_t *)img_alloc(EC, "bmp red plane");
+    uint8_t *red   = has_red_bmp ? (uint8_t *)img_alloc(EC, "bmp red plane") : NULL;
     uint8_t *yellow = has_yellow_bmp ? (uint8_t *)img_alloc(EC, "bmp yellow plane") : NULL;
     uint8_t *row   = (uint8_t *)img_alloc((size_t)row_stride, "bmp input row");
-    if (!black || !red || (has_yellow_bmp && !yellow) || !row) {
+    if (!black || (has_red_bmp && !red) || (has_yellow_bmp && !yellow) || !row) {
         ESP_LOGE(TAG, "bmp alloc failed: plane=%u row=%u panel=%dx%d red=%d yellow=%d",
                  (unsigned)EC, (unsigned)row_stride, EW, EH,
                  has_red_bmp ? 1 : 0, has_yellow_bmp ? 1 : 0);
@@ -947,11 +1380,14 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
         return ESP_ERR_NO_MEM;
     }
     memset(black, 0xFF, EC);
-    memset(red,   0x00, EC);
+    if (red)
+        memset(red,   0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
 
-    ESP_LOGI(TAG, "BMP %dx%d %u-bit -> stretch to %dx%d", w, h, (unsigned)bpp, EW, EH);
+    image_fit_rect_t fit = image_fit_contain_rect(w, h, EW, EH);
+    ESP_LOGI(TAG, "BMP %dx%d %u-bit -> contain %dx%d at %d,%d on %dx%d",
+             w, h, (unsigned)bpp, fit.w, fit.h, fit.x, fit.y, EW, EH);
 
     uint8_t  *rgb_row = (uint8_t *)img_alloc((size_t)EW * 3, "bmp rgb row");
     fs_err_t *ec_b    = (fs_err_t *)img_calloc((size_t)EW + 2, sizeof(fs_err_t), "bmp fs err cur");
@@ -962,10 +1398,12 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
 
     if (use_fs) {
         for (int ey = 0; ey < EH; ey++) {
-            int src_y = ey * h / EH;
+            int rel_y = ey - fit.y;
+            bool in_y = rel_y >= 0 && rel_y < fit.h;
+            int src_y = in_y ? (rel_y * h / fit.h) : 0;
             if (src_y >= h) src_y = h - 1;
             int br = bottom_up ? (h - 1 - src_y) : src_y;
-            if (br != last_br) {
+            if (in_y && br != last_br) {
                 long off = (long)pixel_off + (long)br * (long)row_stride;
                 if (fp) {
                     fseek(fp, off, SEEK_SET);
@@ -979,12 +1417,20 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                 last_br = br;
             }
             for (int ex = 0; ex < EW; ex++) {
-                int src_x = ex * w / EW;
-                if (src_x >= w) src_x = w - 1;
-                int pi = src_x * bpp_bytes;
-                rgb_row[ex * 3]     = row[pi + 2];
-                rgb_row[ex * 3 + 1] = row[pi + 1];
-                rgb_row[ex * 3 + 2] = row[pi];
+                int rel_x = ex - fit.x;
+                bool in_x = rel_x >= 0 && rel_x < fit.w;
+                if (in_x && in_y) {
+                    int src_x = rel_x * w / fit.w;
+                    if (src_x >= w) src_x = w - 1;
+                    int pi = src_x * bpp_bytes;
+                    rgb_row[ex * 3]     = row[pi + 2];
+                    rgb_row[ex * 3 + 1] = row[pi + 1];
+                    rgb_row[ex * 3 + 2] = row[pi];
+                } else {
+                    rgb_row[ex * 3]     = 255;
+                    rgb_row[ex * 3 + 1] = 255;
+                    rgb_row[ex * 3 + 2] = 255;
+                }
             }
             memset(en_b, 0, ((size_t)EW + 2) * sizeof(fs_err_t));
             fs_dither_row(rgb_row, ec_b, en_b, black, red, yellow, ey, EW,
@@ -995,10 +1441,12 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
         free(rgb_row); free(ec_b); free(en_b);
         rgb_row = NULL; ec_b = NULL; en_b = NULL;
         for (int ey = 0; ey < EH; ey++) {
-            int src_y = ey * h / EH;
+            int rel_y = ey - fit.y;
+            bool in_y = rel_y >= 0 && rel_y < fit.h;
+            int src_y = in_y ? (rel_y * h / fit.h) : 0;
             if (src_y >= h) src_y = h - 1;
             int br = bottom_up ? (h - 1 - src_y) : src_y;
-            if (br != last_br) {
+            if (in_y && br != last_br) {
                 long off = (long)pixel_off + (long)br * (long)row_stride;
                 if (fp) {
                     fseek(fp, off, SEEK_SET);
@@ -1010,12 +1458,19 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                 last_br = br;
             }
             for (int ex = 0; ex < EW; ex++) {
-                int src_x = ex * w / EW;
-                if (src_x >= w) src_x = w - 1;
-                int pi = src_x * bpp_bytes;
-                dither_pixel_bayer(black, red, yellow, ex, ey, EW,
-                                   row[pi + 2], row[pi + 1], row[pi + 0],
-                                   has_yellow_bmp);
+                int rel_x = ex - fit.x;
+                bool in_x = rel_x >= 0 && rel_x < fit.w;
+                uint8_t r = 255, g = 255, b = 255;
+                if (in_x && in_y) {
+                    int src_x = rel_x * w / fit.w;
+                    if (src_x >= w) src_x = w - 1;
+                    int pi = src_x * bpp_bytes;
+                    r = row[pi + 2];
+                    g = row[pi + 1];
+                    b = row[pi + 0];
+                }
+                dither_pixel_bayer(black, red, yellow, ex, ey, EW, r, g, b,
+                                   has_red_bmp, has_yellow_bmp);
             }
         }
     }
@@ -1023,6 +1478,8 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     free(row);
     free(rgb_row); free(ec_b); free(en_b);
 
+    compensate_panel_image_orientation(black, red, yellow, EC,
+                                       has_red_bmp, has_yellow_bmp);
     if (!write_raw_planes(out_path, black, red, yellow, EC,
                           has_red_bmp, has_yellow_bmp)) {
         free(black);
@@ -1031,8 +1488,8 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Converted BMP -> %s (%u bytes/plane, %s%s, stretch)",
-             out_path, (unsigned)EC, use_fs ? "red/yellow-first F-S" : "Bayer",
+    ESP_LOGI(TAG, "Converted BMP -> %s (%u bytes/plane, %s%s, contain)",
+             out_path, (unsigned)EC, use_fs ? (has_yellow_bmp ? "yellow/red-first F-S" : "red-first F-S") : "Bayer",
              has_yellow_bmp ? ", BWRY" : "");
     free(black);
     free(red);
@@ -1088,9 +1545,9 @@ esp_err_t image_convert_file_to_epd_raw(const char *input_path, const char *out_
     if (magic[0] == 0x89 && magic[1] == 0x50) {
         struct stat st;
         if (stat(input_path, &st) != 0 || st.st_size <= 0) return ESP_FAIL;
-        if (st.st_size > 200 * 1024) {
-            ESP_LOGE(TAG, "PNG too large (%ld bytes, max 200KB) — use JPEG instead",
-                     (long)st.st_size);
+        if (st.st_size > PNG_MAX_FILE_BYTES) {
+            ESP_LOGE(TAG, "PNG too large (%ld bytes, max %u bytes)",
+                     (long)st.st_size, (unsigned)PNG_MAX_FILE_BYTES);
             return ESP_ERR_NO_MEM;
         }
         uint8_t *buf = (uint8_t *)img_alloc((size_t)st.st_size, "png file buffer");

@@ -15,7 +15,8 @@ typedef enum {
     EPD_PANEL_ATC_SSD1619_16_BWR = 14, /* 1.6" 200x200 BW+Red, SSD1619 family */
     EPD_PANEL_ATC_SSD1619_22_BWR = 15, /* 2.2" 160x296 BW+Red, SSD1619 family */
     EPD_PANEL_ATC_SSD1619_26_BWR = 16, /* 2.6" 184x360 BW+Red, SSD1619 family */
-    EPD_PANEL_ATC_SSD1619_29_BWR = 17, /* 2.9" 168x384 BW+Red, SSD1619 family */
+    EPD_PANEL_HINK_SSD1619_29_BWR = 17, /* HINK-E029A14-A1 2.9" 128x296 BW+Red, SSD1619 */
+    EPD_PANEL_ATC_SSD1619_29_BWR = EPD_PANEL_HINK_SSD1619_29_BWR, /* backward compatible id */
     EPD_PANEL_ATC_UC8151_29_BWR  = 18, /* 2.9" 168x384 BW+Red, UC8151 variant */
     EPD_PANEL_ATC_UCVAR43_BWR    = 19, /* 4.3" 152x522 BW+Red, UC variant */
     EPD_PANEL_ATC_DUALSSD_585_BWR = 20, /* 5.85" 792x272 BW+Red, dual SSD */
@@ -38,6 +39,10 @@ typedef enum {
     EPD_PANEL_REF_SSD1619_42_BW      = 35, /* 4.2" 400x300 BW, SSD1619 */
     EPD_PANEL_REF_SSD1619_42_BWR     = 36, /* 4.2" 400x300 BW+Red, SSD1619 */
     EPD_PANEL_REF_JD79668_42_BWRY    = 37, /* 4.2" 400x300 BWRY, JD79668; native 2bpp red/yellow */
+    EPD_PANEL_REF_SSD1683_42_BWR     = 38, /* 4.2" 400x300 BW+Red, SSD1683 */
+    EPD_PANEL_REF_SSD1683_42_LEGACY  = 39, /* legacy saved id; uses the same full-refresh SSD1683 path */
+    EPD_PANEL_REF_SSD1683_42_BW      = 40, /* 4.2" 400x300 BW, SSD1683; Good Display/GxEPD2-style path */
+    EPD_PANEL_FPC194_SSD1683_42_BWR  = 41, /* FPC-194 4.2" 400x300 BW+Red tag panel, SSD1683 */
 
     EPD_PANEL_COUNT
 } epd_panel_t;
@@ -58,21 +63,16 @@ esp_err_t    epd_display_from_file(const char *path);
 esp_err_t    epd_display_from_buffer(const fb_t *fb);
 /** 同上，但 SPI 传输完成后立即释放 fb，再等待 EPD 刷新——节省 18s 内存占用 */
 esp_err_t    epd_display_fb_free(fb_t *fb);
-/**
- * Fast BW-only refresh using a custom short LUT (~1-2s instead of ~10s).
- * Only the black plane is driven; red is left unchanged.
- * May produce slight ghosting — follow with a full refresh to clean up.
- * Currently only implemented for SSD1619 (4.2"); other panels fall back to full.
- */
-esp_err_t    epd_display_from_buffer_fast(const fb_t *fb);
-/** Force the next framebuffer/file display to reload the full waveform and skip fast partial refresh. */
+/** Force the next framebuffer/file display to reload the full refresh setup. */
 void         epd_request_full_refresh_next(void);
 esp_err_t    epd_clear_screen(void);
 esp_err_t    epd_display_test_pattern(void);
+esp_err_t    epd_repair_ghosting(int cycles, int pattern);
 
 epd_panel_t  epd_get_panel(void);
 esp_err_t    epd_set_panel(epd_panel_t panel);
 esp_err_t    epd_save_panel_config(epd_panel_t panel, int busy_idle);
+esp_err_t    epd_get_saved_panel_config(epd_panel_t *panel, int *busy_idle);
 
 /** 当前 BUSY 空闲电平：0=空闲时低，1=空闲时高（与 NVS epd/busy_idle 一致） */
 int          epd_busy_idle_level(void);

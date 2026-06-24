@@ -1,7 +1,9 @@
 #include "power_mgr.h"
 
 #include <string.h>
+#include <time.h>
 
+#include "display_mode.h"
 #include "epd.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -9,6 +11,7 @@
 #include "esp_timer.h"
 #include "nvs.h"
 #include "nvs_utils.h"
+#include "time_sync.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -26,6 +29,8 @@ static const char *TAG = "power";
 #define DEFAULT_IDLE_TIMEOUT_S 120
 #define CHECK_PERIOD_MS        10000
 #define IDLE_TASK_STACK        4096
+#define EPD_SLEEP_SETTLE_MS    25000
+#define CALENDAR_MIDNIGHT_WAKE_GRACE_S 5
 
 /*
  * 按键引脚见 button.c（SW3=9 / SW4=46 / SW5=3）。
@@ -44,8 +49,11 @@ static power_config_t s_cfg = {
 
 static bool              s_timer_wake;
 static int64_t           s_last_activity_us;
+static int64_t           s_last_epd_refresh_us;
 static portMUX_TYPE      s_activity_mux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t      s_idle_task;
+
+static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us);
 
 /* ── NVS helpers ──────────────────────────────────────────────────── */
 
@@ -103,7 +111,7 @@ static void idle_monitor_task(void *arg)
         if (idle_us >= threshold_us) {
             ESP_LOGI(TAG, "Idle %d s >= %d s, entering deep sleep",
                      (int)(idle_us / 1000000LL), timeout_s);
-            power_mgr_enter_sleep();
+            enter_sleep_internal(true, last);
         }
     }
 }
@@ -187,6 +195,59 @@ void power_mgr_reset_activity(void)
     portEXIT_CRITICAL(&s_activity_mux);
 }
 
+void power_mgr_note_epd_refresh_complete(void)
+{
+    int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_activity_mux);
+    s_last_activity_us = now;
+    s_last_epd_refresh_us = now;
+    portEXIT_CRITICAL(&s_activity_mux);
+}
+
+static bool activity_after(int64_t timestamp_us)
+{
+    portENTER_CRITICAL(&s_activity_mux);
+    bool changed = s_last_activity_us > timestamp_us;
+    portEXIT_CRITICAL(&s_activity_mux);
+    return changed;
+}
+
+static bool calendar_midnight_sleep_us(uint64_t *out_sleep_us)
+{
+    if (!out_sleep_us || power_mgr_load_mode() != DISPLAY_MODE_CALENDAR)
+        return false;
+
+    struct tm now_tm;
+    if (!time_sync_get_local_relaxed(&now_tm))
+        return false;
+
+    time_t now = time(NULL);
+    struct tm target = now_tm;
+    target.tm_sec = CALENDAR_MIDNIGHT_WAKE_GRACE_S;
+    target.tm_min = 0;
+    target.tm_hour = 0;
+    target.tm_mday += 1;
+    target.tm_isdst = -1;
+
+    time_t wake = mktime(&target);
+    if (wake <= now)
+        return false;
+
+    uint64_t sleep_s = (uint64_t)(wake - now);
+    *out_sleep_us = sleep_s * 1000000ULL;
+    ESP_LOGI(TAG, "Calendar mode: next timer wake at local 00:00:%02d in %llu s",
+             CALENDAR_MIDNIGHT_WAKE_GRACE_S, (unsigned long long)sleep_s);
+    return true;
+}
+
+static uint64_t next_timer_wakeup_us(const power_config_t *cfg)
+{
+    uint64_t sleep_us = 0;
+    if (calendar_midnight_sleep_us(&sleep_us))
+        return sleep_us;
+    return (uint64_t)cfg->interval_min * 60ULL * 1000000ULL;
+}
+
 esp_err_t power_mgr_arm(void)
 {
     if (!s_cfg.enabled) {
@@ -213,12 +274,44 @@ esp_err_t power_mgr_arm(void)
     return ESP_OK;
 }
 
-void power_mgr_enter_sleep(void)
+static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
 {
     power_config_t cfg;
     power_mgr_get_config(&cfg);
 
-    uint64_t sleep_us = (uint64_t)cfg.interval_min * 60ULL * 1000000ULL;
+    if (from_idle && activity_after(idle_snapshot_us)) {
+        ESP_LOGI(TAG, "Sleep postponed: activity changed before sleep entry");
+        return;
+    }
+
+    int64_t sleep_request_us = esp_timer_get_time();
+
+    /* Do not sleep while an EPD transfer/refresh still owns the display mutex. */
+    if (epd_is_ready() && !epd_wait_idle(70000)) {
+        ESP_LOGW(TAG, "EPD still busy, postponing deep sleep");
+        power_mgr_reset_activity();
+        return;
+    }
+
+    if (from_idle && activity_after(sleep_request_us)) {
+        ESP_LOGI(TAG, "Sleep postponed: display/user activity while waiting for EPD");
+        return;
+    }
+
+    int64_t last_epd_us;
+    portENTER_CRITICAL(&s_activity_mux);
+    last_epd_us = s_last_epd_refresh_us;
+    portEXIT_CRITICAL(&s_activity_mux);
+    if (last_epd_us > 0) {
+        int64_t elapsed_ms = (esp_timer_get_time() - last_epd_us) / 1000LL;
+        if (elapsed_ms < EPD_SLEEP_SETTLE_MS) {
+            int wait_ms = EPD_SLEEP_SETTLE_MS - (int)elapsed_ms;
+            ESP_LOGI(TAG, "Waiting %d ms after EPD refresh before deep sleep", wait_ms);
+            vTaskDelay(pdMS_TO_TICKS(wait_ms));
+        }
+    }
+
+    uint64_t sleep_us = next_timer_wakeup_us(&cfg);
     esp_err_t terr = esp_sleep_enable_timer_wakeup(sleep_us);
     if (terr != ESP_OK) {
         ESP_LOGE(TAG, "timer wakeup config failed: %s", esp_err_to_name(terr));
@@ -235,20 +328,19 @@ void power_mgr_enter_sleep(void)
                  esp_err_to_name(werr));
 
     ESP_LOGI(TAG,
-             "Entering deep sleep for %d min (EXT1: GPIO %d/%d only; SW4 not on RTC)",
-             cfg.interval_min, WAKE_GPIO_SW5, WAKE_GPIO_SW3);
-
-    /* Do not sleep while an EPD transfer/refresh still owns the display mutex. */
-    if (epd_is_ready() && !epd_wait_idle(70000)) {
-        ESP_LOGW(TAG, "EPD still busy, postponing deep sleep");
-        power_mgr_reset_activity();
-        return;
-    }
+             "Entering deep sleep for %llu s (configured interval=%d min, EXT1: GPIO %d/%d only; SW4 not on RTC)",
+             (unsigned long long)(sleep_us / 1000000ULL), cfg.interval_min,
+             WAKE_GPIO_SW5, WAKE_GPIO_SW3);
 
     nvs_flush_all();
     usb_serial_jtag_ll_phy_enable_pad(false);  // 关闭 USB PHY，避免深睡眠漏电
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_deep_sleep_start();
+}
+
+void power_mgr_enter_sleep(void)
+{
+    enter_sleep_internal(false, 0);
 }
 
 void power_mgr_save_mode(int mode_index)

@@ -17,6 +17,7 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_wifi.h"
 #include "cJSON.h"
 
 #include "miniz.h"
@@ -65,6 +66,7 @@ static EventGroupHandle_t s_event;
 static SemaphoreHandle_t  s_fetch_mutex;
 static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool               s_skip_initial_task_fetch;
+static bool               s_quick_refresh_network_allowed = true;
 static int64_t            s_data_fetched_us;
 static char               s_data_source_host[sizeof(((weather_config_t *)0)->api_host)];
 static char               s_data_source_location[sizeof(((weather_config_t *)0)->location)];
@@ -515,6 +517,7 @@ static char *gunzip(const char *src, int src_len)
 
 #define WEATHER_HTTP_TIMEOUT_MS 25000
 #define WEATHER_HTTP_RETRIES    3
+#define WEATHER_FULLSCREEN_WAIT_MS 90000
 
 static void redact_weather_url(const char *url, char *out, size_t out_len)
 {
@@ -601,6 +604,45 @@ static char *http_get(const char *url)
     }
 
     return rb.buf;
+}
+
+static void weather_wifi_net_boost_begin(wifi_ps_type_t *old_ps, bool *changed)
+{
+    if (old_ps)
+        *old_ps = WIFI_PS_MIN_MODEM;
+    if (changed)
+        *changed = false;
+    if (!old_ps || !changed)
+        return;
+
+    esp_err_t err = esp_wifi_get_ps(old_ps);
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "weather WiFi PS query skipped: %s", esp_err_to_name(err));
+        return;
+    }
+    if (*old_ps == WIFI_PS_NONE)
+        return;
+    err = esp_wifi_set_ps(WIFI_PS_NONE);
+    if (err == ESP_OK) {
+        *changed = true;
+        ESP_LOGI(TAG, "Weather HTTPS: WiFi power-save mode temporarily set to NONE (WiFi/AP not stopped)");
+    } else {
+        ESP_LOGW(TAG, "Weather HTTPS: failed to disable WiFi power save: %s",
+                 esp_err_to_name(err));
+    }
+}
+
+static void weather_wifi_net_boost_end(wifi_ps_type_t old_ps, bool changed)
+{
+    if (!changed)
+        return;
+    esp_err_t err = esp_wifi_set_ps(old_ps);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Weather HTTPS: failed to restore WiFi power save: %s",
+                 esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Weather HTTPS: WiFi power-save mode restored");
+    }
 }
 
 /* parse QWeather JSON */
@@ -1241,13 +1283,30 @@ static void draw_temp_marker(fb_t *fb, int px, int py, const char *tag,
 {
     char label[24];
     snprintf(label, sizeof(label), "%s%d\xc2\xb0", tag, temp);
-    int lw = ui_text_width(label, 1);
+    bool wide_583 = (fb && (fb->width == 600 || fb->width == 648) &&
+                     fb->height >= 430);
+    int text_px = wide_583 ? 16 : 0;
+    int lw = wide_583 ? fb_utf8_px_width(label, text_px)
+                      : ui_text_width(label, 1);
     int tx = clamp_i(px - lw / 2, plot_x + 1, plot_x + plot_w - lw - 1);
     int ty = (py < plot_y + 18) ? (py + 8) : (py - 18);
-    ty = clamp_i(ty, plot_y + 2, plot_y + plot_h - 14);
+    ty = clamp_i(ty, plot_y + 2, plot_y + plot_h - (wide_583 ? 16 : 14));
+    if (wide_583) {
+        if (color == COLOR_RED) {
+            tx = clamp_i(px - lw - 8, plot_x + 2, plot_x + plot_w - lw - 2);
+            ty = clamp_i(py + 8, plot_y + 18, plot_y + plot_h - 18);
+        } else {
+            ty = clamp_i(py - 22, plot_y + 4, plot_y + plot_h - 18);
+        }
+    }
 
     fb_fill_rect(fb, px - 3, py - 3, 7, 7, color);
-    fb_utf8_scaled(fb, tx, ty, label, color, 1);
+    if (wide_583) {
+        fb_fill_rect(fb, tx - 2, ty - 1, lw + 4, 18, COLOR_WHITE);
+        fb_utf8_px(fb, tx, ty, label, color, text_px);
+    } else {
+        fb_utf8_scaled(fb, tx, ty, label, color, 1);
+    }
 }
 
 static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
@@ -1332,10 +1391,12 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
         axis_max += 1;
     }
 
-    int plot_x = x + 54;
-    int plot_y = y + 40;
-    int plot_w = w - 82;
-    int plot_h = h - 70;
+    bool wide_583 = (fb && (fb->width == 600 || fb->width == 648) &&
+                     fb->height >= 430);
+    int plot_x = x + (wide_583 ? 50 : 54);
+    int plot_y = y + (wide_583 ? 36 : 40);
+    int plot_w = w - (wide_583 ? 76 : 82);
+    int plot_h = h - (wide_583 ? 64 : 70);
     if (plot_w < 140 || plot_h < 24)
         return;
 
@@ -1347,10 +1408,18 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
             trend = "\xe5\x8d\x87";
         else if (delta < 0)
             trend = "\xe9\x99\x8d";
-        if (partial_history) {
+        if (partial_history && wide_583) {
+            snprintf(summary, sizeof(summary),
+                     "\xe5\xae\x9e\xe6\xb5\x8b%d\xe7\x82\xb9  %s%d\xc2\xb0",
+                     count, trend, abs(delta));
+        } else if (partial_history) {
             snprintf(summary, sizeof(summary),
                      "\xe5\xae\x9e\xe6\xb5\x8b%d/24  %s%d\xc2\xb0",
                      count, trend, abs(delta));
+        } else if (wide_583) {
+            snprintf(summary, sizeof(summary),
+                     "24h\xe5\xae\x9e\xe6\xb5\x8b  %s%d\xc2\xb0",
+                     trend, abs(delta));
         } else {
             snprintf(summary, sizeof(summary),
                      "\xe5\xae\x9e\xe6\xb5\x8b""24h  %s%d\xc2\xb0",
@@ -1363,22 +1432,38 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
             trend = "\xe5\x8d\x87";
         else if (delta < 0)
             trend = "\xe9\x99\x8d";
-        snprintf(summary, sizeof(summary),
-                 "\xe9\xa2\x84\xe6\x8a\xa5""24h  %s%d\xc2\xb0",
-                 trend, abs(delta));
+        if (wide_583)
+            snprintf(summary, sizeof(summary),
+                     "24h\xe9\xa2\x84\xe6\xb5\x8b  %s%d\xc2\xb0",
+                     trend, abs(delta));
+        else
+            snprintf(summary, sizeof(summary),
+                     "\xe9\xa2\x84\xe6\x8a\xa5""24h  %s%d\xc2\xb0",
+                     trend, abs(delta));
     } else {
         snprintf(summary, sizeof(summary),
                  "%s  \xe9\xab\x98%d/\xe4\xbd\x8e%d\xc2\xb0""C",
                  today_text, today_high, today_low);
     }
-    fb_utf8_scaled_maxw(fb, x + w - 278, y + 12, summary,
-                        COLOR_RED, 1, 262);
+    int summary_w = wide_583 ? 224 : 262;
+    int summary_x = x + w - summary_w - (wide_583 ? 16 : 16);
+    if (wide_583)
+        fb_utf8_px_maxw(fb, summary_x, y + 10, summary, COLOR_RED, 16, summary_w);
+    else
+        fb_utf8_scaled_maxw(fb, x + w - 278, y + 12, summary,
+                            COLOR_RED, 1, 262);
 
     char axis[16];
     snprintf(axis, sizeof(axis), "%d\xc2\xb0", data_max);
-    fb_utf8_scaled(fb, x + 14, plot_y - 2, axis, COLOR_RED, 1);
+    if (wide_583)
+        fb_utf8_px(fb, x + 14, plot_y - 3, axis, COLOR_RED, 16);
+    else
+        fb_utf8_scaled(fb, x + 14, plot_y - 2, axis, COLOR_RED, 1);
     snprintf(axis, sizeof(axis), "%d\xc2\xb0", data_min);
-    fb_utf8_scaled(fb, x + 14, plot_y + plot_h - 12, axis, COLOR_BLACK, 1);
+    if (wide_583)
+        fb_utf8_px(fb, x + 14, plot_y + plot_h - 13, axis, COLOR_BLACK, 16);
+    else
+        fb_utf8_scaled(fb, x + 14, plot_y + plot_h - 12, axis, COLOR_BLACK, 1);
 
     fb_vline(fb, plot_x, plot_y, plot_h, COLOR_BLACK);
     fb_hline(fb, plot_x, plot_y + plot_h, plot_w, COLOR_BLACK);
@@ -1423,21 +1508,70 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
                          mark_color[m], plot_x, plot_y, plot_w, plot_h);
     }
 
-    int label_idx[4] = {0, count / 3, count * 2 / 3, count - 1};
-    int last_label_x = -1000;
-    for (int m = 0; m < 4; m++) {
-        int i = label_idx[m];
-        bool duplicate = false;
-        for (int k = 0; k < m; k++) {
-            if (label_idx[k] == i) duplicate = true;
+    if (wide_583) {
+        int label_idx[3] = {0, count / 2, count - 1};
+        char history_label0[16];
+        char history_label1[16];
+        int left_hours = count - 1;
+        int mid_hours = count - 1 - label_idx[1];
+        if (count >= WEATHER_TEMP_HISTORY_POINTS)
+            left_hours = 24;
+        if (mid_hours < 1)
+            mid_hours = 1;
+        snprintf(history_label0, sizeof(history_label0), "%dh\xe5\x89\x8d",
+                 left_hours);
+        snprintf(history_label1, sizeof(history_label1), "%dh\xe5\x89\x8d",
+                 mid_hours);
+        const char *labels_history[3] = {
+            history_label0,
+            history_label1,
+            "\xe7\x8e\xb0\xe5\x9c\xa8",
+        };
+        const char *labels_forecast[3] = {
+            "\xe7\x8e\xb0\xe5\x9c\xa8",
+            "\xe7\xba\xa6""12h",
+            "\xe7\xba\xa6""24h",
+        };
+        const char *labels_fallback[3] = {
+            "\xe4\xbd\x8e\xe6\xb8\xa9",
+            "\xe9\xab\x98\xe6\xb8\xa9",
+            "\xe7\x8e\xb0\xe5\x9c\xa8",
+        };
+        const char **labels = has_history ? labels_history
+                             : (using_forecast ? labels_forecast : labels_fallback);
+        int last_label_x = -1000;
+        for (int m = 0; m < 3; m++) {
+            int i = label_idx[m];
+            bool duplicate = false;
+            for (int k = 0; k < m; k++) {
+                if (label_idx[k] == i) duplicate = true;
+            }
+            if (duplicate) continue;
+            int lw = fb_utf8_px_width(labels[m], 16);
+            int tx = clamp_i(px[i] - lw / 2, plot_x + 1, plot_x + plot_w - lw - 1);
+            if (tx - last_label_x > 50) {
+                fb_utf8_px(fb, tx, plot_y + plot_h + 5,
+                           labels[m], COLOR_BLACK, 16);
+                last_label_x = tx;
+            }
         }
-        if (duplicate) continue;
-        int lw = ui_text_width(xlabels[i], 1);
-        int tx = clamp_i(px[i] - lw / 2, plot_x + 1, plot_x + plot_w - lw - 1);
-        if (tx - last_label_x > 44) {
-            fb_utf8_scaled(fb, tx, plot_y + plot_h + 4,
-                           xlabels[i], COLOR_BLACK, 1);
-            last_label_x = tx;
+    } else {
+        int label_idx[4] = {0, count / 3, count * 2 / 3, count - 1};
+        int last_label_x = -1000;
+        for (int m = 0; m < 4; m++) {
+            int i = label_idx[m];
+            bool duplicate = false;
+            for (int k = 0; k < m; k++) {
+                if (label_idx[k] == i) duplicate = true;
+            }
+            if (duplicate) continue;
+            int lw = ui_text_width(xlabels[i], 1);
+            int tx = clamp_i(px[i] - lw / 2, plot_x + 1, plot_x + plot_w - lw - 1);
+            if (tx - last_label_x > 44) {
+                fb_utf8_scaled(fb, tx, plot_y + plot_h + 4,
+                               xlabels[i], COLOR_BLACK, 1);
+                last_label_x = tx;
+            }
         }
     }
 }
@@ -1504,6 +1638,198 @@ static void draw_compact_forecast_card(fb_t *fb, int x, int y, int w, int h,
              day->temp_max, day->temp_min);
     fb_utf8_scaled_maxw(fb, x + 8, y + h - 26, temp,
                         COLOR_BLACK, 1, w - 16);
+}
+
+static void draw_weather_583_metric(fb_t *fb, int x, int y, int w, int h,
+                                    const char *label, const char *value,
+                                    fb_color_t accent)
+{
+    if (!fb || w <= 12 || h <= 24)
+        return;
+
+    fb_rect(fb, x, y, w, h, COLOR_BLACK);
+    fb_fill_rect(fb, x, y, 3, h, accent);
+    if (accent == COLOR_RED) {
+        int accent_w = w / 3;
+        if (accent_w < 28)
+            accent_w = 28;
+        fb_fill_rect(fb, x, y, accent_w, 2, COLOR_RED);
+    }
+    fb_utf8_px_maxw(fb, x + 10, y + 6, label, accent, 16, w - 20);
+    fb_utf8_px_maxw(fb, x + 10, y + h - 21, value,
+                    COLOR_BLACK, 18, w - 20);
+}
+
+static void draw_weather_583_current(fb_t *fb, int x, int y, int w, int h,
+                                     const weather_config_t *cfg,
+                                     const weather_data_t *wd)
+{
+    if (!fb || !wd)
+        return;
+
+    ui_draw_card(fb, x, y, w, h, true);
+    ui_draw_section_label(fb, x + 10, y + 8,
+                          "\xe5\xbd\x93\xe5\x89\x8d\xe5\xa4\xa9\xe6\xb0\x94",
+                          COLOR_BLACK, 1);
+
+    int today_low = wd->now.temp;
+    int today_high = wd->now.temp;
+    if (wd->daily_count > 0) {
+        today_low = wd->daily[0].temp_min;
+        today_high = wd->daily[0].temp_max;
+    }
+
+    draw_weather_icon_code(fb, x + 25, y + 52, wd->now.icon, wd->now.text,
+                           QW_ICON_LARGE_SIZE, COLOR_BLACK);
+
+    int temp_x = x + 118;
+    int temp_y = y + 27;
+    draw_weather_temp_value_fit(fb, temp_x, temp_y, wd->now.temp,
+                                COLOR_BLACK, 5, w - (temp_x - x) - 12);
+
+    fb_fill_rect(fb, temp_x, y + 105, 38, 3, COLOR_RED);
+    fb_utf8_px_maxw(fb, temp_x, y + 116, wd->now.text,
+                    COLOR_RED, 18, w - (temp_x - x) - 12);
+
+    char range[48];
+    snprintf(range, sizeof(range),
+             "\xe4\xbb\x8a\xe6\x97\xa5 %d/%d\xc2\xb0",
+             today_high, today_low);
+    fb_utf8_scaled_maxw(fb, x + 25, y + 116, range,
+                        COLOR_BLACK, 1, temp_x - x - 34);
+
+    (void)cfg; /* City/date is already shown in the page header. */
+}
+
+static void draw_weather_583_metrics(fb_t *fb, int x, int y, int w, int h,
+                                     const weather_now_t *now)
+{
+    if (!fb || !now)
+        return;
+
+    ui_draw_card(fb, x, y, w, h, false);
+    ui_draw_section_label(fb, x + 10, y + 8,
+                          "\xe6\xb0\x94\xe8\xb1\xa1\xe6\x8c\x87\xe6\xa0\x87",
+                          COLOR_BLACK, 1);
+
+    char feels_value[20];
+    char humidity_value[20];
+    char pressure_value[24];
+    char wind_value[24];
+    snprintf(feels_value, sizeof(feels_value), "%d\xc2\xb0", now->feels_like);
+    snprintf(humidity_value, sizeof(humidity_value), "%d%%", now->humidity);
+    snprintf(pressure_value, sizeof(pressure_value), "%dhPa", now->pressure);
+    snprintf(wind_value, sizeof(wind_value), "%d\xe7\xba\xa7", now->wind_scale);
+
+    const int pad = 12;
+    const int gap = 8;
+    const int chip_y = y + 36;
+    const int chip_w = (w - pad * 2 - gap) / 2;
+    const int chip_h = (h - 48 - gap) / 2;
+    int chip_x2 = x + pad + chip_w + gap;
+
+    draw_weather_583_metric(fb, x + pad, chip_y, chip_w, chip_h,
+                            "\xe4\xbd\x93\xe6\x84\x9f", feels_value, COLOR_RED);
+    draw_weather_583_metric(fb, chip_x2, chip_y, chip_w, chip_h,
+                            "\xe6\xb9\xbf\xe5\xba\xa6", humidity_value, COLOR_BLACK);
+    draw_weather_583_metric(fb, x + pad, chip_y + chip_h + gap, chip_w, chip_h,
+                            "\xe6\xb0\x94\xe5\x8e\x8b", pressure_value, COLOR_BLACK);
+    draw_weather_583_metric(fb, chip_x2, chip_y + chip_h + gap, chip_w, chip_h,
+                            now->wind_dir[0] ? now->wind_dir : "\xe9\xa3\x8e\xe5\x8a\x9b",
+                            wind_value, COLOR_RED);
+}
+
+static void draw_weather_583_forecast_card(fb_t *fb, int x, int y, int w, int h,
+                                           const weather_daily_t *day, int index)
+{
+    if (!fb || !day || w <= 24 || h <= 58)
+        return;
+
+    fb_color_t accent = (index == 0) ? COLOR_RED : COLOR_BLACK;
+    fb_rect(fb, x, y, w, h, COLOR_BLACK);
+    if (index == 0) {
+        fb_fill_rect(fb, x, y, w / 3, 2, COLOR_RED);
+        fb_fill_rect(fb, x, y, 2, 28, COLOR_RED);
+    }
+
+    char date[32];
+    snprintf(date, sizeof(date), "%s %s",
+             compact_forecast_name(index), compact_forecast_date(day));
+    fb_utf8_px_maxw(fb, x + 10, y + 9, date, accent, 17, w - 20);
+
+    draw_weather_icon_code(fb, x + w - 42, y + 34,
+                           day->icon_day, day->text_day,
+                           QW_ICON_SMALL_SIZE, COLOR_BLACK);
+    fb_utf8_px_maxw(fb, x + 10, y + 39, day->text_day,
+                    COLOR_BLACK, 18, w - 58);
+
+    char temp[28];
+    snprintf(temp, sizeof(temp), "%d/%d\xc2\xb0",
+             day->temp_max, day->temp_min);
+    fb_utf8_px_maxw(fb, x + 10, y + h - 25, temp,
+                    COLOR_BLACK, 17, w - 20);
+}
+
+static void draw_weather_583_forecast(fb_t *fb, int x, int y, int w, int h,
+                                      const weather_data_t *wd)
+{
+    if (!fb || !wd)
+        return;
+
+    ui_draw_section_label(fb, x, y,
+                          "\xe4\xb8\x89\xe6\x97\xa5\xe9\xa2\x84\xe6\x8a\xa5",
+                          COLOR_BLACK, 1);
+
+    int n = wd->daily_count;
+    if (n > 3)
+        n = 3;
+    if (n <= 0)
+        return;
+
+    const int gap = 10;
+    const int card_y = y + 24;
+    const int card_h = h - 24;
+    int card_w = (w - gap * 2) / 3;
+    for (int i = 0; i < n; i++) {
+        int bx = x + i * (card_w + gap);
+        int bw = (i == 2) ? (x + w - bx) : card_w;
+        draw_weather_583_forecast_card(fb, bx, card_y, bw, card_h,
+                                       &wd->daily[i], i);
+    }
+}
+
+static void draw_weather_583_page(fb_t *fb, int W, int H, int MX,
+                                  const weather_config_t *cfg,
+                                  const weather_data_t *wd)
+{
+    if (!fb || !wd)
+        return;
+
+    const int content_x = MX + 2;
+    const int content_w = W - 2 * MX;
+    const int gap = 10;
+    const int body_top = 52;
+    const int body_bottom = H - 54;
+
+    const int top_h = 146;
+    const int hero_w = content_w * 61 / 100;
+    const int metric_w = content_w - hero_w - gap;
+    const int metric_x = content_x + hero_w + gap;
+
+    draw_weather_583_current(fb, content_x, body_top, hero_w, top_h,
+                             cfg, wd);
+    draw_weather_583_metrics(fb, metric_x, body_top, metric_w, top_h,
+                             &wd->now);
+
+    const int forecast_y = body_top + top_h + gap;
+    const int forecast_h = 108;
+    draw_weather_583_forecast(fb, content_x, forecast_y, content_w,
+                              forecast_h, wd);
+
+    const int trend_y = forecast_y + forecast_h + gap;
+    const int trend_h = body_bottom - trend_y;
+    if (trend_h >= 100)
+        draw_temp_corridor(fb, content_x, trend_y, content_w, trend_h, wd);
 }
 
 static void draw_compact_weather_page(fb_t *fb, int W, int H, int MX,
@@ -1631,6 +1957,21 @@ static const char *weather_footer_tip(const weather_data_t *wd)
     return "\xe5\xa4\xa9\xe6\xb0\x94\xe5\xb7\xb2\xe6\x9b\xb4\xe6\x96\xb0";
 }
 
+static esp_err_t render_weather_unavailable(void)
+{
+    fb_t *fb = fb_create();
+    if (!fb)
+        return ESP_ERR_NO_MEM;
+
+    fb_clear(fb);
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_header(fb, "\xe5\xa4\xa9\xe6\xb0\x94", "\xe7\xa6\xbb\xe7\xba\xbf", true);
+    ui_draw_empty_state(fb,
+                        "\xe5\xa4\xa9\xe6\xb0\x94\xe8\x8e\xb7\xe5\x8f\x96\xe5\xa4\xb1\xe8\xb4\xa5",
+                        "\xe8\xaf\xb7\xe6\xa3\x80\xe6\x9f\xa5 WiFi \xe6\x88\x96 API \xe9\x85\x8d\xe7\xbd\xae");
+    return epd_display_fb_free(fb);
+}
+
 static void render_weather(unsigned epoch)
 {
     weather_config_t cfg_local;
@@ -1645,11 +1986,12 @@ static void render_weather(unsigned epoch)
     const int W = fb->width;
     const int H = fb->height;
     const int MX = W * 30 / 648;
-    const bool big = (W >= 600);
-    const int sc = ui_scale_for(fb);
+    const bool weather_583 = ((W == 600 || W == 648) && H >= 430);
+    const bool big = ui_layout_is_wide(fb);
+    const int sc = weather_583 ? 2 : ui_scale_for(fb);
 
     struct tm tm;
-    bool time_ok = time_sync_get_local(&tm);
+    bool time_ok = time_sync_get_local_relaxed(&tm);
     char date_str[32];
     if (time_ok) {
         snprintf(date_str, sizeof(date_str), "%04d/%02d/%02d",
@@ -1678,7 +2020,9 @@ static void render_weather(unsigned epoch)
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     ui_draw_header(fb, "\xe5\xa4\xa9\xe6\xb0\x94", right, true);
 
-    if (big && W >= 760 && H >= 430) {
+    if (weather_583) {
+        draw_weather_583_page(fb, W, H, MX, &cfg_local, &s_data);
+    } else if (big && W >= 760 && H >= 430) {
         const int content_x = MX;
         const int content_w = W - 2 * MX;
         const int gap = 8;
@@ -1723,30 +2067,19 @@ static void render_weather(unsigned epoch)
         return;
     }
 
-    /* export and display */
-    const char *raw_path = "/spiffs/image.bin";
-    fb_raw_file_lock();
-    if (!display_policy_epoch_is_current(epoch)) {
+    if (!epd_is_ready()) {
         fb_destroy(fb);
-        fb_raw_file_unlock();
-        ESP_LOGI(TAG, "Weather display skipped before export: stale request");
+        ESP_LOGW(TAG, "Weather frame ready but EPD not ready, skip refresh");
         return;
     }
-    esp_err_t err = fb_export(fb, raw_path);
-    fb_destroy(fb);
 
-    if (err == ESP_OK && epd_is_ready() && display_policy_epoch_is_current(epoch)) {
-        esp_err_t disp_err = epd_display_from_file(raw_path);
-        if (disp_err == ESP_OK) {
-            scheduler_notify_manual_show();
-            ESP_LOGI(TAG, "Weather displayed on EPD");
-        } else {
-            ESP_LOGE(TAG, "Weather display failed: %s", esp_err_to_name(disp_err));
-        }
-    } else if (err == ESP_OK) {
-        ESP_LOGW(TAG, "Weather frame ready but EPD not ready, skip refresh");
+    esp_err_t disp_err = epd_display_fb_free(fb);
+    if (disp_err == ESP_OK) {
+        scheduler_notify_manual_show();
+        ESP_LOGI(TAG, "Weather displayed on EPD");
+    } else {
+        ESP_LOGE(TAG, "Weather display failed: %s", esp_err_to_name(disp_err));
     }
-    fb_raw_file_unlock();
 }
 
 /* fetch + display */
@@ -1786,9 +2119,12 @@ static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
 
     esp_err_t ret = ESP_OK;
     bool notify_clock = false;
+    wifi_ps_type_t old_wifi_ps = WIFI_PS_MIN_MODEM;
+    bool wifi_ps_changed = false;
 
     ESP_LOGI(TAG, "Fetching weather for location=%s (host=%s) ...",
              cfg.location, cfg.api_host);
+    weather_wifi_net_boost_begin(&old_wifi_ps, &wifi_ps_changed);
 
     char url[256];
     bool full_page = display_policy_weather_use_full_page(force_fullscreen);
@@ -1810,7 +2146,7 @@ static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
         ret = ESP_FAIL;
         goto out;
     }
-    ESP_LOGI(TAG, "Current: %d掳C, %s, icon=%d", s_data.now.temp, s_data.now.text, s_data.now.icon);
+    ESP_LOGI(TAG, "Current: %d\xc2\xb0" "C, %s, icon=%d", s_data.now.temp, s_data.now.text, s_data.now.icon);
 
     /* Let the first TLS connection fully tear down in tcpip before opening the second; back-to-back
      * HTTPS on STA+AP has triggered pbuf_free(ref==0) in tcp_receive on some builds. */
@@ -1876,6 +2212,7 @@ static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
     }
 
 out:
+    weather_wifi_net_boost_end(old_wifi_ps, wifi_ps_changed);
     xSemaphoreGive(s_fetch_mutex);
     if (ret == ESP_OK && notify_clock)
         clock_display_notify_weather_data();
@@ -2070,6 +2407,11 @@ void weather_skip_initial_task_fetch_cancel(void)
     s_skip_initial_task_fetch = false;
 }
 
+void weather_set_quick_refresh_network_allowed(bool allowed)
+{
+    s_quick_refresh_network_allowed = allowed;
+}
+
 static void weather_task(void *arg)
 {
     ESP_LOGI(TAG, "Weather task running");
@@ -2080,7 +2422,8 @@ static void weather_task(void *arg)
     s_skip_initial_task_fetch = false;
     weather_config_t cfg;
     weather_config_snapshot(&cfg);
-    if (!skip_first && cfg.enabled && weather_config_has_api(&cfg))
+    if (!skip_first && s_quick_refresh_network_allowed &&
+        cfg.enabled && weather_config_has_api(&cfg))
         weather_fetch_and_display(false);
 
     for (;;) {
@@ -2102,9 +2445,11 @@ static void weather_task(void *arg)
                 continue;
             }
             bool want = false;
-            if ((bits & BIT_EMBED_REQUEST) && weather_config_has_api(&cfg))
+            if ((bits & BIT_EMBED_REQUEST) &&
+                s_quick_refresh_network_allowed && weather_config_has_api(&cfg))
                 want = true;
-            if ((bits & BIT_CFG_CHANGED) && cfg.enabled && weather_config_has_api(&cfg))
+            if ((bits & BIT_CFG_CHANGED) && s_quick_refresh_network_allowed &&
+                cfg.enabled && weather_config_has_api(&cfg))
                 want = true;
             if ((bits & BIT_EMBED_REQUEST) && !weather_embedded_target_active() &&
                 !(bits & BIT_CFG_CHANGED))
@@ -2134,7 +2479,8 @@ static void weather_task(void *arg)
 
         /* Fetch immediately after web/NVS config changes. */
         if (bits & BIT_CFG_CHANGED) {
-            if (cfg.enabled && weather_config_has_api(&cfg))
+            if (s_quick_refresh_network_allowed &&
+                cfg.enabled && weather_config_has_api(&cfg))
                 weather_fetch_and_display(false);
             continue;
         }
@@ -2142,13 +2488,14 @@ static void weather_task(void *arg)
             continue;
         if (bits & BIT_EMBED_REQUEST) {
             if (weather_embedded_target_active() &&
+                s_quick_refresh_network_allowed &&
                 weather_config_has_api(&cfg) &&
                 !weather_try_notify_from_fresh_cache(&cfg))
                 weather_fetch_and_display(false);
             continue;
         }
 
-        if (weather_config_has_api(&cfg))
+        if (s_quick_refresh_network_allowed && weather_config_has_api(&cfg))
             weather_fetch_and_display(false);
     }
 }
@@ -2250,7 +2597,11 @@ esp_err_t weather_display_cached(void)
         if (s_fetch_mutex)
             xSemaphoreGive(s_fetch_mutex);
         ESP_LOGI(TAG, "no cached weather data, requesting weather task fetch and waiting");
-        return weather_request_fullscreen_fetch_wait(180000);
+        esp_err_t err = weather_request_fullscreen_fetch_wait(WEATHER_FULLSCREEN_WAIT_MS);
+        if (err == ESP_OK)
+            return ESP_OK;
+        ESP_LOGW(TAG, "weather fetch unavailable for display: %s", esp_err_to_name(err));
+        return render_weather_unavailable();
     }
 
     if (s_data.hourly_count < 3 && !weather_history_has_enough_locked() &&
@@ -2258,7 +2609,19 @@ esp_err_t weather_display_cached(void)
         if (s_fetch_mutex)
             xSemaphoreGive(s_fetch_mutex);
         ESP_LOGI(TAG, "cached weather lacks hourly data, requesting fullpage fetch and waiting");
-        return weather_request_fullscreen_fetch_wait(180000);
+        esp_err_t err = weather_request_fullscreen_fetch_wait(WEATHER_FULLSCREEN_WAIT_MS);
+        if (err == ESP_OK)
+            return ESP_OK;
+        ESP_LOGW(TAG, "weather hourly refresh unavailable, rendering cached page: %s",
+                 esp_err_to_name(err));
+        if (s_fetch_mutex)
+            xSemaphoreTake(s_fetch_mutex, portMAX_DELAY);
+        render_weather(epoch);
+        if (s_fetch_mutex)
+            xSemaphoreGive(s_fetch_mutex);
+        if (display_policy_epoch_is_current(epoch))
+            display_policy_set_manual_screen_active(true);
+        return ESP_OK;
     }
 
     render_weather(epoch);

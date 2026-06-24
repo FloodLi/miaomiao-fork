@@ -93,14 +93,14 @@ static int tt_now_minutes(const struct tm *tm)
 
 /* ── Week calculation ────────────────────────────────────────────── */
 
-/** 与 timetable_current_week() 等价，但作用于一个传入的快照（无锁） */
+/** Same as timetable_current_week(), but uses the passed snapshot without locking. */
 static int tt_current_week_in(const timetable_config_t *cfg)
 {
     if (cfg->semester_start == 0)
         return 0;
 
     struct tm tm;
-    if (!time_sync_get_local(&tm))
+    if (!time_sync_get_local_relaxed(&tm))
         return 0;
 
     time_t now = mktime(&tm);
@@ -117,7 +117,7 @@ static int tt_current_week_in(const timetable_config_t *cfg)
 
 int timetable_current_week(void)
 {
-    /* 仅需 semester_start，不复制整张表（≈5.4KB），避免给小栈调用方添麻烦。 */
+    /* Only semester_start is needed here; avoid copying the large table onto small stacks. */
     int32_t semester_start;
     xSemaphoreTake(s_cfg_mutex, portMAX_DELAY);
     semester_start = s_cfg.semester_start;
@@ -127,7 +127,7 @@ int timetable_current_week(void)
         return 0;
 
     struct tm tm;
-    if (!time_sync_get_local(&tm))
+    if (!time_sync_get_local_relaxed(&tm))
         return 0;
 
     time_t now = mktime(&tm);
@@ -151,7 +151,7 @@ static bool tt_cell_active(const tt_cell_t *c, int week)
     return (c->weeks & (1u << (week - 1))) != 0;
 }
 
-/* ── Grid query (current / next course)  —— 全部基于传入快照 ──────── */
+/* -- Grid query (current / next course), all based on the passed snapshot -- */
 
 static const tt_cell_t *tt_find_current_in(const timetable_config_t *cfg,
                                            int wd, int now_min, int week)
@@ -247,7 +247,7 @@ esp_err_t timetable_set_config(const timetable_config_t *cfg)
         s_cfg.show_days = 5;
     snap = s_cfg;
     xSemaphoreGive(s_cfg_mutex);
-    /* NVS 写入耗时长，放锁外执行避免阻塞 */
+    /* Save NVS after releasing the lock to avoid blocking readers. */
     return tt_nvs_save_snapshot(&snap);
 }
 
@@ -255,7 +255,7 @@ bool timetable_get_current_course(char *name_buf, size_t name_len,
                                   char *room_buf, size_t room_len,
                                   int *minutes_remaining)
 {
-    /* timetable_config_t ≈5.4KB；放在堆上避免压栈 */
+    /* Allocate timetable_config_t on heap to avoid stack pressure. */
     timetable_config_t *snap = malloc(sizeof(*snap));
     if (!snap) return false;
     bool ok = false;
@@ -265,7 +265,7 @@ bool timetable_get_current_course(char *name_buf, size_t name_len,
         if (!snap->enabled) break;
 
         struct tm tm;
-        if (!time_sync_get_local(&tm)) break;
+        if (!time_sync_get_local_relaxed(&tm)) break;
 
         int wd = tt_weekday_mon0(&tm);
         int now = tt_now_minutes(&tm);
@@ -310,7 +310,7 @@ bool timetable_get_next_course(char *name_buf, size_t name_len,
         if (!snap->enabled) break;
 
         struct tm tm;
-        if (!time_sync_get_local(&tm)) break;
+        if (!time_sync_get_local_relaxed(&tm)) break;
 
         int wd = tt_weekday_mon0(&tm);
         int now = tt_now_minutes(&tm);
@@ -369,15 +369,124 @@ static int tt_collect_today_in(const timetable_config_t *cfg,
 
 static int tt_text_px(const char *s, int scale)
 {
-    int w = 0;
-    while (*s) {
-        unsigned char c = *(const unsigned char *)s;
-        if (c < 0x80)        { w += 8 * scale; s += 1; }
-        else if (c < 0xE0)   { w += 16 * scale; s += 2; }
-        else if (c < 0xF0)   { w += 16 * scale; s += 3; }
-        else                  { w += 16 * scale; s += 4; }
+    if (scale < 1)
+        scale = 1;
+    return fb_utf8_px_width(s, 16 * scale);
+}
+
+static int tt_draw_text(fb_t *fb, int x, int y, const char *s,
+                        fb_color_t color, int scale)
+{
+    if (scale < 1)
+        scale = 1;
+    return fb_utf8_px(fb, x, y, s, color, 16 * scale);
+}
+
+static int tt_draw_text_maxw(fb_t *fb, int x, int y, const char *s,
+                             fb_color_t color, int scale, int max_w)
+{
+    if (scale < 1)
+        scale = 1;
+    return fb_utf8_px_maxw(fb, x, y, s, color, 16 * scale, max_w);
+}
+
+static int tt_layout_scale(const fb_t *fb)
+{
+    return (fb && fb->width >= 600) ? 2 : 1;
+}
+
+static void tt_draw_header(fb_t *fb, const char *title, const char *right,
+                           bool red_accent)
+{
+    if (!fb)
+        return;
+
+    const int W = fb->width;
+    const int s = tt_layout_scale(fb);
+    const int x = 14 * s;
+    const int y = 8 * s;
+    const int header_h = 18 * s;
+
+    if (red_accent)
+        fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, COLOR_RED);
+
+    int title_w = 0;
+    if (title && title[0]) {
+        int title_max_w = W / 2 - 28 * s;
+        if (title_max_w < 0)
+            title_max_w = 0;
+        title_w = tt_text_px(title, 1);
+        if (title_w > title_max_w)
+            title_w = title_max_w;
+        tt_draw_text_maxw(fb, x, y, title, COLOR_BLACK, 1, title_max_w);
     }
-    return w;
+
+    int battery_right = W - 14 * s;
+    int battery_w = ui_draw_battery_badge(fb, battery_right, y);
+    int right_limit = battery_right - battery_w - 8 * s;
+
+    if (right && right[0]) {
+        int min_right_x = x + title_w + 12 * s;
+        if (min_right_x < x)
+            min_right_x = x;
+        if (min_right_x > right_limit)
+            min_right_x = right_limit;
+
+        int rw = tt_text_px(right, 1);
+        int rx = right_limit - rw;
+        if (rx < min_right_x)
+            rx = min_right_x;
+        if (right_limit > rx)
+            tt_draw_text_maxw(fb, rx, y + 1 * s, right, COLOR_BLACK, 1,
+                              right_limit - rx);
+    }
+
+    ui_draw_dotted_hline(fb, 12 * s, header_h + 6 * s, W - 24 * s,
+                         COLOR_BLACK, 6);
+}
+
+static void tt_draw_footer(fb_t *fb, const char *left, const char *right)
+{
+    if (!fb)
+        return;
+
+    const int W = fb->width;
+    const int H = fb->height;
+    const int s = tt_layout_scale(fb);
+    const int y = H - 20 * s;
+
+    ui_draw_dotted_hline(fb, 12 * s, y - 4 * s, W - 24 * s,
+                         COLOR_BLACK, 6);
+
+    int left_max_w = W - 28 * s;
+    if (right && right[0]) {
+        int rw = tt_text_px(right, 1);
+        left_max_w = W - 34 * s - rw;
+    }
+    if (left && left[0] && left_max_w > 0)
+        tt_draw_text_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1, left_max_w);
+
+    if (right && right[0]) {
+        int rw = tt_text_px(right, 1);
+        tt_draw_text(fb, W - 14 * s - rw, y, right, COLOR_BLACK, 1);
+    }
+}
+
+static void tt_draw_empty_state(fb_t *fb, const char *title, const char *hint)
+{
+    if (!fb)
+        return;
+
+    int s = tt_layout_scale(fb);
+    int y = fb->height / 2 - 28 * s;
+    if (title) {
+        int w = tt_text_px(title, s + 1);
+        tt_draw_text(fb, (fb->width - w) / 2, y, title, COLOR_BLACK, s + 1);
+    }
+    if (hint) {
+        int w = tt_text_px(hint, s);
+        tt_draw_text(fb, (fb->width - w) / 2, y + 28 * s, hint, COLOR_RED, s);
+    }
 }
 
 /* ── EPD: full-week grid view (for 5.83" 648x480) ────────────────── */
@@ -395,7 +504,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
     int W = fb->width;
     int H = fb->height;
     int cols = cfg->show_days;
-    int s = ui_scale_for(fb);
+    int s = tt_layout_scale(fb);
 
     /* ── title ── */
     {
@@ -413,12 +522,12 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
                  tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                  tm->tm_hour, tm->tm_min);
         ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-        ui_draw_header(fb, title, ts, true);
+        tt_draw_header(fb, title, ts, true);
     }
 
     int pc = cfg->period_count;
     if (pc == 0) {
-        ui_draw_empty_state(fb, "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b", "\xe8\xaf\xb7\xe9\x80\x9a\xe8\xbf\x87\xe7\xbd\x91\xe9\xa1\xb5\xe6\xb7\xbb\xe5\x8a\xa0");
+        tt_draw_empty_state(fb, "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b", "\xe8\xaf\xb7\xe9\x80\x9a\xe8\xbf\x87\xe7\xbd\x91\xe9\xa1\xb5\xe6\xb7\xbb\xe5\x8a\xa0");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             return ESP_ERR_INVALID_STATE;
@@ -447,8 +556,8 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
     {
         const char *jie = "\xe8\x8a\x82\xe6\xac\xa1";
         int jw = tt_text_px(jie, 1);
-        fb_utf8_scaled(fb, margin + (pcol_w - jw) / 2,
-                       y_start + (hdr_h - 16) / 2, jie, COLOR_BLACK, 1);
+        tt_draw_text(fb, margin + (pcol_w - jw) / 2,
+                     y_start + (hdr_h - 16) / 2, jie, COLOR_BLACK, 1);
     }
 
     static const char *const DAY_SHORT[] = {
@@ -462,8 +571,8 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
         snprintf(label, sizeof(label), "\xe5\x91\xa8%s", DAY_SHORT[d]);
         int lw = tt_text_px(label, 1);
         fb_color_t lc = (d == today) ? COLOR_RED : COLOR_BLACK;
-        fb_utf8_scaled(fb, cx + (cell_w - lw) / 2,
-                       y_start + (hdr_h - 16) / 2, label, lc, 1);
+        tt_draw_text(fb, cx + (cell_w - lw) / 2,
+                     y_start + (hdr_h - 16) / 2, label, lc, 1);
         if (d == today)
             fb_fill_rect(fb, cx + 12, y_start + hdr_h - 4, cell_w - 24, 2, COLOR_RED);
     }
@@ -495,23 +604,23 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
             int t1w = tt_text_px(t_start, 1);
             int t2w = tt_text_px(t_end, 1);
             int vy = ry + (cell_h - 64) / 2;
-            fb_utf8_scaled(fb, margin + (pcol_w - pnw) / 2, vy, pnum, COLOR_BLACK, 2);
-            fb_utf8_scaled(fb, margin + (pcol_w - t1w) / 2, vy + 32, t_start, COLOR_BLACK, 1);
-            fb_utf8_scaled(fb, margin + (pcol_w - t2w) / 2, vy + 48, t_end, COLOR_BLACK, 1);
+            tt_draw_text(fb, margin + (pcol_w - pnw) / 2, vy, pnum, COLOR_BLACK, 2);
+            tt_draw_text(fb, margin + (pcol_w - t1w) / 2, vy + 32, t_start, COLOR_BLACK, 1);
+            tt_draw_text(fb, margin + (pcol_w - t2w) / 2, vy + 48, t_end, COLOR_BLACK, 1);
         } else if (cell_h >= 48) {
             int pnw1 = tt_text_px(pnum, 1);
             int t1w = tt_text_px(t_start, 1);
             int t2w = tt_text_px(t_end, 1);
             int vy = ry + (cell_h - 48) / 2;
-            fb_utf8_scaled(fb, margin + (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
-            fb_utf8_scaled(fb, margin + (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
-            fb_utf8_scaled(fb, margin + (pcol_w - t2w) / 2, vy + 32, t_end, COLOR_BLACK, 1);
+            tt_draw_text(fb, margin + (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
+            tt_draw_text(fb, margin + (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
+            tt_draw_text(fb, margin + (pcol_w - t2w) / 2, vy + 32, t_end, COLOR_BLACK, 1);
         } else {
             int pnw1 = tt_text_px(pnum, 1);
             int t1w = tt_text_px(t_start, 1);
             int vy = ry + (cell_h - 32) / 2;
-            fb_utf8_scaled(fb, margin + (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
-            fb_utf8_scaled(fb, margin + (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
+            tt_draw_text(fb, margin + (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
+            tt_draw_text(fb, margin + (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
         }
 
         /* each day's cell */
@@ -543,11 +652,11 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
             int ny = ry + (cell_h - total_h) / 2;
             if (ny < ry + 1) ny = ry + 1;
 
-            fb_utf8_scaled_maxw(fb, cx + pad, ny,
-                                cell->name, nc, name_sc, content_w);
+            tt_draw_text_maxw(fb, cx + pad, ny,
+                              cell->name, nc, name_sc, content_w);
             if (room_h)
-                fb_utf8_scaled_maxw(fb, cx + pad, ny + name_h + gap,
-                                    cell->room, rc, 1, content_w);
+                tt_draw_text_maxw(fb, cx + pad, ny + name_h + gap,
+                                  cell->room, rc, 1, content_w);
         }
     }
 
@@ -582,7 +691,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
         snprintf(foot, sizeof(foot),
                  "%s %d\xe8\x8a\x82 / \xe6\x9c\xac\xe5\x91\xa8%d\xe8\x8a\x82",
                  TT_DAY_FULL[today], today_courses, week_courses);
-        ui_draw_footer(fb, "TIMETABLE", foot);
+        tt_draw_footer(fb, "TIMETABLE", foot);
     }
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -608,8 +717,7 @@ esp_err_t timetable_show_day(int day)
 
     unsigned epoch = display_policy_display_epoch();
 
-    /* 第一时刻取一份配置快照（≈5.4KB，放堆上避免占满 worker 任务栈），
-     * 后续渲染全部基于它，避免与 HTTP POST 竞争。 */
+    /* Take one heap snapshot first; all rendering below uses this stable copy. */
     timetable_config_t *snap = malloc(sizeof(*snap));
     if (!snap)
         return ESP_ERR_NO_MEM;
@@ -623,7 +731,7 @@ esp_err_t timetable_show_day(int day)
     }
 
     struct tm tm;
-    bool have_time = time_sync_get_local(&tm);
+    bool have_time = time_sync_get_local_relaxed(&tm);
     if (!have_time) {
         ESP_LOGW(TAG, "time not synced");
         free(snap);
@@ -633,7 +741,7 @@ esp_err_t timetable_show_day(int day)
     int W = epd_width();
     int H = epd_height();
 
-    /* 5.83" (648x480): use full-week grid view */
+    /* 5.83" and wider panels: use full-week grid view. */
     if (W >= 600) {
         int today   = tt_weekday_mon0(&tm);
         int now_min = tt_now_minutes(&tm);
@@ -674,7 +782,7 @@ esp_err_t timetable_show_day(int day)
     }
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    ui_draw_header(fb, title, right, true);
+    tt_draw_header(fb, title, right, true);
 
     /* ── collect courses for the requested day ── */
     int order[TT_MAX_PERIODS];
@@ -688,8 +796,8 @@ esp_err_t timetable_show_day(int day)
         int mx = (W - mw) / 2;
         (void)mw;
         (void)mx;
-        ui_draw_empty_state(fb, msg, "\xe4\xbb\x8a\xe5\xa4\xa9\xe6\xb2\xa1\xe6\x9c\x89\xe8\xaf\xbe\xe7\xa8\x8b");
-        ui_draw_footer(fb, "TIMETABLE", "EMPTY");
+        tt_draw_empty_state(fb, msg, "\xe4\xbb\x8a\xe5\xa4\xa9\xe6\xb2\xa1\xe6\x9c\x89\xe8\xaf\xbe\xe7\xa8\x8b");
+        tt_draw_footer(fb, "TIMETABLE", "EMPTY");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             free(snap);
@@ -748,12 +856,12 @@ esp_err_t timetable_show_day(int day)
                      p + 1,
                      pd->start_hour, pd->start_minute,
                      pd->end_hour, pd->end_minute);
-            fb_utf8_scaled(fb, lm, ty, info, COLOR_BLACK, s);
+            tt_draw_text(fb, lm, ty, info, COLOR_BLACK, s);
 
             if (is_now) {
                 const char *tag = "\xe8\xbf\x9b\xe8\xa1\x8c\xe4\xb8\xad";
                 int tw = tt_text_px(tag, s);
-                fb_utf8_scaled(fb, W - rm - tw, ty, tag, COLOR_RED, s);
+                tt_draw_text(fb, W - rm - tw, ty, tag, COLOR_RED, s);
             }
 
             int ny = ty + 16 * s + 2 * s;
@@ -767,11 +875,11 @@ esp_err_t timetable_show_day(int day)
             if (room_w > 0) {
                 name_max = content_w - room_w - 8 * s;
                 int room_y = ny + (16 * name_sc - 16 * s) / 2;
-                fb_utf8_scaled(fb, W - rm - room_w, room_y,
-                               cell->room, COLOR_BLACK, s);
+                tt_draw_text(fb, W - rm - room_w, room_y,
+                             cell->room, COLOR_BLACK, s);
             }
-            fb_utf8_scaled_maxw(fb, lm, ny, cell->name,
-                                COLOR_BLACK, name_sc, name_max);
+            tt_draw_text_maxw(fb, lm, ny, cell->name,
+                              COLOR_BLACK, name_sc, name_max);
 
             if (i < count - 1) {
                 int sep_y = by + block_h - 1;
@@ -788,7 +896,7 @@ esp_err_t timetable_show_day(int day)
             char prefix[24];
             snprintf(prefix, sizeof(prefix), "%d %02d:%02d",
                      p + 1, pd->start_hour, pd->start_minute);
-            int pw = fb_utf8_scaled(fb, lm, ly, prefix, COLOR_BLACK, s);
+            int pw = tt_draw_text(fb, lm, ly, prefix, COLOR_BLACK, s);
 
             int nx = lm + pw + 8 * s;
             int nmax = W - nx - rm;
@@ -796,12 +904,12 @@ esp_err_t timetable_show_day(int day)
             if (cell->room[0]) {
                 int rw = tt_text_px(cell->room, s);
                 nmax -= rw + 8 * s;
-                fb_utf8_scaled(fb, W - rm - rw, ly,
-                               cell->room, COLOR_BLACK, s);
+                tt_draw_text(fb, W - rm - rw, ly,
+                             cell->room, COLOR_BLACK, s);
             }
             if (nmax < 16 * s) nmax = 16 * s;
-            fb_utf8_scaled_maxw(fb, nx, ly, cell->name,
-                                COLOR_BLACK, s, nmax);
+            tt_draw_text_maxw(fb, nx, ly, cell->name,
+                              COLOR_BLACK, s, nmax);
 
             if (i < count - 1) {
                 int sep_y = by + block_h - 1;
@@ -817,7 +925,7 @@ esp_err_t timetable_show_day(int day)
         snprintf(foot, sizeof(foot),
                  "%s %d \xe8\x8a\x82\xe8\xaf\xbe",
                  TT_DAY_FULL[day], count);
-        ui_draw_footer(fb, "TIMETABLE", foot);
+        tt_draw_footer(fb, "TIMETABLE", foot);
     }
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -840,7 +948,7 @@ esp_err_t timetable_show_day(int day)
 esp_err_t timetable_show(void)
 {
     struct tm tm;
-    if (!time_sync_get_local(&tm))
+    if (!time_sync_get_local_relaxed(&tm))
         return ESP_ERR_INVALID_STATE;
     return timetable_show_day(tt_weekday_mon0(&tm));
 }

@@ -17,6 +17,7 @@ bool display_policy_slideshow_owns_display(void);
  * 时钟是否允许自动按分钟刷新（幻灯片开、或存在手动全屏内容时为否）。
  */
 bool display_policy_clock_may_auto_refresh(void);
+bool display_policy_calendar_may_midnight_refresh(void);
 
 /**
  * 天气拉取后是否刷「整页天气」：时钟作为主页且非用户显式请求时只更新数据，由时钟界面展示。

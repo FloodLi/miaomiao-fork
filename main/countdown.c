@@ -54,7 +54,7 @@ static void nvs_save_snapshot(const countdown_config_t *cfg)
 static int days_remaining(const countdown_item_t *item)
 {
     struct tm now_tm;
-    if (!time_sync_get_local(&now_tm)) return -1;
+    if (!time_sync_get_local_relaxed(&now_tm)) return -1;
 
     struct tm target = {0};
     target.tm_year = item->year - 1900;
@@ -102,7 +102,7 @@ static void draw_header(fb_t *fb, int W)
 {
     char today[16] = "";
     struct tm now;
-    if (time_sync_get_local(&now)) {
+    if (time_sync_get_local_relaxed(&now)) {
         format_date_ymd(today, now.tm_year + 1900, now.tm_mon + 1, now.tm_mday);
     }
     (void)W;
@@ -119,12 +119,21 @@ static const char *status_text_for_days(int days)
     return "\xe5\xb7\xb2\xe8\xbf\x87";
 }
 
+static const char *hero_badge_text_for_days(int days)
+{
+    if (days > 0)
+        return "\xe6\x9c\xaa\xe5\x88\xb0\xe6\x9c\x9f";
+    if (days == 0)
+        return "\xe4\xbb\x8a\xe5\xa4\xa9";
+    return "\xe5\xb7\xb2\xe8\xbf\x87\xe6\x9c\x9f";
+}
+
 static const char *suffix_text_for_days(int days)
 {
     if (days > 0)
         return "\xe5\xa4\xa9\xe5\x90\x8e";
     if (days == 0)
-        return "\xe5\xb0\xb1\xe6\x98\xaf\xe4\xbb\x8a\xe5\xa4\xa9";
+        return "\xe7\x9b\xae\xe6\xa0\x87\xe6\x97\xa5\xe5\xb7\xb2\xe5\x88\xb0";
     return "\xe5\xa4\xa9\xe5\x89\x8d";
 }
 
@@ -133,6 +142,88 @@ static int countdown_sort_score(int days)
     if (days >= 0)
         return days;
     return 10000 - days;
+}
+
+static int cd_text_width_px(const char *s, int px)
+{
+    if (!s)
+        return 0;
+    return fb_utf8_px_width(s, px);
+}
+
+static int cd_ascii_width_builtin(const char *s, int scale)
+{
+    if (!s)
+        return 0;
+    if (scale < 1)
+        scale = 1;
+    return (int)strlen(s) * 8 * scale;
+}
+
+static int cd_fit_px(const char *s, int max_w, int max_h, int preferred_px)
+{
+    static const int choices[] = { 72, 64, 56, 48, 40, 32, 24, 16 };
+    if (preferred_px > 72)
+        preferred_px = 72;
+    if (preferred_px < 16)
+        preferred_px = 16;
+    for (int i = 0; i < (int)(sizeof(choices) / sizeof(choices[0])); i++) {
+        int px = choices[i];
+        if (px > preferred_px)
+            continue;
+        if ((max_w <= 0 || cd_text_width_px(s, px) <= max_w) &&
+            (max_h <= 0 || px <= max_h)) {
+            return px;
+        }
+    }
+    return 16;
+}
+
+static int cd_draw_centered_px(fb_t *fb, int x, int y, int w,
+                               const char *s, fb_color_t color, int px)
+{
+    int tw = cd_text_width_px(s, px);
+    int tx = x + (w - tw) / 2;
+    if (tx < x)
+        tx = x;
+    return fb_utf8_px_maxw(fb, tx, y, s, color, px, w - (tx - x));
+}
+
+static int cd_top_for_midline(int mid_y, int px)
+{
+    return mid_y - px / 2;
+}
+
+static int cd_draw_ascii_midline_builtin(fb_t *fb, int x, int mid_y,
+                                         const char *s, fb_color_t color,
+                                         int scale)
+{
+    if (scale < 1)
+        scale = 1;
+    return fb_utf8_scaled_builtin(fb, x, mid_y - 8 * scale, s, color, scale);
+}
+
+static int cd_draw_ascii_midline_builtin_maxw(fb_t *fb, int x, int mid_y,
+                                              const char *s, fb_color_t color,
+                                              int scale, int max_w)
+{
+    if (scale < 1)
+        scale = 1;
+    return fb_utf8_scaled_builtin_maxw(fb, x, mid_y - 8 * scale,
+                                       s, color, scale, max_w);
+}
+
+static int cd_draw_midline_px(fb_t *fb, int x, int mid_y, const char *s,
+                              fb_color_t color, int px)
+{
+    return fb_utf8_px(fb, x, cd_top_for_midline(mid_y, px), s, color, px);
+}
+
+static int cd_draw_midline_px_maxw(fb_t *fb, int x, int mid_y, const char *s,
+                                   fb_color_t color, int px, int max_w)
+{
+    return fb_utf8_px_maxw(fb, x, cd_top_for_midline(mid_y, px), s,
+                           color, px, max_w);
 }
 
 static void sort_active_indices(int *idx, int n, const countdown_config_t *cfg)
@@ -150,43 +241,56 @@ static void sort_active_indices(int *idx, int n, const countdown_config_t *cfg)
     }
 }
 
-static void draw_day_metric(fb_t *fb, int right_x, int center_y,
+static void draw_day_metric(fb_t *fb, int left_x, int right_x, int center_y,
                             int days, int card_h)
 {
     int abs_days = days < 0 ? -days : days;
     fb_color_t c = (days >= 0) ? COLOR_RED : COLOR_BLACK;
+    int max_w = right_x - left_x;
+    if (max_w < 16)
+        max_w = 16;
 
     if (days == 0) {
         const char *today = "\xe4\xbb\x8a\xe5\xa4\xa9";
-        int scale = (card_h >= 74) ? 2 : 1;
-        int w = ui_text_width(today, scale);
-        fb_utf8_scaled(fb, right_x - w, center_y - 8 * scale,
-                       today, COLOR_RED, scale);
+        int px = cd_fit_px(today, max_w, card_h - 10, card_h >= 70 ? 32 : 24);
+        cd_draw_midline_px_maxw(fb, right_x - cd_text_width_px(today, px),
+                                center_y, today, COLOR_RED, px, max_w);
         return;
     }
 
     char days_str[16];
     snprintf(days_str, sizeof(days_str), "%d", abs_days);
     const char *unit = suffix_text_for_days(days);
-    int d_scale = (card_h >= 70 && abs_days < 1000) ? 3 : 2;
-    int num_w = (int)strlen(days_str) * 8 * d_scale;
-    int unit_w = ui_text_width(unit, 1);
-    int gap = 6;
-    int total_w = num_w + gap + unit_w;
-    int x = right_x - total_w;
-    int num_y = center_y - 8 * d_scale;
-    int unit_y = center_y - 8;
+    char full[32];
+    snprintf(full, sizeof(full), "%s%s", days_str, unit);
+    int text_px = 16;
+    int text_w = cd_text_width_px(full, text_px);
 
-    fb_utf8_scaled(fb, x, num_y, days_str, c, d_scale);
-    fb_utf8_scaled(fb, x + num_w + gap, unit_y, unit, c, 1);
+    if (text_w <= max_w) {
+        int x = right_x - text_w;
+        if (x < left_x)
+            x = left_x;
+        cd_draw_midline_px_maxw(fb, x, center_y, full, c, text_px, max_w);
+        return;
+    }
+
+    int block_h = text_px * 2 + 3;
+    int top = center_y - block_h / 2;
+    if (top < center_y - card_h / 2 + 4)
+        top = center_y - card_h / 2 + 4;
+    cd_draw_centered_px(fb, left_x, top, max_w, days_str, c, text_px);
+    cd_draw_centered_px(fb, left_x, top + text_px + 3, max_w, unit, c, text_px);
 }
 
 static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int days)
 {
     const int s = ui_scale_for(fb);
-    const int margin = 14 * s;
+    const bool is_583 = ui_layout_is_583(fb);
+    const bool large = (ui_layout_for(fb) == UI_LAYOUT_LARGE);
+    const bool wide_layout = is_583 || large;
+    const int margin = is_583 ? 34 : 14 * s;
     const int card_x = margin;
-    const int card_y = 38 * s;
+    const int card_y = is_583 ? 74 : 38 * s;
     const int card_w = W - 2 * margin;
     int card_h = H - card_y - 34 * s;
     if (card_h < 160)
@@ -200,23 +304,27 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
     fb_color_t accent = hot ? COLOR_RED : COLOR_BLACK;
     ui_draw_card(fb, card_x, card_y, card_w, card_h, hot);
     ui_draw_section_label(fb, card_x + 12 * s, card_y + 10 * s,
-                          "\xe7\x84\xa6\xe7\x82\xb9\xe4\xba\x8b\xe4\xbb\xb6",
+                          "\xe5\x80\x92\xe8\xae\xa1\xe6\x97\xb6\xe7\x9b\xae\xe6\xa0\x87",
                           accent, 1);
-    fb_utf8_scaled(fb, card_x + card_w - 12 * s - ui_text_width(status_text_for_days(days), 1),
-                   card_y + 10 * s, status_text_for_days(days), accent, 1);
+    {
+        const char *status = hero_badge_text_for_days(days);
+        int status_w = cd_text_width_px(status, 16);
+        cd_draw_midline_px_maxw(fb, card_x + card_w - 12 * s - status_w,
+                                card_y + 18 * s, status, accent, 16,
+                                status_w);
+    }
 
-    int title_scale = (W >= 600) ? 2 : 1;
+    int title_px = is_583 ? 40 : (wide_layout ? 32 : 24);
     int title_max = card_w - 28 * s;
-    if (ui_text_width(item->title, title_scale) > title_max)
-        title_scale = 1;
-    int title_y = card_y + 36 * s;
-    int title_w = ui_text_width(item->title, title_scale);
+    title_px = cd_fit_px(item->title, title_max, title_px, title_px);
+    int title_y = card_y + (is_583 ? 58 : 36 * s);
+    int title_w = cd_text_width_px(item->title, title_px);
     if (title_w <= title_max) {
-        fb_utf8_scaled(fb, card_x + (card_w - title_w) / 2, title_y,
-                       item->title, COLOR_BLACK, title_scale);
+        fb_utf8_px(fb, card_x + (card_w - title_w) / 2, title_y,
+                   item->title, COLOR_BLACK, title_px);
     } else {
-        fb_utf8_scaled_maxw(fb, card_x + 14 * s, title_y, item->title,
-                            COLOR_BLACK, title_scale, title_max);
+        fb_utf8_px_maxw(fb, card_x + 14 * s, title_y, item->title,
+                        COLOR_BLACK, title_px, title_max);
     }
 
     char date_buf[11];
@@ -224,53 +332,77 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
     int date_y = card_y + card_h - 26 * s;
     ui_draw_dotted_hline(fb, card_x + 12 * s, date_y - 8 * s,
                          card_w - 24 * s, accent, 6);
-    fb_utf8_scaled(fb, card_x + 14 * s, date_y,
-                   "\xe7\x9b\xae\xe6\xa0\x87\xe6\x97\xa5", COLOR_BLACK, 1);
-    fb_utf8_scaled(fb, card_x + card_w - 14 * s - 10 * 8, date_y,
-                   date_buf, COLOR_BLACK, 1);
+    cd_draw_midline_px(fb, card_x + 14 * s, date_y + 8,
+                       "\xe7\x9b\xae\xe6\xa0\x87\xe6\x97\xa5", COLOR_BLACK, 16);
+    cd_draw_ascii_midline_builtin(
+        fb, card_x + card_w - 14 * s - cd_ascii_width_builtin(date_buf, 1),
+        date_y + 8, date_buf, COLOR_BLACK, 1);
 
-    int d_scale = 6;
-    if (W >= 700 && abs_days < 1000) d_scale = 7;
-    if (abs_days >= 1000) d_scale = 4;
-    else if (abs_days >= 100) d_scale = 5;
-    if (H < 400) d_scale--;
-    if (H < 320) d_scale--;
-    if (d_scale < 2) d_scale = 2;
-
-    const char *suf = suffix_text_for_days(days);
-    fb_color_t suf_c = (days == 0) ? COLOR_RED : COLOR_BLACK;
-    const int suf_scale = 1;
-    const char *primary = (days == 0) ? "\xe4\xbb\x8a\xe5\xa4\xa9" : days_str;
-    int primary_w = (days == 0) ? ui_text_width(primary, d_scale)
-                                : (int)strlen(primary) * 8 * d_scale;
-
-    int num_top = title_y + 16 * title_scale + 12 * s;
+    int num_top = title_y + title_px + 12 * s;
     int num_bottom = date_y - 12 * s;
-    for (;;) {
-        int block_h = 16 * d_scale + 6 * s + 16 * suf_scale;
-        primary_w = (days == 0) ? ui_text_width(primary, d_scale)
-                                : (int)strlen(primary) * 8 * d_scale;
-        if ((primary_w <= card_w - 32 * s && block_h <= num_bottom - num_top) ||
-            d_scale <= 2)
-            break;
-        d_scale--;
+    if (days == 0) {
+        const char *primary = "\xe4\xbb\x8a\xe5\xa4\xa9";
+        const char *sub = "\xe7\x9b\xae\xe6\xa0\x87\xe6\x97\xa5\xe5\xb7\xb2\xe5\x88\xb0";
+        int primary_px = 32;
+        int sub_px = (ui_layout_is_42(fb) || wide_layout) ? 24 : 16;
+        primary_px = cd_fit_px(primary, card_w - 32 * s,
+                               num_bottom - num_top - 6 * s - sub_px,
+                               32);
+        int primary_w = cd_text_width_px(primary, primary_px);
+        int block_h = primary_px + 6 * s + sub_px;
+        int block_y = num_top + ((num_bottom - num_top) - block_h) / 2;
+        if (block_y < num_top)
+            block_y = num_top;
+        cd_draw_midline_px_maxw(fb, card_x + (card_w - primary_w) / 2,
+                                block_y + primary_px / 2, primary,
+                                COLOR_RED, primary_px, card_w - 32 * s);
+        int sub_w = cd_text_width_px(sub, sub_px);
+        cd_draw_midline_px(fb, card_x + (card_w - sub_w) / 2,
+                           block_y + primary_px + 6 * s + sub_px / 2,
+                           sub, COLOR_RED, sub_px);
+    } else {
+        const char *prefix = (days > 0) ? "\xe8\xbf\x98\xe6\x9c\x89" : "\xe5\xb7\xb2\xe8\xbf\x87";
+        const char *unit = "\xe5\xa4\xa9";
+        fb_color_t line_c = (days > 0) ? COLOR_RED : COLOR_BLACK;
+        int prefix_px = 24;
+        int num_px = is_583 ? 72 : (ui_layout_is_42(fb) ? 32 : (wide_layout ? 48 : 40));
+        int unit_px = 24;
+        int gap2 = 8 * s;
+        int prefix_w;
+        int num_w;
+        int unit_w;
+        int total_w;
+        for (;;) {
+            prefix_w = cd_text_width_px(prefix, prefix_px);
+            num_w = cd_text_width_px(days_str, num_px);
+            unit_w = cd_text_width_px(unit, unit_px);
+            total_w = prefix_w + gap2 + num_w + gap2 + unit_w;
+            if (total_w <= card_w - 32 * s || num_px <= 32)
+                break;
+            num_px -= 8;
+        }
+        if (total_w > card_w - 32 * s) {
+            prefix_px = 16;
+            unit_px = 16;
+            gap2 = 6 * s;
+            prefix_w = cd_text_width_px(prefix, prefix_px);
+            num_w = cd_text_width_px(days_str, num_px);
+            unit_w = cd_text_width_px(unit, unit_px);
+            total_w = prefix_w + gap2 + num_w + gap2 + unit_w;
+        }
+
+        int line_mid = num_top + (num_bottom - num_top) / 2;
+        int x = card_x + (card_w - total_w) / 2;
+        if (x < card_x + 16 * s)
+            x = card_x + 16 * s;
+        int small_mid = line_mid + (num_px - prefix_px) / 2 - 2;
+        cd_draw_midline_px(fb, x, small_mid, prefix, line_c, prefix_px);
+        x += prefix_w + gap2;
+        cd_draw_midline_px(fb, x, line_mid, days_str, line_c, num_px);
+        x += num_w + gap2;
+        small_mid = line_mid + (num_px - unit_px) / 2 - 2;
+        cd_draw_midline_px(fb, x, small_mid, unit, line_c, unit_px);
     }
-
-    int num_h = 16 * d_scale;
-    int block_h = num_h + 6 * s + 16 * suf_scale;
-    int block_y = num_top + ((num_bottom - num_top) - block_h) / 2;
-    if (block_y < num_top)
-        block_y = num_top;
-
-    primary_w = (days == 0) ? ui_text_width(primary, d_scale)
-                            : (int)strlen(primary) * 8 * d_scale;
-    fb_utf8_scaled(fb, card_x + (card_w - primary_w) / 2, block_y,
-                   primary, COLOR_RED, d_scale);
-
-    int suf_y = block_y + num_h + 6 * s;
-    int sw = ui_text_width(suf, suf_scale);
-    fb_utf8_scaled(fb, card_x + (card_w - sw) / 2, suf_y,
-                   suf, suf_c, suf_scale);
 }
 
 static void draw_cards(fb_t *fb, int W, int H,
@@ -278,9 +410,12 @@ static void draw_cards(fb_t *fb, int W, int H,
 {
     (void)active_count;
     const int s = ui_scale_for(fb);
-    const int body_y = 38 * s;
-    const int margin = 14 * s;
-    const int gap = 7 * s;
+    const bool is_583 = ui_layout_is_583(fb);
+    const bool large = (ui_layout_for(fb) == UI_LAYOUT_LARGE);
+    const bool wide_layout = is_583 || large;
+    const int body_y = is_583 ? 74 : 38 * s;
+    const int margin = is_583 ? 34 : 14 * s;
+    const int gap = is_583 ? 12 : 7 * s;
 
     int active_idx[COUNTDOWN_MAX_ITEMS];
     int n = 0;
@@ -308,7 +443,7 @@ static void draw_cards(fb_t *fb, int W, int H,
     if (card_h > 88) card_h = 88;
     if (card_h < 42) card_h = 42;
 
-    int right_col = (W >= 600) ? 172 : 116;
+    int right_col = is_583 ? 190 : (wide_layout ? 172 : (ui_layout_is_42(fb) ? 126 : 116));
     int left_maxw = W - margin * 2 - right_col - 12 * s;
     if (left_maxw < 80) left_maxw = 80;
 
@@ -322,31 +457,39 @@ static void draw_cards(fb_t *fb, int W, int H,
         ui_draw_card(fb, margin, y, W - margin * 2, card_h, hot);
         fb_fill_rect(fb, margin + 1, y + 8, 3 * s, card_h - 16, accent);
 
-        int title_scale = (W >= 600 && card_h >= 74) ? 2 : 1;
-        if (ui_text_width(cfg->items[i].title, title_scale) > left_maxw)
-            title_scale = 1;
-        int title_y = y + 8 * s;
+        bool title_builtin = ui_layout_is_42(fb);
+        int title_px = title_builtin ? 16 : ((is_583 && card_h >= 58) ? 32 : (wide_layout && card_h >= 58 ? 24 : 16));
+        if (!title_builtin)
+            title_px = cd_fit_px(cfg->items[i].title, left_maxw, 24, title_px);
+        int title_y = y + (title_builtin ? 10 * s : 8 * s);
         int text_x = margin + 10 * s;
-        fb_utf8_scaled_maxw(fb, text_x, title_y, cfg->items[i].title,
-                            COLOR_BLACK, title_scale, left_maxw);
+        if (title_builtin) {
+            fb_utf8_scaled_builtin_maxw(fb, text_x, title_y,
+                                        cfg->items[i].title, COLOR_BLACK, 1,
+                                        left_maxw);
+        } else {
+            fb_utf8_px_maxw(fb, text_x, title_y, cfg->items[i].title,
+                            COLOR_BLACK, title_px, left_maxw);
+        }
 
         char date_buf[11];
         format_date_ymd(date_buf, cfg->items[i].year,
                         cfg->items[i].month, cfg->items[i].day);
-        int meta_y = title_y + 16 * title_scale + 5 * s;
-        if (meta_y + 16 > y + card_h - 6)
-            meta_y = y + card_h - 20;
+        int meta_mid = title_y + title_px + 5 * s + 8;
+        if (meta_mid + 8 > y + card_h - 6)
+            meta_mid = y + card_h - 14;
 
         const char *status = status_text_for_days(days);
-        fb_utf8_scaled(fb, text_x, meta_y, status, accent, 1);
-        int status_w = ui_text_width(status, 1);
-        fb_utf8_scaled(fb, text_x + status_w + 8 * s, meta_y,
-                       date_buf, COLOR_BLACK, 1);
+        cd_draw_midline_px(fb, text_x, meta_mid, status, accent, 16);
+        int status_w = cd_text_width_px(status, 16);
+        cd_draw_ascii_midline_builtin_maxw(fb, text_x + status_w + 8 * s,
+                                           meta_mid, date_buf, COLOR_BLACK, 1,
+                                           left_maxw - status_w - 8 * s);
 
         int sep_x = W - margin - right_col + 4 * s;
         ui_draw_dotted_vline(fb, sep_x, y + 10, card_h - 20,
                              COLOR_BLACK, 6);
-        draw_day_metric(fb, W - margin - 12 * s,
+        draw_day_metric(fb, sep_x + 8 * s, W - margin - 12 * s,
                         y + card_h / 2, days, card_h);
 
         y += card_h + gap;

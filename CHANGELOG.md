@@ -2,6 +2,25 @@
 
 本文记录公开仓库中对用户和复刻者有影响的主要变化。
 
+## 2026-06-25
+
+### 文档同步
+
+- 同步低功耗 WiFi 策略：正常上电、复位、按键唤醒保持 AP+STA、mDNS 和 HTTP 后台；只有 RTC 定时器唤醒进入 quick-refresh，并按当前显示模式决定是否启动 STA-only WiFi。
+- 同步 5.83 寸屏幕说明：标注兼容微雪 5.83b V2 的 648×480 BWR 屏，配置页优先选择“微雪 5.83 寸黑白红 B V2”；若画面铺满且颜色正常，边缘模糊优先排查屏体、FPC、供电和温度。
+- 同步 Web 多页面入口、73 条 HTTP 路由、12 个 HTML + 1 个 PNG 嵌入资源、`fontfs=0x940000`、用户 SPIFFS 3.875MB 和 release 重新构建状态。
+- 修正专题文档中过期的“约 10MB SPIFFS”“70 条路由”“63 条路由”等描述。
+
+## 2026-06-24
+
+### 上线前整理
+
+- 清理本地 build、managed_components、sdkconfig、spiffs_image、outputs、Playwright/Cursor 缓存等可再生成文件，保留 release、开源字库源文件和参考素材目录。
+- 基于历史 `compile_commands.json` 对 `main/*.c` 完成语法级检查，33 个 C 文件通过；当前 PowerShell 里未直接提供 `idf.py` 命令，完整构建需在 ESP-IDF 终端重新执行。
+- 修正 `release/README.md` 中 `fontfs.bin` 合并地址：当前分区表 `0x920000` 是 `coredump`，`fontfs` 应烧录到 `0x940000`。
+- 紧凑内置字库重新由 OFL 开源字体 `LXGW975YuanSC-400W.ttf` 生成，避免公开固件继续携带 Windows 系统字体派生产物标记。
+- 同步文档中的 HTTP 路由数量、字库来源、分区表、release 固件状态和上线检查结果。
+
 ## 2026-06-04
 
 ### 新增

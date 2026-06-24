@@ -134,14 +134,53 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
   background:var(--cd);color:var(--tx);padding:8px 20px;border-radius:20px;
   font-size:.83rem;display:none;z-index:999;pointer-events:none;
   border:1px solid var(--cb);box-shadow:var(--cs)}
+/* Unified top links for canvas editor */
+#topbar{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+#topbar::-webkit-scrollbar{display:none}
+#topbar a.back{flex:0 0 auto;min-height:34px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;border-radius:12px;font-size:.78rem;font-weight:800;line-height:1;box-shadow:0 4px 12px rgba(255,155,179,.08)}
+#topbar a.back .ni{width:16px;min-width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1}
+@media(max-width:720px){#topbar{gap:7px;padding:7px 10px}#topbar h1{font-size:.82rem}#topbar a.back{min-height:32px;padding:0 10px;font-size:.74rem}}
+</style>
+<style id="unified-shell-v2">
+/* Unified app shell v2: keep page size, nav, cards and form rhythm consistent. */
+body{overflow-y:scroll}
+body .wrap{width:min(1180px,calc(100vw - 32px));max-width:1180px!important;margin:0 auto!important;padding:24px 0 36px!important}
+body.page-upload .wrap{width:min(1180px,calc(100vw - 32px));max-width:1180px!important}
+body.page-config .wrap,body.page-board .wrap{width:min(1380px,calc(100vw - 36px));max-width:1380px!important}
+body.page-config .page{width:min(1180px,calc(100vw - 32px))!important;max-width:1180px!important;margin:24px auto 36px!important}
+body.page-board{overflow:hidden}
+body .hdr{width:100%;min-height:46px;margin:0 0 16px!important;align-items:center}
+body .hdr .title{line-height:1.25}
+body .nav{width:min(1180px,100%)!important;max-width:100%!important;margin:0 auto 20px!important;transform:none!important;justify-content:center!important}
+body .nav a{flex:0 0 88px!important;width:88px!important;min-width:88px!important;max-width:88px!important;padding:0 6px!important;gap:5px!important;overflow:hidden!important}
+body .card{border-radius:16px!important}
+body.page-panel .card,body.page-task .card{width:100%;margin-left:auto!important;margin-right:auto!important}
+body.page-panel .wrap>.row,body.page-panel .wrap>.log,body.page-task .wrap>.row,body.page-task .wrap>.log{width:100%;margin-left:auto!important;margin-right:auto!important}
+body.page-panel .card .hd,body.page-task .card .hd{padding:20px 22px 12px!important}
+body.page-panel .card .bd,body.page-task .card .bd{padding:18px 22px 22px!important}
+body.page-panel .card .bd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;align-items:start}
+body.page-panel .card .bd>.kv,body.page-panel .card .bd>.row,body.page-panel .card .bd>.log{grid-column:1/-1}
+body.page-panel .card .bd>.form-row{margin-bottom:0!important}
+body.page-panel select,body.page-panel input[type=text],body.page-panel input[type=password],body.page-panel input[type=number],body.page-panel textarea{max-width:none!important}
+body.page-panel #cityResults{max-width:none!important}
+body.page-task .wrap>.row{margin-top:16px}
+body.page-upload .card,body.page-config .card{width:100%}
+body.page-gallery .card,body.page-timetable .card{width:100%;margin-left:auto!important;margin-right:auto!important}
+body.page-gallery .wrap>.row,body.page-gallery .wrap>.log,body.page-timetable .wrap>.row,body.page-timetable .wrap>.log{width:100%;margin-left:auto!important;margin-right:auto!important}
+body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
+@media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
 </style>
 </head>
-<body>
+<body class="page-shell page-wide page-board">
 
 <!-- 顶部操作栏 -->
 <div id="topbar">
   <h1>🎨 画布留言板</h1>
-  <a class="back" href="/">← 返回</a>
+  <a class="back" href="/"><span class="ni">🖼</span> 上传</a>
+  <a class="back" href="/message"><span class="ni">💬</span> 文字留言</a>
+  <a class="back" href="/weather"><span class="ni">🌤</span> 天气</a>
+  <a class="back" href="/clock"><span class="ni">🕐</span> 时钟</a>
+  <a class="back" href="/config"><span class="ni">⚙</span> 设备配置</a>
   <div class="tb-sep"></div>
   <button class="tb-btn" onclick="undo()" id="btn-undo" disabled title="Ctrl+Z">↩ 撤销</button>
   <button class="tb-btn" onclick="redo()" id="btn-redo" disabled title="Ctrl+Y">↪ 重做</button>
@@ -209,8 +248,27 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
     <h3>文字</h3>
     <label>内容</label>
     <textarea id="txt-content" rows="3" style="resize:vertical"></textarea>
-    <label>字号 <b id="scale-lbl" style="color:#e94560">1×</b>（1–6）</label>
+    <label>字体</label>
+    <select id="txt-font-family">
+      <option value="LXGW 975 Yuan SC, 霞鹜975圆体 SC, Microsoft YaHei UI, Microsoft YaHei, sans-serif">圆体</option>
+      <option value="SimSun, STSong, Songti SC, serif">宋体 / 明体</option>
+      <option value="FangSong, STFangsong, 仿宋, serif">仿宋</option>
+      <option value="KaiTi, STKaiti, Kaiti SC, 楷体, serif">楷体</option>
+      <option value="SimHei, STXihei, Heiti SC, Microsoft YaHei, sans-serif">黑体</option>
+      <option value="Microsoft YaHei UI, Microsoft YaHei, sans-serif">微软雅黑</option>
+      <option value="STXingkai, 华文行楷, Xingkai SC, KaiTi, serif">行楷 / 书法</option>
+      <option value="STXinwei, 华文新魏, Weibei SC, KaiTi, serif">新魏</option>
+      <option value="STLiti, LiSu, 隶书, serif">隶书</option>
+      <option value="Hannotate SC, Wawati SC, Yuppy SC, Kaiti SC, serif">手写风格</option>
+      <option value="YouYuan, 幼圆, Microsoft YaHei UI, sans-serif">幼圆</option>
+    </select>
+    <div class="row2">
+      <div><label>字重</label><select id="txt-font-weight"><option value="400">常规</option><option value="600" selected>半粗</option><option value="700">粗体</option><option value="900">特粗</option></select></div>
+      <div><label>自定义字体</label><input type="text" id="txt-custom-font" placeholder="本机已安装字体名"></div>
+    </div>
+    <label>字号 <b id="scale-lbl" style="color:#e94560">1档 / 16px</b>（1–6）</label>
     <input type="range" id="txt-scale" min="1" max="6" value="1">
+    <div class="hint">发送到墨水屏时使用网页字体渲染成图片，不再走固件字库。</div>
   </div>
 
   <!-- 形状（矩形/椭圆） -->
@@ -466,6 +524,7 @@ let _autoSaveTimer = null;
 let _saveInFlight = null;
 let _saveQueued = false;
 let _lastSavedJson = null;
+const AUTO_SAVE_DELAY_MS = 3000;
 
 /* 后端 CANVAS_LAYOUT_MAX_BYTES = 12288，留 256B 安全裕度 */
 const LAYOUT_LIMIT_BYTES = 12288;
@@ -509,6 +568,10 @@ async function persistLayout(opts) {
     if (_saveInFlight) {
         _saveQueued = true;
         await _saveInFlight;
+        if (opts.silent && currentLayoutJson() !== _lastSavedJson) {
+            scheduleAutoSave(AUTO_SAVE_DELAY_MS);
+            return { ok:true, skipped:true, queued:true };
+        }
         if (opts.force || currentLayoutJson() !== _lastSavedJson) {
             return persistLayout(opts);
         }
@@ -547,7 +610,7 @@ async function persistLayout(opts) {
 
     try {
         const res = await _saveInFlight;
-        if (_saveQueued && currentLayoutJson() !== _lastSavedJson) scheduleAutoSave(1200);
+        if (_saveQueued && currentLayoutJson() !== _lastSavedJson) scheduleAutoSave(AUTO_SAVE_DELAY_MS);
         return res;
     } finally {
         _saveInFlight = null;
@@ -611,12 +674,13 @@ function manualCompact() {
 }
 
 function scheduleAutoSave(delayMs) {
-    setSaveStatus('未保存…');
+    setSaveStatus('未保存，停止操作后自动保存…');
     clearTimeout(_autoSaveTimer);
+    const delay = Math.max(1000, delayMs || AUTO_SAVE_DELAY_MS);
     _autoSaveTimer = setTimeout(async () => {
         const res = await persistLayout({ silent:true });
         if (!res.ok && res.msg) toast('自动保存失败: ' + res.msg);
-    }, delayMs || 1200);
+    }, delay);
 }
 function snapshot(noAutoSave) {
     history.splice(histIdx + 1);
@@ -1206,6 +1270,55 @@ function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
     ctx2d.drawImage(oc, x, y, dispW ?? w, dispH ?? h);
 }
 
+function quantizeBoardSnapshotCanvas(c) {
+    const ctx2d = c.getContext('2d', { willReadFrequently: true });
+    const im = ctx2d.getImageData(0, 0, c.width, c.height);
+    const d = im.data;
+    for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3];
+        if (a <= 16) {
+            d[i] = d[i + 1] = d[i + 2] = 255;
+            d[i + 3] = 255;
+            continue;
+        }
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const redLike = r > 130 && r > g * 1.25 && r > b * 1.25;
+        const gray = (r * 30 + g * 59 + b * 11) / 100;
+        if (redLike) {
+            d[i] = 192; d[i + 1] = 57; d[i + 2] = 43; d[i + 3] = 255;
+        } else if (gray < 190) {
+            d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = 255;
+        } else {
+            d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = 255;
+        }
+    }
+    ctx2d.putImageData(im, 0, 0);
+}
+
+function renderBoardSnapshotCanvas() {
+    const oc = document.createElement('canvas');
+    oc.width = EPD_W;
+    oc.height = EPD_H;
+    const cx = oc.getContext('2d');
+    cx.fillStyle = '#fff';
+    cx.fillRect(0, 0, oc.width, oc.height);
+    elements.forEach(el => {
+        if (el.hidden) return;
+        cx.save();
+        renderElement(cx, el, 1);
+        cx.restore();
+    });
+    quantizeBoardSnapshotCanvas(oc);
+    return oc;
+}
+
+function boardSnapshotBlob() {
+    return new Promise((resolve, reject) => {
+        const oc = renderBoardSnapshotCanvas();
+        oc.toBlob(b => b ? resolve(b) : reject(new Error('snapshot export failed')), 'image/png');
+    });
+}
+
 async function loadCanvasImageList() {
     try {
         const r = await fetch('/canvas_image_list', epdFetchOpts());
@@ -1502,6 +1615,44 @@ function drawAlignmentGuides(el) {
     octx.restore();
 }
 
+function boardTextFont(scale, zoom) {
+    return boardTextFontFor(null, scale, zoom);
+}
+
+function boardTextFontFor(el, scale, zoom) {
+    const h = boardTextPx(scale) * zoom;
+    const weight = (el && el.weight) || '600';
+    const custom = ((el && el.customFont) || '').trim().replace(/"/g, '');
+    const family = (el && el.fontFamily) ||
+        '"LXGW 975 Yuan SC","霞鹜975圆体 SC","LXGW WenKai","Microsoft YaHei UI","Microsoft YaHei",sans-serif';
+    return `${weight} ${h}px ${custom ? `"${custom}", ` : ''}${family}`;
+}
+
+function boardTextPx(scale) {
+    const sizes = [16, 24, 32, 40, 48, 56];
+    const idx = Math.max(1, Math.min(6, scale || 1)) - 1;
+    return sizes[idx];
+}
+
+function boardTextScaleLabel(scale) {
+    const idx = Math.max(1, Math.min(6, scale || 1));
+    return `${idx}档 / ${boardTextPx(idx)}px`;
+}
+
+function boardMeasureTextLine(text, scale, zoom) {
+    const mctx = boardMeasureTextLine.ctx ||
+                 (boardMeasureTextLine.ctx = document.createElement('canvas').getContext('2d'));
+    mctx.font = boardTextFont(scale, zoom);
+    return mctx.measureText(text || '').width / zoom;
+}
+
+function boardMeasureTextLineFor(text, el, zoom) {
+    const mctx = boardMeasureTextLine.ctx ||
+                 (boardMeasureTextLine.ctx = document.createElement('canvas').getContext('2d'));
+    mctx.font = boardTextFontFor(el, el && el.scale || 1, zoom);
+    return mctx.measureText(text || '').width / zoom;
+}
+
 function renderElement(ctx2d, el, sc) {
     const cc = CSS_COLORS[el.color] || '#1e1e1e';
     // 白色元素在白色背景上加浅灰轮廓，保证可见
@@ -1511,8 +1662,8 @@ function renderElement(ctx2d, el, sc) {
     const sw = Math.max(1, el.sw || 1) * sc;
     switch(el.type) {
         case 'text': {
-            const charH = (el.scale||1) * 16 * sc;  // C侧字体高度16px
-            ctx2d.font = `bold ${charH}px 'Courier New',monospace`;
+            const charH = boardTextPx(el.scale || 1) * sc;
+            ctx2d.font = boardTextFontFor(el, el.scale || 1, sc);
             ctx2d.textBaseline = 'top';
             ctx2d.fillStyle = cc;
             (el.text||'').split('\n').forEach((ln,li)=>{
@@ -1646,8 +1797,8 @@ function getBounds(el) {
     switch(el.type) {
         case 'text': {
             const sc=el.scale||1, lines=(el.text||' ').split('\n');
-            const w = lines.reduce((m,l)=>Math.max(m,l.length),0)*8*sc;
-            const h = lines.length * 16 * sc;
+            const w = lines.reduce((m,l)=>Math.max(m,boardMeasureTextLineFor(l, el, 1)),0);
+            const h = lines.length * boardTextPx(sc);
             return {x:el.x, y:el.y, w:Math.max(16,w), h:Math.max(8,h)};
         }
         case 'rect':    return {x:el.x, y:el.y, w:el.w||1, h:el.h||1};
@@ -1749,7 +1900,7 @@ function bindEvents() {
 
     // 文字
     document.getElementById('txt-scale').oninput = function() {
-        document.getElementById('scale-lbl').textContent = this.value+'×';
+        document.getElementById('scale-lbl').textContent = boardTextScaleLabel(+this.value || 1);
         if (selected>=0&&elements[selected].type==='text'){ elements[selected].scale=+this.value; render(); }
     };
     document.getElementById('txt-scale').onchange = function() {
@@ -1761,6 +1912,22 @@ function bindEvents() {
     document.getElementById('txt-content').onblur = function() {
         if (selected>=0&&elements[selected].type==='text') snapshot();
     };
+    ['txt-font-family','txt-font-weight','txt-custom-font'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.oninput = el.onchange = function() {
+            if (selected>=0 && elements[selected].type==='text') {
+                const t = elements[selected];
+                t.fontFamily = document.getElementById('txt-font-family').value;
+                t.weight = document.getElementById('txt-font-weight').value;
+                t.customFont = document.getElementById('txt-custom-font').value.trim();
+                render(); updateLayerList();
+            }
+        };
+        el.onblur = function() {
+            if (selected>=0 && elements[selected].type==='text') snapshot();
+        };
+    });
 
     // 形状
     document.getElementById('shape-fill').onchange = function() {
@@ -2119,7 +2286,12 @@ function commitDraw(s, e) {
         case 'text': {
             const text  = document.getElementById('txt-content').value||'文本';
             const scale = +document.getElementById('txt-scale').value||1;
-            el = {type:'text', x:s.x, y:s.y, color, scale, text};
+            el = {
+                type:'text', x:s.x, y:s.y, color, scale, text,
+                fontFamily: document.getElementById('txt-font-family').value,
+                weight: document.getElementById('txt-font-weight').value,
+                customFont: document.getElementById('txt-custom-font').value.trim()
+            };
             break;
         }
         case 'rect': {
@@ -2250,7 +2422,10 @@ function updateProps() {
     if (el.type==='text') {
         document.getElementById('txt-content').value = el.text||'';
         document.getElementById('txt-scale').value   = el.scale||1;
-        document.getElementById('scale-lbl').textContent = (el.scale||1)+'×';
+        document.getElementById('scale-lbl').textContent = boardTextScaleLabel(el.scale || 1);
+        document.getElementById('txt-font-family').value = el.fontFamily || 'LXGW 975 Yuan SC, 霞鹜975圆体 SC, Microsoft YaHei UI, Microsoft YaHei, sans-serif';
+        document.getElementById('txt-font-weight').value = el.weight || '600';
+        document.getElementById('txt-custom-font').value = el.customFont || '';
     }
     if (el.type==='rect') {
         document.getElementById('shape-fill').checked = !!el.fill;
@@ -2392,8 +2567,13 @@ async function showOnEPD() {
             toast('保存失败: ' + (r1.msg || r1.status || '网络错误'));
             return;
         }
-        const r2 = await fetch('/canvas_show',epdFetchOpts({method:'POST'}));
-        if (r2.ok) toast('✅ 已发送到墨水屏！');
+        const blob = await boardSnapshotBlob();
+        const r2 = await fetch('/msg_image_show', epdFetchOpts({
+            method:'POST',
+            headers:{'Content-Type':'image/png'},
+            body:blob
+        }));
+        if (r2.ok) toast('✅ 网页字体快照已发送到墨水屏！');
         else toast('发送失败: '+r2.status);
     } catch(e){ toast('发送失败'); }
     finally { if (btn) btn.disabled = false; }
@@ -2401,13 +2581,14 @@ async function showOnEPD() {
 
 function openSendPreview() {
     const pc = document.getElementById('send-preview-canvas');
-    pc.width = canvas.width;
-    pc.height = canvas.height;
+    const snap = renderBoardSnapshotCanvas();
+    pc.width = snap.width;
+    pc.height = snap.height;
     const px = pc.getContext('2d');
     px.clearRect(0,0,pc.width,pc.height);
-    px.drawImage(canvas, 0, 0);
+    px.drawImage(snap, 0, 0);
     const meta = document.getElementById('send-preview-meta');
-    meta.textContent = `当前面板 ${EPD_W}×${EPD_H} / 黑白红 / 预计刷新约 23 秒 / 元素 ${elements.length} 个`;
+    meta.textContent = `当前面板 ${EPD_W}×${EPD_H} / 网页字体快照 / 元素 ${elements.length} 个`;
     document.getElementById('send-preview-overlay').style.display = 'flex';
 }
 

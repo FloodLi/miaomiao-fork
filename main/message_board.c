@@ -98,10 +98,48 @@ static int utf8_decode(const char **pp)
     return -1;
 }
 
-static int utf8_char_width(int cp, int scale)
+static int utf8_encode_codepoint(int cp, char out[5])
 {
-    if (cp < 0x80) return 8 * scale;
+    if (cp < 0)
+        cp = '?';
+    if (cp < 0x80) {
+        out[0] = (char)cp;
+        out[1] = '\0';
+        return 1;
+    }
+    if (cp < 0x800) {
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        out[2] = '\0';
+        return 2;
+    }
+    if (cp < 0x10000) {
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        out[3] = '\0';
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (cp >> 18));
+    out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (cp & 0x3F));
+    out[4] = '\0';
+    return 4;
+}
+
+static int msg_font_px_for_scale(int scale)
+{
+    if (scale < 1) scale = 1;
+    if (scale > 6) scale = 6;
     return 16 * scale;
+}
+
+static int utf8_char_width_px(int cp, int target_px)
+{
+    char one[5];
+    utf8_encode_codepoint(cp, one);
+    return fb_utf8_px_width(one, target_px);
 }
 
 /* ── word-wrap rendering ──────────────────────────────────────────── */
@@ -131,7 +169,8 @@ static void render_message(unsigned epoch)
     int scale = cfg.font_size + 1;
     if (scale < 1) scale = 1;
     if (scale > 6) scale = 6;
-    int char_h = 16 * scale;
+    int target_px = msg_font_px_for_scale(scale);
+    int char_h = target_px;
     int line_h = char_h + 2 * scale;
     int max_w  = fb->width - 2 * MARGIN_X - 16;
     fb_color_t color = (cfg.color == 1) ? COLOR_RED : COLOR_BLACK;
@@ -141,8 +180,8 @@ static void render_message(unsigned epoch)
     if (content_bottom <= content_top + line_h)
         content_bottom = fb->height - 20 * page_s;
 
-    ESP_LOGI(TAG, "Rendering: scale=%d, color=%d, align=%d, offset=(%d,%d), text_len=%d",
-             scale, cfg.color, (int)cfg.align, cfg.x_offset, cfg.y_offset,
+    ESP_LOGI(TAG, "Rendering: scale=%d px=%d, color=%d, align=%d, offset=(%d,%d), text_len=%d",
+             scale, target_px, cfg.color, (int)cfg.align, cfg.x_offset, cfg.y_offset,
              (int)strlen(cfg.text));
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
@@ -172,7 +211,7 @@ static void render_message(unsigned epoch)
         const char *next = p;
         int cp = utf8_decode(&next);
         if (cp < 0) { p = next; continue; }
-        int cw = utf8_char_width(cp, scale);
+        int cw = utf8_char_width_px(cp, target_px);
 
         if (cur_w + cw > max_w && cur_w > 0) {
             lines[line_count].start = line_start;
@@ -221,13 +260,14 @@ static void render_message(unsigned epoch)
         memcpy(buf, lines[i].start, copy_len);
         buf[copy_len] = '\0';
 
-        fb_utf8_scaled(fb, x, y, buf, color, scale);
+        fb_utf8_px(fb, x, y, buf, color, target_px);
     }
 
     if (truncated) {
         int hint_y = start_y + line_count * line_h;
         if (hint_y + 16 <= fb->height)
-            fb_utf8(fb, (fb->width - 3 * 8) / 2, hint_y, "...", COLOR_BLACK);
+            fb_utf8_px(fb, (fb->width - fb_utf8_px_width("...", 16)) / 2,
+                       hint_y, "...", COLOR_BLACK, 16);
     }
 
     ui_draw_footer(fb, "MSG", cfg.align == MSG_ALIGN_CENTER ? "CENTER" : "LEFT");
@@ -251,7 +291,8 @@ static void render_message(unsigned epoch)
     fb_destroy(fb);
 
     if (err == ESP_OK && epd_is_ready() && display_policy_epoch_is_current(epoch)) {
-        ESP_LOGI(TAG, "FB exported, sending to EPD (%d lines, scale=%d)...", line_count, scale);
+        ESP_LOGI(TAG, "FB exported, sending to EPD (%d lines, scale=%d px=%d)...",
+                 line_count, scale, target_px);
         esp_err_t disp_err = epd_display_from_file(raw_path);
         if (disp_err == ESP_OK) {
             display_policy_set_manual_screen_active(true);

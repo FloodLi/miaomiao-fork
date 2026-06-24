@@ -40,6 +40,17 @@ static inline char *json_escape(char *dst, size_t dst_len, const char *src)
     return dst;
 }
 
+#define HTTP_HTML_CACHE_CONTROL "private, max-age=300"
+
+static inline esp_err_t http_send_embedded_html(httpd_req_t *req,
+                                                const uint8_t *start,
+                                                const uint8_t *end)
+{
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", HTTP_HTML_CACHE_CONTROL);
+    return httpd_resp_send(req, (const char *)start, (ssize_t)(end - start));
+}
+
 static inline bool http_read_request_body(httpd_req_t *req, char *buf, size_t buf_len,
                                           const char *bad_msg)
 {
@@ -85,12 +96,26 @@ extern const uint8_t index_html_start[]     asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]       asm("_binary_index_html_end");
 extern const uint8_t config_html_start[]    asm("_binary_config_html_start");
 extern const uint8_t config_html_end[]      asm("_binary_config_html_end");
+extern const uint8_t gallery_html_start[]   asm("_binary_gallery_html_start");
+extern const uint8_t gallery_html_end[]     asm("_binary_gallery_html_end");
+extern const uint8_t weather_html_start[]   asm("_binary_weather_html_start");
+extern const uint8_t weather_html_end[]     asm("_binary_weather_html_end");
+extern const uint8_t clock_html_start[]     asm("_binary_clock_html_start");
+extern const uint8_t clock_html_end[]       asm("_binary_clock_html_end");
+extern const uint8_t calendar_html_start[]  asm("_binary_calendar_html_start");
+extern const uint8_t calendar_html_end[]    asm("_binary_calendar_html_end");
+extern const uint8_t message_html_start[]   asm("_binary_message_html_start");
+extern const uint8_t message_html_end[]     asm("_binary_message_html_end");
+extern const uint8_t codex_html_start[]     asm("_binary_codex_html_start");
+extern const uint8_t codex_html_end[]       asm("_binary_codex_html_end");
 extern const uint8_t timetable_html_start[] asm("_binary_timetable_html_start");
 extern const uint8_t timetable_html_end[]   asm("_binary_timetable_html_end");
 extern const uint8_t todo_html_start[]      asm("_binary_todo_html_start");
 extern const uint8_t todo_html_end[]        asm("_binary_todo_html_end");
 extern const uint8_t countdown_html_start[] asm("_binary_countdown_html_start");
 extern const uint8_t countdown_html_end[]   asm("_binary_countdown_html_end");
+extern const uint8_t miaooaim_mark_png_start[] asm("_binary_miaooaim_mark_png_start");
+extern const uint8_t miaooaim_mark_png_end[]   asm("_binary_miaooaim_mark_png_end");
 
 /* ── gallery handlers (http_gallery.c) ── */
 esp_err_t gallery_upload_post_handler(httpd_req_t *req);

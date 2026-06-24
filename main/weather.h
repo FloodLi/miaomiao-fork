@@ -86,3 +86,4 @@ void weather_notify_slideshow_stopped(void);
 /** 在创建 boot_wx 任务之前调用；若随后 xTaskCreate 失败，请调用 weather_skip_initial_task_fetch_cancel */
 void weather_skip_initial_task_fetch_once(void);
 void weather_skip_initial_task_fetch_cancel(void);
+void weather_set_quick_refresh_network_allowed(bool allowed);

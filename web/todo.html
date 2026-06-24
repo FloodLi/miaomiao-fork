@@ -89,20 +89,63 @@ body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
 .epd-credit strong{color:var(--tx);font-weight:700}
 .epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}
 .epd-credit a:hover{text-decoration:underline}
+/* Unified page navigation */
+.nav{width:min(1180px,calc(100vw - 32px));display:flex;align-items:center;gap:8px;margin:0 0 18px 50%;padding:8px;overflow-x:auto;flex-wrap:nowrap;border-radius:18px;background:rgba(255,255,255,.60);border:1px solid var(--cb);box-shadow:0 8px 22px rgba(255,155,179,.10);scrollbar-width:none;-webkit-overflow-scrolling:touch;transform:translateX(-50%)}
+.nav::-webkit-scrollbar{display:none}
+.nav a{flex:0 0 auto;min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 13px;border-radius:12px;font-size:13px;font-weight:800;line-height:1;color:var(--tx);background:rgba(255,255,255,.78);border:1px solid var(--cb);text-decoration:none;white-space:nowrap;box-shadow:0 4px 12px rgba(255,155,179,.08)}
+.nav .ni{width:18px;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
+.nav a:hover,.nav a.active{color:var(--ac);border-color:var(--ac);background:var(--hv);transform:translateY(-1px);box-shadow:0 0 0 2px var(--ag)}
+@media(max-width:640px){.nav{width:calc(100vw - 24px);padding:7px;gap:7px;border-radius:16px}.nav a{min-height:36px;padding:0 11px;font-size:12px}}
+</style>
+<style id="unified-shell-v2">
+/* Unified app shell v2: keep page size, nav, cards and form rhythm consistent. */
+body{overflow-y:scroll}
+body .wrap{width:min(1180px,calc(100vw - 32px));max-width:1180px!important;margin:0 auto!important;padding:24px 0 36px!important}
+body.page-upload .wrap{width:min(1180px,calc(100vw - 32px));max-width:1180px!important}
+body.page-config .wrap,body.page-board .wrap{width:min(1380px,calc(100vw - 36px));max-width:1380px!important}
+body.page-config .page{width:min(1180px,calc(100vw - 32px))!important;max-width:1180px!important;margin:24px auto 36px!important}
+body.page-board{overflow:hidden}
+body .hdr{width:100%;min-height:46px;margin:0 0 16px!important;align-items:center}
+body .hdr .title{line-height:1.25}
+body .nav{width:min(1180px,100%)!important;max-width:100%!important;margin:0 auto 20px!important;transform:none!important;justify-content:center!important}
+body .nav a{flex:0 0 88px!important;width:88px!important;min-width:88px!important;max-width:88px!important;padding:0 6px!important;gap:5px!important;overflow:hidden!important}
+body .card{border-radius:16px!important}
+body.page-panel .card,body.page-task .card{width:100%;margin-left:auto!important;margin-right:auto!important}
+body.page-panel .wrap>.row,body.page-panel .wrap>.log,body.page-task .wrap>.row,body.page-task .wrap>.log{width:100%;margin-left:auto!important;margin-right:auto!important}
+body.page-panel .card .hd,body.page-task .card .hd{padding:20px 22px 12px!important}
+body.page-panel .card .bd,body.page-task .card .bd{padding:18px 22px 22px!important}
+body.page-panel .card .bd{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;align-items:start}
+body.page-panel .card .bd>.kv,body.page-panel .card .bd>.row,body.page-panel .card .bd>.log{grid-column:1/-1}
+body.page-panel .card .bd>.form-row{margin-bottom:0!important}
+body.page-panel select,body.page-panel input[type=text],body.page-panel input[type=password],body.page-panel input[type=number],body.page-panel textarea{max-width:none!important}
+body.page-panel #cityResults{max-width:none!important}
+body.page-task .wrap>.row{margin-top:16px}
+body.page-upload .card,body.page-config .card{width:100%}
+body.page-gallery .card,body.page-timetable .card{width:100%;margin-left:auto!important;margin-right:auto!important}
+body.page-gallery .wrap>.row,body.page-gallery .wrap>.log,body.page-timetable .wrap>.row,body.page-timetable .wrap>.log{width:100%;margin-left:auto!important;margin-right:auto!important}
+body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
+@media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
 </style>
 </head>
-<body>
+<body class="page-shell page-task page-todo">
 <div class="wrap">
   <div class="hdr">
     <div class="title">待办事项</div>
   </div>
 
   <div class="nav">
-    <a href="/"><span class="ni">🖼</span> 上传面板</a>
-    <a href="/config"><span class="ni">⚙</span> 设备配置</a>
+    <a href="/"><span class="ni">🖼</span> 上传</a>
+    <a href="/gallery"><span class="ni">🔁</span> 轮播</a>
+    <a href="/weather"><span class="ni">🌤</span> 天气</a>
+    <a href="/clock"><span class="ni">🕐</span> 时钟</a>
+    <a href="/calendar"><span class="ni">🗓</span> 日历</a>
     <a href="/timetable"><span class="ni">📅</span> 课程表</a>
-    <a href="/todo" class="active"><span class="ni">✅</span> 待办事项</a>
+    <a href="/todo" class="active"><span class="ni">✅</span> 待办</a>
     <a href="/countdown"><span class="ni">⏳</span> 倒计时</a>
+    <a href="/message"><span class="ni">💬</span> 文字留言</a>
+    <a href="/board"><span class="ni">🎨</span> 画布留言</a>
+    <a href="/codex"><span class="ni">📊</span> 额度</a>
+    <a href="/config"><span class="ni">⚙</span> 设备配置</a>
   </div>
 
   <div class="card">

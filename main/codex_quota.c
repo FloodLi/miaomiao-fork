@@ -51,6 +51,7 @@ static SemaphoreHandle_t  s_mutex;
 static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t       s_auto_task;
 static volatile TickType_t s_last_fetch_tick;
+static bool               s_auto_network_allowed = true;
 
 typedef struct {
     char *buf;
@@ -417,7 +418,7 @@ static bool parse_quota_json(const char *json, codex_quota_data_t *out,
         if (!json_string_any(root, msg_paths,
                              (int)(sizeof(msg_paths) / sizeof(msg_paths[0])),
                              out->message, sizeof(out->message))) {
-            snprintf(out->message, sizeof(out->message), "未识别额度字段");
+            snprintf(out->message, sizeof(out->message), "\xe6\x9c\xaa\xe8\xaf\x86\xe5\x88\xab\xe9\xa2\x9d\xe5\xba\xa6\xe5\xad\x97\xe6\xae\xb5");
         }
     }
 
@@ -444,8 +445,8 @@ static void quota_date_header(char *buf, size_t len)
         "周日", "周一", "周二", "周三", "周四", "周五", "周六"
     };
     struct tm tm;
-    if (time_sync_get_local(&tm)) {
-        snprintf(buf, len, "%d月%d日 %s晚上", tm.tm_mon + 1, tm.tm_mday,
+    if (time_sync_get_local_relaxed(&tm)) {
+        snprintf(buf, len, "%d\xe6\x9c\x88%d\xe6\x97\xa5 %s\xe6\x99\x9a\xe4\xb8\x8a", tm.tm_mon + 1, tm.tm_mday,
                  wd[tm.tm_wday]);
     } else {
         snprintf(buf, len, "AI用量看板");
@@ -455,7 +456,7 @@ static void quota_date_header(char *buf, size_t len)
 static void quota_reset_label(char *buf, size_t len)
 {
     struct tm tm;
-    if (time_sync_get_local(&tm)) {
+    if (time_sync_get_local_relaxed(&tm)) {
         snprintf(buf, len, "%02d-%02d", tm.tm_mon + 1, tm.tm_mday);
     } else {
         snprintf(buf, len, "--");
@@ -562,7 +563,7 @@ static void format_request_count(char *buf, size_t len, int count)
     else if (count >= 10000)
         snprintf(buf, len, "%.1f万次", count / 10000.0);
     else
-        snprintf(buf, len, "%d次", count);
+        snprintf(buf, len, "%d\xe6\xac\xa1", count);
 }
 
 static void format_token_count(char *buf, size_t len, bool have, double tokens)
@@ -570,9 +571,9 @@ static void format_token_count(char *buf, size_t len, bool have, double tokens)
     if (!have || tokens <= 0) {
         snprintf(buf, len, "--");
     } else if (tokens >= 100000000.0) {
-        snprintf(buf, len, "%.1f亿", tokens / 100000000.0);
+        snprintf(buf, len, "%.1f\xe4\xba\xbf", tokens / 100000000.0);
     } else if (tokens >= 10000.0) {
-        snprintf(buf, len, "%.1f万", tokens / 10000.0);
+        snprintf(buf, len, "%.1f\xe4\xb8\x87", tokens / 10000.0);
     } else {
         snprintf(buf, len, "%.0f", tokens);
     }
@@ -584,7 +585,7 @@ static void quota_refresh_label(const codex_quota_config_t *cfg, char *buf, size
     if (refresh_min > 0)
         snprintf(buf, len, "自动%lu分钟刷新", (unsigned long)refresh_min);
     else
-        snprintf(buf, len, "显示时更新");
+        snprintf(buf, len, "\xe6\x98\xbe\xe7\xa4\xba\xe6\x97\xb6\xe6\x9b\xb4\xe6\x96\xb0");
 }
 
 static void render_quota_page(const codex_quota_config_t *cfg,
@@ -604,7 +605,7 @@ static void render_quota_page(const codex_quota_config_t *cfg,
     draw_header_like_reference(fb, data);
 
     if (error) {
-        ui_draw_empty_state(fb, "额度不可用", error);
+        ui_draw_empty_state(fb, "\xe9\xa2\x9d\xe5\xba\xa6\xe4\xb8\x8d\xe5\x8f\xaf\xe7\x94\xa8", error);
         fb_hline(fb, 14, H - 28, W - 28, COLOR_BLACK);
         fb_utf8_scaled(fb, 20, H - 20, refresh_label, COLOR_BLACK, 1);
         fb_utf8_scaled(fb, W - 44, H - 20, "1/1", COLOR_BLACK, 1);
@@ -612,7 +613,7 @@ static void render_quota_page(const codex_quota_config_t *cfg,
         return;
     }
 
-    char reset[8];
+    char reset[16];
     quota_reset_label(reset, sizeof(reset));
     int used_pct = quota_percent_from_data(data);
     int remain_pct = 0;
@@ -675,6 +676,8 @@ static void codex_quota_auto_task(void *arg)
 
         codex_quota_config_t cfg;
         config_snapshot(&cfg);
+        if (!s_auto_network_allowed)
+            continue;
         if (!config_has_api(&cfg) || cfg.refresh_min == 0)
             continue;
         if (display_mode_active() != DISPLAY_MODE_CODEX_QUOTA)
@@ -688,6 +691,11 @@ static void codex_quota_auto_task(void *arg)
         if (err != ESP_OK)
             ESP_LOGW(TAG, "auto refresh failed: %s", esp_err_to_name(err));
     }
+}
+
+void codex_quota_set_auto_network_allowed(bool allowed)
+{
+    s_auto_network_allowed = allowed;
 }
 
 esp_err_t codex_quota_init(void)
@@ -759,7 +767,7 @@ static esp_err_t codex_quota_show_inner(void)
     codex_quota_config_t cfg;
     config_snapshot(&cfg);
     if (!config_has_api(&cfg)) {
-        render_quota_page(&cfg, NULL, "请先在网页配置 API URL 和 Key");
+        render_quota_page(&cfg, NULL, "\xe8\xaf\xb7\xe5\x85\x88\xe5\x9c\xa8\xe7\xbd\x91\xe9\xa1\xb5\xe9\x85\x8d\xe7\xbd\xae API URL \xe5\x92\x8c Key");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -771,14 +779,14 @@ static esp_err_t codex_quota_show_inner(void)
     esp_err_t ret = ESP_OK;
     codex_quota_data_t parsed;
     if (!resp) {
-        render_quota_page(&cfg, NULL, "接口请求失败，请检查网络/API Key");
+        render_quota_page(&cfg, NULL, "\xe6\x8e\xa5\xe5\x8f\xa3\xe8\xaf\xb7\xe6\xb1\x82\xe5\xa4\xb1\xe8\xb4\xa5\xef\xbc\x8c\xe8\xaf\xb7\xe6\xa3\x80\xe6\x9f\xa5\xe7\xbd\x91\xe7\xbb\x9c/API Key");
         ret = ESP_FAIL;
         goto out;
     }
 
     if (!parse_quota_json(resp, &parsed, &cfg)) {
         ESP_LOGW(TAG, "quota parse failed: %.160s", resp);
-        render_quota_page(&cfg, &parsed, parsed.message[0] ? parsed.message : "额度 JSON 未识别");
+        render_quota_page(&cfg, &parsed, parsed.message[0] ? parsed.message : "\xe9\xa2\x9d\xe5\xba\xa6 JSON \xe6\x9c\xaa\xe8\xaf\x86\xe5\x88\xab");
         free(resp);
         ret = ESP_FAIL;
         goto out;

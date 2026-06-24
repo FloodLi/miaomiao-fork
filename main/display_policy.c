@@ -47,6 +47,13 @@ bool display_policy_clock_may_auto_refresh(void)
     return true;
 }
 
+bool display_policy_calendar_may_midnight_refresh(void)
+{
+    if (display_mode_active() != DISPLAY_MODE_CALENDAR)
+        return false;
+    return true;
+}
+
 bool display_policy_weather_use_full_page(bool user_explicit)
 {
     if (user_explicit)

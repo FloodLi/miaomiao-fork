@@ -30,6 +30,7 @@
 #include "battery_mon.h"
 #include "button.h"
 #include "fb_render.h"
+#include "font_ext.h"
 #include "ui_theme.h"
 #include "display_policy.h"
 #include "power_mgr.h"
@@ -74,12 +75,25 @@ static void render_welcome_screen(void)
     int pad = 18 * sc;
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    ui_draw_header(fb, "\xe7\x94\xb5\xe5\xad\x90\xe5\xa2\xa8\xe6\xb0\xb4\xe5\xb1\x8f",
-                   "", true);
+    {
+        const char *title = "喵哎-MiaooAim";
+        const int title_px = ui_layout_is_wide(fb) ? 32 : 24;
+        const int title_x = 14 * sc;
+        const int title_y = ui_layout_is_wide(fb) ? 14 * sc : 6 * sc;
+        const int battery_right = W - 14 * sc;
+        const int battery_w = ui_draw_battery_badge(fb, battery_right, title_y + 2);
+        const int title_max_w = battery_right - battery_w - 10 * sc - title_x;
+        fb_fill_rect(fb, title_x - 6 * sc, title_y + 3, 2 * sc,
+                     title_px - 8, COLOR_RED);
+        fb_utf8_px_maxw(fb, title_x, title_y, title, COLOR_BLACK,
+                        title_px, title_max_w);
+        ui_draw_dotted_hline(fb, 12 * sc, title_y + title_px + 8 * sc,
+                             W - 24 * sc, COLOR_BLACK, 6);
+    }
 
     int card_gap = 10 * sc;
     int card_w = (W - 2 * pad - card_gap) / 2;
-    int top_y = 50 * sc;
+    int top_y = ui_layout_is_wide(fb) ? 58 * sc : 44 * sc;
     int card_h = H - top_y - 54 * sc;
 
     ui_draw_card(fb, pad, top_y, card_w, card_h, true);
@@ -200,7 +214,7 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
     const int body_sc = 1;
     const int ln = 16 * body_sc;
     const int gap = 3;
-    const int pad = (W >= 600) ? 24 : 12;
+    const int pad = ui_layout_is_wide(fb) ? 24 : 12;
     const int header_y = (H >= 430) ? 16 : 14;
     const int divider_y = header_y + 21;
     const int card_y = divider_y + 7;
@@ -364,9 +378,121 @@ static void start_mdns(void)
 
 /* ── Quick-refresh path: minimal init, refresh content, back to sleep ── */
 
+static bool app_weather_config_ready(void)
+{
+    weather_config_t cfg;
+    if (weather_get_config(&cfg) != ESP_OK)
+        return false;
+    return cfg.enabled && cfg.api_key[0] && cfg.api_host[0] && cfg.location[0];
+}
+
+static bool app_codex_config_ready(void)
+{
+    codex_quota_config_t cfg;
+    if (codex_quota_get_config(&cfg) != ESP_OK)
+        return false;
+    return cfg.enabled && cfg.api_url[0] && cfg.api_key[0];
+}
+
+static void register_display_modes(void)
+{
+    display_mode_register(&(display_mode_entry_t){ "clock",     "时钟",     clock_display_show });
+    display_mode_register(&(display_mode_entry_t){ "calendar",  "日历",     calendar_display_show_current });
+    display_mode_register(&(display_mode_entry_t){ "timetable", "课程表",   timetable_show });
+    display_mode_register(&(display_mode_entry_t){ "weather",   "天气",     weather_display_cached });
+    display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
+    display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
+    display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
+    display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
+}
+
+static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather)
+{
+    bool weather_needed = false;
+    bool wifi_needed = false;
+
+    switch (mode) {
+    case DISPLAY_MODE_WEATHER:
+        weather_needed = app_weather_config_ready();
+        wifi_needed = weather_needed;
+        break;
+    case DISPLAY_MODE_CODEX_QUOTA:
+        wifi_needed = app_codex_config_ready();
+        break;
+    case DISPLAY_MODE_CLOCK: {
+        clock_config_t cc;
+        if (!time_valid)
+            wifi_needed = true;
+        if (clock_display_get_config(&cc) == ESP_OK && cc.show_weather) {
+            weather_needed = app_weather_config_ready();
+            wifi_needed = wifi_needed || weather_needed;
+        }
+        break;
+    }
+    case DISPLAY_MODE_CALENDAR:
+        if (!time_valid)
+            wifi_needed = true;
+        if (calendar_display_style_uses_weather()) {
+            weather_needed = app_weather_config_ready();
+            wifi_needed = wifi_needed || weather_needed;
+        }
+        break;
+    case DISPLAY_MODE_TIMETABLE:
+    case DISPLAY_MODE_TODO:
+    case DISPLAY_MODE_COUNTDOWN:
+        wifi_needed = !time_valid;
+        break;
+    case DISPLAY_MODE_SLIDESHOW: {
+        slideshow_config_t sc;
+        if (scheduler_get_config(&sc) == ESP_OK && sc.clock_overlay && !time_valid)
+            wifi_needed = true;
+        break;
+    }
+    default:
+        wifi_needed = !time_valid;
+        break;
+    }
+
+    if (needs_weather)
+        *needs_weather = weather_needed;
+    return wifi_needed;
+}
+
+static bool full_boot_should_prefetch_weather(int mode)
+{
+    switch (mode) {
+    case DISPLAY_MODE_CLOCK: {
+        clock_config_t cc;
+        return clock_display_get_config(&cc) == ESP_OK && cc.show_weather;
+    }
+    case DISPLAY_MODE_CALENDAR:
+        return calendar_display_style_uses_weather();
+    case DISPLAY_MODE_WEATHER:
+        /* The weather page fetches through its own display request. */
+        return false;
+    default:
+        return false;
+    }
+}
+
+static const char *mode_name_for_log(int mode)
+{
+    switch (mode) {
+    case DISPLAY_MODE_CLOCK: return "clock";
+    case DISPLAY_MODE_CALENDAR: return "calendar";
+    case DISPLAY_MODE_TIMETABLE: return "timetable";
+    case DISPLAY_MODE_WEATHER: return "weather";
+    case DISPLAY_MODE_SLIDESHOW: return "slideshow";
+    case DISPLAY_MODE_TODO: return "todo";
+    case DISPLAY_MODE_COUNTDOWN: return "countdown";
+    case DISPLAY_MODE_CODEX_QUOTA: return "codex";
+    default: return "unknown";
+    }
+}
+
 static void quick_refresh_and_sleep(void)
 {
-    ESP_LOGI(TAG, "Quick-refresh path: timer wake-up");
+    ESP_LOGI(TAG, "Quick-refresh path: timer wake-up, normal AP/HTTP backend is intentionally skipped");
     int mode = power_mgr_load_mode();
 
     esp_err_t spiffs_err = spiffs_mount_init();
@@ -377,22 +503,9 @@ static void quick_refresh_and_sleep(void)
         return;
     }
     display_policy_init();
+    font_ext_init();
     display_policy_set_quick_refresh_active(true);
     device_identity_init();
-
-    /* STA-only WiFi (no AP, no mDNS, no HTTP) */
-    ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(),
-                                      device_identity_get_ap_password()));
-
-    if (wifi_manager_sta_connected()) {
-        time_sync_init();
-        /* Wait up to 8s for SNTP sync */
-        for (int i = 0; i < 80; i++) {
-            struct tm tm;
-            if (time_sync_get_local(&tm)) break;
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-    }
 
     epd_load_panel_from_nvs();
     fb_reserve_planes_early();
@@ -409,8 +522,8 @@ static void quick_refresh_and_sleep(void)
     /* NOTE: do NOT call scheduler_boot_complete() here.
      * The slideshow_task must stay blocked — we only need
      * scheduler_show_next_image() which works without it. */
-    if (mode == DISPLAY_MODE_WEATHER)
-        weather_skip_initial_task_fetch_once();
+    weather_skip_initial_task_fetch_once();
+    weather_set_quick_refresh_network_allowed(false);
     ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
     /* 与 full_boot 一致：日历依赖 s_mutex，未 init 则 calendar_display_show 直接失败并触发回退到时钟 */
@@ -418,33 +531,54 @@ static void quick_refresh_and_sleep(void)
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());
     ESP_ERROR_CHECK(countdown_init());
+    codex_quota_set_auto_network_allowed(false);
     ESP_ERROR_CHECK(codex_quota_init());
 
-    display_mode_register(&(display_mode_entry_t){ "clock",     "时钟",     clock_display_show });
-    display_mode_register(&(display_mode_entry_t){ "calendar",  "日历",     calendar_display_show_current });
-    display_mode_register(&(display_mode_entry_t){ "timetable", "课程表",   timetable_show });
-    display_mode_register(&(display_mode_entry_t){ "weather",   "天气",     weather_display_cached });
-    display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
-    display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
-    display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
-    display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
-
-    display_policy_set_manual_screen_active(true);
+    register_display_modes();
 
     int saved_mode = mode;
     int n = display_mode_count();
     bool write_mode_back = false;
     mode = normalize_saved_mode(saved_mode, n, &write_mode_back);
+
+    bool time_valid = time_sync_get_local_relaxed(&(struct tm){0});
+
+    bool prefetch_weather = false;
+    bool need_wifi = quick_mode_needs_wifi(mode, time_valid, &prefetch_weather);
+    weather_set_quick_refresh_network_allowed(need_wifi);
+    codex_quota_set_auto_network_allowed(need_wifi);
+
+    display_policy_set_manual_screen_active(true);
+
     ESP_LOGI(TAG, "Quick-refresh: restoring mode %d (%s)",
              mode, display_mode_name(mode));
 
-    bool prefetch_weather = false;
+    if (need_wifi) {
+        ESP_LOGI(TAG, "Quick-refresh: WiFi enabled for mode %s (time_valid=%d)",
+                 display_mode_name(mode), time_valid ? 1 : 0);
+        esp_err_t wifi_err = wifi_manager_init_sta_only();
+        if (wifi_err != ESP_OK) {
+            ESP_LOGW(TAG, "Quick-refresh: STA-only WiFi unavailable: %s",
+                     esp_err_to_name(wifi_err));
+        }
+
+        if (wifi_err == ESP_OK && wifi_manager_sta_connected()) {
+            time_sync_init();
+            for (int i = 0; i < 80; i++) {
+                struct tm tm;
+                if (time_sync_get_local(&tm)) break;
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
+    } else {
+        ESP_LOGI(TAG, "Quick-refresh: WiFi skipped for mode %s (time_valid=%d)",
+                 display_mode_name(mode), time_valid ? 1 : 0);
+    }
+
     if (mode == DISPLAY_MODE_CALENDAR) {
-        prefetch_weather = calendar_display_style_uses_weather();
+        prefetch_weather = prefetch_weather && need_wifi;
     } else if (mode == DISPLAY_MODE_CLOCK) {
-        clock_config_t cc;
-        if (clock_display_get_config(&cc) == ESP_OK)
-            prefetch_weather = cc.show_weather;
+        prefetch_weather = prefetch_weather && need_wifi;
     }
     if (prefetch_weather) {
         esp_err_t wx_err = weather_request_cache_fetch_wait(120000);
@@ -459,7 +593,7 @@ static void quick_refresh_and_sleep(void)
          * on the weather task stack, then sleep after the EPD update finishes. */
         (void)display_policy_begin_manual_display();
         display_mode_set_active(mode);
-        err = weather_request_fullscreen_fetch_wait(180000);
+        err = weather_request_fullscreen_fetch_wait(90000);
     } else {
         err = display_mode_show_request(mode, NULL);
     }
@@ -471,7 +605,9 @@ static void quick_refresh_and_sleep(void)
         used_fallback = true;
     }
 
+    bool displayed = false;
     if (err == ESP_OK) {
+        displayed = true;
         if (write_mode_back)
             power_mgr_save_mode(mode);
         if (!used_fallback) {
@@ -490,6 +626,10 @@ static void quick_refresh_and_sleep(void)
         ESP_LOGW(TAG, "Quick-refresh: clock fallback also failed");
     }
 
+    if (displayed) {
+        ESP_LOGI(TAG, "Quick-refresh: display complete, sleep guard will wait for EPD settle");
+    }
+
     ESP_LOGI(TAG, "Quick-refresh done, going back to sleep");
     power_mgr_enter_sleep();
 }
@@ -498,6 +638,7 @@ static void quick_refresh_and_sleep(void)
 
 static void full_boot(void)
 {
+    ESP_LOGI(TAG, "Full boot path: normal startup, AP+STA/HTTP/mDNS backend will stay available");
     esp_err_t spiffs_err = spiffs_mount_init();
     const bool spiffs_ok = (spiffs_err == ESP_OK);
     if (!spiffs_ok) {
@@ -505,11 +646,26 @@ static void full_boot(void)
                  esp_err_to_name(spiffs_err));
     }
     display_policy_init();
+    font_ext_init();
     device_identity_init();
 
     ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(),
                                       device_identity_get_ap_password()));
     wifi_manager_set_sta_hostname(device_identity_get_mdns_hostname());
+
+    power_config_t power_cfg = {0};
+    bool low_power_enabled = false;
+    if (power_mgr_get_config(&power_cfg) == ESP_OK) {
+        low_power_enabled = power_cfg.enabled;
+    }
+    if (low_power_enabled) {
+        ESP_LOGI(TAG, "Low-power button is enabled: normal boot keeps AP/HTTP online, WiFi uses power-save");
+        (void)wifi_manager_set_power_save_enabled(true);
+    } else {
+        ESP_LOGI(TAG, "Low-power button is disabled: normal boot uses WiFi max-performance mode");
+        (void)wifi_manager_set_power_save_enabled(false);
+    }
+
     start_mdns();
 
     if (wifi_manager_sta_connected()) {
@@ -543,6 +699,7 @@ static void full_boot(void)
         display_policy_set_manual_screen_active(true);
         try_show_spiffs_recovery_screen(spiffs_err);
         if (scheduler_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: scheduler unavailable");
+        weather_set_quick_refresh_network_allowed(true);
         if (weather_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: weather unavailable");
         if (clock_display_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: clock unavailable");
         if (message_board_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: message board unavailable");
@@ -566,17 +723,6 @@ static void full_boot(void)
     display_policy_set_manual_screen_active(true);
 
     ESP_ERROR_CHECK(scheduler_init());
-    {
-        bool write_mode_back = false;
-        int boot_mode = normalize_saved_mode(power_mgr_load_mode(),
-                                             DISPLAY_MODE_CODEX_QUOTA + 1,
-                                             &write_mode_back);
-        if (boot_mode == DISPLAY_MODE_WEATHER) {
-            ESP_LOGI(TAG, "Boot target is weather; deferring initial weather fetch");
-            weather_skip_initial_task_fetch_once();
-        }
-    }
-    ESP_ERROR_CHECK(weather_init());
     ESP_ERROR_CHECK(clock_display_init());
     ESP_ERROR_CHECK(message_board_init());
     ESP_ERROR_CHECK(canvas_board_init());
@@ -584,16 +730,30 @@ static void full_boot(void)
     ESP_ERROR_CHECK(timetable_init());
     ESP_ERROR_CHECK(todo_init());
     ESP_ERROR_CHECK(countdown_init());
+    {
+        bool write_mode_back = false;
+        int boot_mode = normalize_saved_mode(power_mgr_load_mode(),
+                                             DISPLAY_MODE_CODEX_QUOTA + 1,
+                                             &write_mode_back);
+        if (!full_boot_should_prefetch_weather(boot_mode)) {
+            if (boot_mode == DISPLAY_MODE_WEATHER) {
+                ESP_LOGI(TAG, "Boot target is weather; deferring weather fetch to page render");
+            } else {
+                ESP_LOGI(TAG, "Boot target %s does not need startup weather fetch",
+                         mode_name_for_log(boot_mode));
+            }
+            weather_skip_initial_task_fetch_once();
+        } else {
+            ESP_LOGI(TAG, "Boot target %s uses embedded weather; startup weather prefetch allowed",
+                     mode_name_for_log(boot_mode));
+        }
+    }
+    weather_set_quick_refresh_network_allowed(true);
+    ESP_ERROR_CHECK(weather_init());
+    codex_quota_set_auto_network_allowed(true);
     ESP_ERROR_CHECK(codex_quota_init());
 
-    display_mode_register(&(display_mode_entry_t){ "clock",     "时钟",     clock_display_show });
-    display_mode_register(&(display_mode_entry_t){ "calendar",  "日历",     calendar_display_show_current });
-    display_mode_register(&(display_mode_entry_t){ "timetable", "课程表",   timetable_show });
-    display_mode_register(&(display_mode_entry_t){ "weather",   "天气",     weather_display_cached });
-    display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
-    display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
-    display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
-    display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
+    register_display_modes();
 
     if (epd_err == ESP_OK) {
         boot_display_route();
@@ -640,8 +800,10 @@ void app_main(void)
         ESP_LOGW(TAG, "Battery monitor unavailable (check BAT_DET / ADC pin)");
 
     if (power_mgr_is_timer_wake()) {
+        ESP_LOGI(TAG, "Boot route: low-power timer wake -> quick refresh");
         quick_refresh_and_sleep();
     } else {
+        ESP_LOGI(TAG, "Boot route: normal boot/button wake -> full backend startup");
         full_boot();
     }
 }

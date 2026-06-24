@@ -38,3 +38,4 @@ esp_err_t codex_quota_get_config(codex_quota_config_t *out);
 esp_err_t codex_quota_set_config(const codex_quota_config_t *cfg);
 void      codex_quota_get_data_copy(codex_quota_data_t *out);
 esp_err_t codex_quota_show(void);
+void      codex_quota_set_auto_network_allowed(bool allowed);

@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <time.h>
 
 #include "freertos/FreeRTOS.h"
@@ -20,6 +21,8 @@
 #include "display_policy.h"
 #include "display_mode.h"
 #include "ui_theme.h"
+#include "calendar_display.h"
+#include "battery_mon.h"
 
 /* 摘要区占位（无有效天气数据时） */
 static const char k_wx_placeholder_l1[] =
@@ -102,7 +105,7 @@ static bool clock_get_local_or_system(struct tm *out)
 {
     if (!out)
         return false;
-    if (time_sync_get_local(out))
+    if (time_sync_get_local_relaxed(out))
         return true;
 
     time_t now = time(NULL);
@@ -110,18 +113,13 @@ static bool clock_get_local_or_system(struct tm *out)
     return false;
 }
 
-/* ── 7-segment digit rendering ────────────────────────────────────── */
+/* ── time headline rendering ─────────────────────────────────────── */
 
 /*
- *    aaaa
- *   f    b
- *   f    b
- *    gggg
- *   e    c
- *   e    c
- *    dddd
+ * Original Gitee clock face: seven-segment headline digits.
+ * Keep this isolated from the generic styled font path so other pages can use
+ * normal large text without changing the clock identity.
  */
-
 #define SEG_A 0x01
 #define SEG_B 0x02
 #define SEG_C 0x04
@@ -132,57 +130,142 @@ static bool clock_get_local_or_system(struct tm *out)
 
 static const uint8_t digit_segs[10] = {
     SEG_A|SEG_B|SEG_C|SEG_D|SEG_E|SEG_F,        /* 0 */
-    SEG_B|SEG_C,                                   /* 1 */
-    SEG_A|SEG_B|SEG_D|SEG_E|SEG_G,                /* 2 */
-    SEG_A|SEG_B|SEG_C|SEG_D|SEG_G,                /* 3 */
-    SEG_B|SEG_C|SEG_F|SEG_G,                       /* 4 */
-    SEG_A|SEG_C|SEG_D|SEG_F|SEG_G,                /* 5 */
-    SEG_A|SEG_C|SEG_D|SEG_E|SEG_F|SEG_G,          /* 6 */
-    SEG_A|SEG_B|SEG_C,                             /* 7 */
-    SEG_A|SEG_B|SEG_C|SEG_D|SEG_E|SEG_F|SEG_G,   /* 8 */
-    SEG_A|SEG_B|SEG_C|SEG_D|SEG_F|SEG_G,          /* 9 */
+    SEG_B|SEG_C,                                /* 1 */
+    SEG_A|SEG_B|SEG_D|SEG_E|SEG_G,              /* 2 */
+    SEG_A|SEG_B|SEG_C|SEG_D|SEG_G,              /* 3 */
+    SEG_B|SEG_C|SEG_F|SEG_G,                    /* 4 */
+    SEG_A|SEG_C|SEG_D|SEG_F|SEG_G,              /* 5 */
+    SEG_A|SEG_C|SEG_D|SEG_E|SEG_F|SEG_G,        /* 6 */
+    SEG_A|SEG_B|SEG_C,                          /* 7 */
+    SEG_A|SEG_B|SEG_C|SEG_D|SEG_E|SEG_F|SEG_G,  /* 8 */
+    SEG_A|SEG_B|SEG_C|SEG_D|SEG_F|SEG_G,        /* 9 */
 };
 
-/* base geometry at 1x (56x88, seg_th=8) — scaled at runtime */
 static const int seg_base[7][4] = {
-    { 10,  0, 36,  8 },   /* A - top */
-    { 48, 10,  8, 31 },   /* B - top right */
-    { 48, 49,  8, 31 },   /* C - bottom right */
-    { 10, 80, 36,  8 },   /* D - bottom */
-    {  0, 49,  8, 31 },   /* E - bottom left */
-    {  0, 10,  8, 31 },   /* F - top left */
-    { 10, 40, 36,  8 },   /* G - middle */
+    { 10,  0, 36,  8 },   /* A */
+    { 48, 10,  8, 31 },   /* B */
+    { 48, 49,  8, 31 },   /* C */
+    { 10, 80, 36,  8 },   /* D */
+    {  0, 49,  8, 31 },   /* E */
+    {  0, 10,  8, 31 },   /* F */
+    { 10, 40, 36,  8 },   /* G */
 };
 
 #define BASE_DW   56
 #define BASE_DH   88
 #define BASE_COL  18
 
-static void draw_digit_s(fb_t *fb, int x, int y, int digit,
-                          fb_color_t color, int num, int den)
+static void clock_fill_beveled_rect(fb_t *fb, int x, int y, int w, int h,
+                                    fb_color_t color)
 {
-    if (digit < 0 || digit > 9) return;
+    if (!fb || w <= 0 || h <= 0)
+        return;
+    fb_fill_rect(fb, x, y, w, h, color);
+
+    int bevel = (w < h ? w : h) / 2;
+    if (bevel < 2)
+        return;
+    for (int i = 0; i < bevel; i++) {
+        int len = bevel - i;
+        fb_hline(fb, x, y + i, len, COLOR_WHITE);
+        fb_hline(fb, x + w - len, y + i, len, COLOR_WHITE);
+        fb_hline(fb, x, y + h - 1 - i, len, COLOR_WHITE);
+        fb_hline(fb, x + w - len, y + h - 1 - i, len, COLOR_WHITE);
+    }
+}
+
+static void draw_digit_s(fb_t *fb, int x, int y, int digit,
+                         fb_color_t color, int num, int den)
+{
+    if (digit < 0 || digit > 9)
+        return;
+    if (digit == 1) {
+        const int seg_w = seg_base[1][2] * num / den;
+        const int seg_h = seg_base[1][3] * num / den;
+        int one_x = x + (BASE_DW * num / den - seg_w) / 2;
+        clock_fill_beveled_rect(fb, one_x,
+                                y + seg_base[1][1] * num / den,
+                                seg_w, seg_h, color);
+        clock_fill_beveled_rect(fb, one_x,
+                                y + seg_base[2][1] * num / den,
+                                seg_w, seg_h, color);
+        return;
+    }
     uint8_t segs = digit_segs[digit];
     for (int s = 0; s < 7; s++) {
         if (segs & (1 << s)) {
-            fb_fill_rect(fb,
-                x + seg_base[s][0] * num / den,
-                y + seg_base[s][1] * num / den,
-                seg_base[s][2] * num / den,
-                seg_base[s][3] * num / den,
-                color);
+            clock_fill_beveled_rect(fb,
+                                    x + seg_base[s][0] * num / den,
+                                    y + seg_base[s][1] * num / den,
+                                    seg_base[s][2] * num / den,
+                                    seg_base[s][3] * num / den,
+                                    color);
         }
     }
 }
 
 static void draw_colon_s(fb_t *fb, int x, int y, fb_color_t color,
-                          int num, int den)
+                         int num, int den)
 {
     int dh = BASE_DH * num / den;
-    int dot = 8 * num / den; if (dot < 4) dot = 4;
-    int cx = x + 4 * num / den;
+    int dot = 8 * num / den;
+    if (dot < 4)
+        dot = 4;
+    int slot_w = BASE_COL * num / den;
+    int cx = x + (slot_w - dot) / 2;
     fb_fill_rect(fb, cx, y + dh * 3 / 10, dot, dot, color);
     fb_fill_rect(fb, cx, y + dh * 7 / 10, dot, dot, color);
+}
+
+static int clock_text_px(const char *s, int scale)
+{
+    if (scale < 1)
+        scale = 1;
+    return ui_text_width(s, scale);
+}
+
+static int clock_draw_text(fb_t *fb, int x, int y, const char *s,
+                           fb_color_t color, int scale)
+{
+    if (scale < 1)
+        scale = 1;
+    return fb_utf8_scaled_builtin(fb, x, y, s, color, scale);
+}
+
+static int clock_draw_text_maxw(fb_t *fb, int x, int y, const char *s,
+                                fb_color_t color, int scale, int max_w)
+{
+    if (scale < 1)
+        scale = 1;
+    return fb_utf8_scaled_builtin_maxw(fb, x, y, s, color, scale, max_w);
+}
+
+static void clock_draw_footer(fb_t *fb, const char *left, const char *right)
+{
+    if (!fb)
+        return;
+
+    const int W = fb->width;
+    const int H = fb->height;
+    const int s = ui_scale_for(fb);
+    const int y = H - 20 * s;
+
+    ui_draw_dotted_hline(fb, 12 * s, y - 4 * s, W - 24 * s,
+                         COLOR_BLACK, 6);
+
+    int left_max_w = W - 28 * s;
+    if (right && right[0]) {
+        int rw = clock_text_px(right, 1);
+        left_max_w = W - 34 * s - rw;
+    }
+    if (left && left[0] && left_max_w > 0)
+        clock_draw_text_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1,
+                             left_max_w);
+
+    if (right && right[0]) {
+        int rw = clock_text_px(right, 1);
+        clock_draw_text(fb, W - 14 * s - rw, y, right, COLOR_BLACK, 1);
+    }
 }
 
 /* ── weekday strings ──────────────────────────────────────────────── */
@@ -198,6 +281,217 @@ static const char *weekday_zh[] = {
 };
 
 /* ── NVS ──────────────────────────────────────────────────────────── */
+
+static void clock_plot_circle_points(fb_t *fb, int cx, int cy, int x, int y,
+                                     fb_color_t color)
+{
+    fb_pixel(fb, cx + x, cy + y, color);
+    fb_pixel(fb, cx - x, cy + y, color);
+    fb_pixel(fb, cx + x, cy - y, color);
+    fb_pixel(fb, cx - x, cy - y, color);
+    fb_pixel(fb, cx + y, cy + x, color);
+    fb_pixel(fb, cx - y, cy + x, color);
+    fb_pixel(fb, cx + y, cy - x, color);
+    fb_pixel(fb, cx - y, cy - x, color);
+}
+
+static void clock_draw_circle(fb_t *fb, int cx, int cy, int r, int thickness,
+                              fb_color_t color)
+{
+    if (!fb || r <= 0)
+        return;
+    if (thickness < 1)
+        thickness = 1;
+    for (int rr = r; rr > r - thickness && rr > 0; rr--) {
+        int x = 0;
+        int y = rr;
+        int d = 1 - rr;
+        while (x <= y) {
+            clock_plot_circle_points(fb, cx, cy, x, y, color);
+            if (d < 0) {
+                d += 2 * x + 3;
+            } else {
+                d += 2 * (x - y) + 5;
+                y--;
+            }
+            x++;
+        }
+    }
+}
+
+static void clock_draw_calendar_icon(fb_t *fb, int x, int y, fb_color_t color)
+{
+    fb_rect(fb, x, y + 4, 18, 18, color);
+    fb_hline(fb, x + 2, y + 9, 14, color);
+    fb_fill_rect(fb, x + 4, y, 2, 7, color);
+    fb_fill_rect(fb, x + 12, y, 2, 7, color);
+    fb_fill_rect(fb, x + 4, y + 13, 3, 3, color);
+    fb_fill_rect(fb, x + 10, y + 13, 3, 3, color);
+    fb_fill_rect(fb, x + 4, y + 18, 3, 2, color);
+    fb_fill_rect(fb, x + 10, y + 18, 3, 2, color);
+}
+
+static void clock_draw_status_clock_icon(fb_t *fb, int cx, int cy)
+{
+    clock_draw_circle(fb, cx, cy, 20, 3, COLOR_RED);
+    fb_fill_rect(fb, cx - 2, cy - 13, 4, 15, COLOR_RED);
+    for (int i = 0; i < 11; i++)
+        fb_fill_rect(fb, cx + i, cy + i / 2, 3, 3, COLOR_RED);
+}
+
+static void clock_draw_ref_card(fb_t *fb, int x, int y, int w, int h)
+{
+    fb_rect(fb, x, y, w, h, COLOR_BLACK);
+    fb_rect(fb, x + 1, y + 1, w - 2, h - 2, COLOR_BLACK);
+}
+
+static void clock_draw_ref_battery(fb_t *fb, int right_x, int y)
+{
+    battery_status_t st = {0};
+    battery_mon_get_status(&st);
+
+    char label[8];
+    if (!st.valid)
+        snprintf(label, sizeof(label), "--");
+    else
+        snprintf(label, sizeof(label), "%u%%", (unsigned)st.percent);
+
+    const int icon_w = 28;
+    const int icon_h = 12;
+    const int cap_w = 3;
+    const int gap = 5;
+    const int text_w = clock_text_px(label, 1);
+    const int x = right_x - icon_w - cap_w - gap - text_w;
+    const int icon_x = x;
+    const int icon_y = y + 3;
+
+    fb_rect(fb, icon_x, icon_y, icon_w, icon_h, COLOR_BLACK);
+    fb_fill_rect(fb, icon_x + icon_w, icon_y + 3, cap_w, icon_h - 6, COLOR_BLACK);
+    if (st.valid) {
+        const int inner_w = icon_w - 4;
+        int remain = inner_w * st.percent / 100;
+        if (st.percent > 0 && remain < 1)
+            remain = 1;
+        if (remain > inner_w)
+            remain = inner_w;
+        if (remain > 0)
+            fb_fill_rect(fb, icon_x + 2, icon_y + 2, remain, icon_h - 4, COLOR_RED);
+        if (remain < inner_w)
+            fb_fill_rect(fb, icon_x + 2 + remain, icon_y + 2,
+                         inner_w - remain, icon_h - 4, COLOR_BLACK);
+        if (remain > 0 && remain < inner_w)
+            fb_vline(fb, icon_x + 1 + remain, icon_y + 2, icon_h - 4, COLOR_WHITE);
+    } else {
+        fb_hline(fb, icon_x + 5, icon_y + 4, 10, COLOR_RED);
+        fb_hline(fb, icon_x + 7, icon_y + 6, 10, COLOR_RED);
+    }
+    clock_draw_text(fb, icon_x + icon_w + cap_w + gap, y + 1,
+                    label, COLOR_BLACK, 1);
+}
+
+static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
+{
+    const int W = fb->width;
+    const int ds_num = 2;
+    const int ds_den = 2;
+    const int dw = BASE_DW * ds_num / ds_den;
+    const int dh = BASE_DH * ds_num / ds_den;
+    const int d_gap = dw + 6 * ds_num / ds_den;
+    const int col_w_px = BASE_COL * ds_num / ds_den;
+    const int time_w = 3 * d_gap + col_w_px + dw;
+
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    clock_draw_ref_battery(fb, W - 11, 15);
+
+    int hour = tm->tm_hour;
+    int min = tm->tm_min;
+    int time_y = 50;
+
+    char date_str[64];
+    snprintf(date_str, sizeof(date_str),
+             "%04d\xe5\xb9\xb4%02d\xe6\x9c\x88%02d\xe6\x97\xa5",
+             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+
+    int wday = tm->tm_wday;
+    if (wday < 0 || wday > 6)
+        wday = 0;
+    char week_str[32];
+    snprintf(week_str, sizeof(week_str),
+             "\xe6\x98\x9f\xe6\x9c\x9f%s", weekday_zh[wday]);
+
+    const int date_y = time_y + dh + 22;
+    const int date_w = clock_text_px(date_str, 1);
+    const int week_w = clock_text_px(week_str, 1);
+    const int icon_w = 22;
+    const int gap1 = 12;
+    const int gap2 = 16;
+    const int row_w = icon_w + gap1 + date_w + gap2 + 1 + gap2 + week_w;
+    int row_x = (W - row_w) / 2;
+    if (row_x < 20)
+        row_x = 20;
+
+    int time_x = row_x + row_w / 2 - time_w / 2;
+    if (time_x < 18)
+        time_x = 18;
+    int cx = time_x;
+    draw_digit_s(fb, cx, time_y, hour / 10, COLOR_BLACK, ds_num, ds_den);
+    cx += d_gap;
+    draw_digit_s(fb, cx, time_y, hour % 10, COLOR_BLACK, ds_num, ds_den);
+    cx += d_gap;
+    draw_colon_s(fb, cx, time_y, COLOR_RED, ds_num, ds_den);
+    cx += col_w_px;
+    draw_digit_s(fb, cx, time_y, min / 10, COLOR_BLACK, ds_num, ds_den);
+    cx += d_gap;
+    draw_digit_s(fb, cx, time_y, min % 10, COLOR_BLACK, ds_num, ds_den);
+
+    clock_draw_calendar_icon(fb, row_x, date_y - 3, COLOR_RED);
+    int text_x = row_x + icon_w + gap1;
+    clock_draw_text(fb, text_x, date_y, date_str, COLOR_BLACK, 1);
+    int bar_x = text_x + date_w + gap2;
+    fb_vline(fb, bar_x, date_y - 1, 19, COLOR_BLACK);
+    clock_draw_text(fb, bar_x + gap2, date_y, week_str, COLOR_RED, 1);
+
+    const int line_y = date_y + 31;
+    fb_fill_rect(fb, 20, line_y, W - 40, 2, COLOR_RED);
+
+    const int card_x = 22;
+    const int card_y = line_y + 15;
+    const int card_w = W - 2 * card_x;
+    const int card_h = 78;
+    clock_draw_ref_card(fb, card_x, card_y, card_w, card_h);
+
+    int red_x = card_x + card_w - 8;
+    int red_y = card_y + 27;
+    int red_h = card_h - 27;
+    fb_fill_rect(fb, red_x, red_y + 3, 4, red_h - 6, COLOR_RED);
+    fb_hline(fb, red_x + 1, red_y + 1, 3, COLOR_RED);
+    fb_hline(fb, red_x, red_y + 2, 4, COLOR_RED);
+    fb_hline(fb, red_x, red_y + red_h - 3, 4, COLOR_RED);
+    fb_hline(fb, red_x + 1, red_y + red_h - 2, 3, COLOR_RED);
+
+    int icon_cx = card_x + 38;
+    int icon_cy = card_y + card_h / 2;
+    clock_draw_status_clock_icon(fb, icon_cx, icon_cy);
+
+    int split_x = card_x + 76;
+    fb_vline(fb, split_x, card_y + 13, card_h - 24, COLOR_BLACK);
+
+    char ampm[16];
+    if (hour < 6)       snprintf(ampm, sizeof(ampm), "\xe5\x87\x8c\xe6\x99\xa8");
+    else if (hour < 12) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8a\xe5\x8d\x88");
+    else if (hour < 18) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8b\xe5\x8d\x88");
+    else                snprintf(ampm, sizeof(ampm), "\xe6\x99\x9a\xe4\xb8\x8a");
+
+    const char *tag = time_sync_is_synced()
+                          ? "\xe6\x97\xb6\xe9\x97\xb4\xe5\xb7\xb2\xe5\x90\x8c\xe6\xad\xa5"
+                          : "\xe7\xad\x89\xe5\xbe\x85\xe7\xbd\x91\xe7\xbb\x9c\xe6\xa0\xa1\xe6\x97\xb6";
+    int info_x = split_x + 20;
+    int info_w = card_x + card_w - 20 - info_x;
+    fb_utf8_px_maxw(fb, info_x, card_y + 10, ampm, COLOR_BLACK, 30, info_w);
+    clock_draw_text_maxw(fb, info_x, card_y + 50, tag,
+                         time_sync_is_synced() ? COLOR_BLACK : COLOR_RED,
+                         1, info_w);
+}
 
 static void nvs_load(void)
 {
@@ -228,12 +522,9 @@ static void nvs_save_snapshot(const clock_config_t *cfg)
 /**
  * 渲染时钟到帧缓冲并送屏。
  *
- * 当前 BWR（黑/白/红）屏的局部刷新在 SSD1619/UC8179 上质量都不稳定
- * （SSD1619 会让整屏背景发灰、下半屏文字变淡；UC8179 PTL partial 仍接近
- * 全刷耗时且会刷花画面），因此本模块统一走全刷，画面质量优先。
- * 参数 @p prefer_partial 暂保留接口位置，已不参与决策。
+ * 三色屏不同控制器波形差异较大，本模块统一走全屏刷新，画面质量优先。
  */
-static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_scheduler)
+static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
 {
     if (s_render_mutex && xSemaphoreTake(s_render_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
         ESP_LOGW(TAG, "render_clock: another render in progress, skip");
@@ -266,35 +557,49 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
     const int W = fb->width;
     const int H = fb->height;
     const int MX = 20;
-    const bool big = (W >= 600);
-    const bool compact_clock = (!big && W >= 360 && H >= 260);
-    const int sc = big ? 2 : 1;
+    const bool clock42_reference = (W == 400 && H == 300 && !cfg_local.show_weather);
+    if (clock42_reference) {
+        render_clock_42_reference(fb, &tm);
+        goto clock_render_done;
+    }
 
-    /* digit scale: 648px -> num=3,den=2 (1.5x); 400px -> num=1,den=1 */
-    const int ds_num = big ? 3 : 2;
-    const int ds_den = big ? 2 : 2;
+    const ui_layout_class_t layout = ui_layout_for(fb);
+    const bool is_583 = (layout == UI_LAYOUT_583);
+    const bool big = (layout == UI_LAYOUT_LARGE);
+    const bool wide_clock = is_583 || big;
+    const bool compact_clock = (!wide_clock && W >= 360 && H >= 260);
+    const bool plain_compact_clock = compact_clock && !cfg_local.show_weather;
+    const int sc = wide_clock ? 2 : 1;
+    const int ds_num = is_583 ? 5 : (big ? 3 : 2);
+    const int ds_den = is_583 ? 3 : 2;
     int dw = BASE_DW * ds_num / ds_den;
     int dh = BASE_DH * ds_num / ds_den;
     int d_gap = dw + 6 * ds_num / ds_den;
     int col_w_px = BASE_COL * ds_num / ds_den;
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    clock_draw_ref_battery(fb, W - 11, 15);
 
     int total_w = 4 * d_gap + col_w_px - 6 * ds_num / ds_den;
     int time_x = (W - total_w) / 2;
-    int time_y = H * 34 / 480;
-    if (compact_clock) {
-        time_x -= 12;
+    int time_y = is_583 ? 56 : (H * 34 / 480);
+    if (compact_clock && !is_583) {
+        if (!plain_compact_clock)
+            time_x -= 12;
         if (time_x < 16)
             time_x = 16;
-        time_y = 16;
+        time_y = plain_compact_clock ? 22 : 16;
     }
 
     int cx = time_x;
-    draw_digit_s(fb, cx, time_y, hour / 10, COLOR_BLACK, ds_num, ds_den); cx += d_gap;
-    draw_digit_s(fb, cx, time_y, hour % 10, COLOR_BLACK, ds_num, ds_den); cx += d_gap;
-    draw_colon_s(fb, cx, time_y, COLOR_BLACK, ds_num, ds_den);             cx += col_w_px;
-    draw_digit_s(fb, cx, time_y, min / 10, COLOR_BLACK, ds_num, ds_den);  cx += d_gap;
+    draw_digit_s(fb, cx, time_y, hour / 10, COLOR_BLACK, ds_num, ds_den);
+    cx += d_gap;
+    draw_digit_s(fb, cx, time_y, hour % 10, COLOR_BLACK, ds_num, ds_den);
+    cx += d_gap;
+    draw_colon_s(fb, cx, time_y, COLOR_BLACK, ds_num, ds_den);
+    cx += col_w_px;
+    draw_digit_s(fb, cx, time_y, min / 10, COLOR_BLACK, ds_num, ds_den);
+    cx += d_gap;
     draw_digit_s(fb, cx, time_y, min % 10, COLOR_BLACK, ds_num, ds_den);
 
     char date_str[64];
@@ -309,26 +614,19 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
              "\xe6\x98\x9f\xe6\x9c\x9f%s",
              weekday_zh[wday]);
 
-    int date_y = time_y + dh + (compact_clock ? 10 : 18);
-    int date_w = ui_text_width(date_str, sc);
-    int week_w = ui_text_width(week_str, sc);
+    int date_y = time_y + dh + (is_583 ? 20 : (compact_clock ? 10 : 18));
+    int date_w = clock_text_px(date_str, sc);
+    int week_w = clock_text_px(week_str, sc);
     int date_gap = big ? 22 * sc : 18;
-    if (compact_clock)
+    if (compact_clock && !is_583)
         date_gap = 16;
     int date_x = (W - date_w - week_w - date_gap) / 2;
-    if (compact_clock)
+    if (compact_clock && !is_583 && cfg_local.show_weather)
         date_x = MX + 32;
     if (date_x < 16)
         date_x = 16;
-    fb_utf8_scaled(fb, date_x, date_y, date_str, COLOR_BLACK, sc);
-    fb_utf8_scaled(fb, date_x + date_w + date_gap, date_y, week_str, COLOR_RED, sc);
-    if (big)
-        ui_draw_battery_badge(fb, date_x - 10, date_y + (sc > 1 ? 3 : 0));
-    else {
-        int battery_y = compact_clock ? 18
-                                      : (cfg_local.show_weather ? (date_y - 18) : (H - 34));
-        ui_draw_battery_badge(fb, compact_clock ? (W - 18) : (W - 28), battery_y);
-    }
+    clock_draw_text(fb, date_x, date_y, date_str, COLOR_BLACK, sc);
+    clock_draw_text(fb, date_x + date_w + date_gap, date_y, week_str, COLOR_RED, sc);
 
     weather_summary_t wd_local = {0};
     weather_config_t wcfg = {0};
@@ -343,15 +641,15 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
     }
     const weather_summary_t *wd = &wd_local;
 
-    int sep_y = date_y + 16 * sc + (compact_clock ? 9 : 12);
-    if (big || has_weather || cfg_local.show_weather) {
+    int sep_y = date_y + 16 * sc + (is_583 ? 18 : (compact_clock ? 9 : 12));
+    if (wide_clock || has_weather || cfg_local.show_weather) {
         ui_draw_dotted_hline(fb, MX + 12, sep_y, W - 2 * MX - 24, COLOR_BLACK, 6);
     } else {
         fb_fill_rect(fb, W / 2 - 34, sep_y, 68, 2, COLOR_RED);
     }
 
-    int bot_y = sep_y + (compact_clock ? 12 : 14);
-    const int wx_head_sc = big ? 2 : 1;
+    int bot_y = sep_y + (is_583 ? 18 : (compact_clock ? 12 : 14));
+    const int wx_head_sc = wide_clock ? 2 : 1;
     const int wx_body_sc = 1;
     const int wx_head_gap = 16 * wx_head_sc + 8;
 
@@ -554,29 +852,33 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
         else if (hour < 18) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8b\xe5\x8d\x88");
         else                snprintf(ampm, sizeof(ampm), "\xe6\x99\x9a\xe4\xb8\x8a");
         if (!big) {
-            const int card_x = 24;
-            const int card_y = bot_y + 6;
+            const int card_x = is_583 ? 48 : 24;
+            const int card_y = bot_y + (is_583 ? 8 : (plain_compact_clock ? 16 : 6));
             const int card_w = W - 2 * card_x;
-            const int card_h = 72;
+            const int card_h = is_583 ? 104 : 72;
             ui_draw_card(fb, card_x, card_y, card_w, card_h, true);
 
             const char *tag = time_sync_is_synced()
                                   ? "\xe6\x97\xb6\xe9\x97\xb4\xe5\xb7\xb2\xe5\x90\x8c\xe6\xad\xa5"
                                   : "\xe7\xad\x89\xe5\xbe\x85\xe7\xbd\x91\xe7\xbb\x9c\xe6\xa0\xa1\xe6\x97\xb6";
-            int aw = ui_text_width(ampm, 2);
-            int tw = ui_text_width(tag, 1);
-            fb_utf8_scaled(fb, (W - aw) / 2, card_y + 14, ampm, COLOR_BLACK, 2);
-            fb_utf8_scaled(fb, (W - tw) / 2, card_y + 48, tag,
-                           time_sync_is_synced() ? COLOR_BLACK : COLOR_RED, 1);
+            int ampm_sc = is_583 ? 3 : 2;
+            int aw = clock_text_px(ampm, ampm_sc);
+            int tw = clock_text_px(tag, 1);
+            clock_draw_text(fb, (W - aw) / 2, card_y + (is_583 ? 18 : 14),
+                            ampm, COLOR_BLACK, ampm_sc);
+            clock_draw_text(fb, (W - tw) / 2, card_y + (is_583 ? 72 : 48), tag,
+                            time_sync_is_synced() ? COLOR_BLACK : COLOR_RED, 1);
         } else {
             ui_draw_dotted_hline(fb, W / 2 - 70, bot_y + 30, 140, COLOR_BLACK, 6);
-            fb_utf8_scaled(fb, W / 2 - 16 * sc, bot_y + 50, ampm, COLOR_BLACK, sc);
+            int aw = clock_text_px(ampm, sc);
+            clock_draw_text(fb, (W - aw) / 2, bot_y + 50, ampm, COLOR_BLACK, sc);
         }
     }
 
     if (big || has_weather || cfg_local.show_weather)
-        ui_draw_footer(fb, "CLOCK", cfg_local.show_weather ? "WEATHER" : "TIME");
+        clock_draw_footer(fb, "CLOCK", cfg_local.show_weather ? "WEATHER" : "TIME");
 
+clock_render_done:
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
         if (s_render_mutex)
@@ -584,8 +886,6 @@ static esp_err_t render_clock(bool prefer_partial, unsigned epoch, bool notify_s
         ESP_LOGI(TAG, "Clock display skipped before EPD refresh: stale request");
         return ESP_ERR_INVALID_STATE;
     }
-
-    (void)prefer_partial;
 
     /* Display directly from RAM; clock refreshes should not rewrite /spiffs/image.bin. */
     esp_err_t err = epd_display_fb_free(fb);
@@ -644,7 +944,8 @@ static void clock_task(void *arg)
     ESP_LOGI(TAG, "Clock task running");
 
     for (;;) {
-        if (!display_policy_clock_may_auto_refresh()) {
+        if (!display_policy_clock_may_auto_refresh() &&
+            !display_policy_calendar_may_midnight_refresh()) {
             state_reset();
             xEventGroupWaitBits(s_event,
                                 BIT_CFG_CHANGED | BIT_WEATHER_DATA | BIT_WAKE,
@@ -668,7 +969,9 @@ static void clock_task(void *arg)
             pdTRUE, pdFALSE, timeout);
 
         /* 唤醒后再核一次活跃条件（wait 期间可能被切到其他模式） */
-        if (!display_policy_clock_may_auto_refresh()) {
+        bool clock_may_refresh = display_policy_clock_may_auto_refresh();
+        bool calendar_may_refresh = display_policy_calendar_may_midnight_refresh();
+        if (!clock_may_refresh && !calendar_may_refresh) {
             continue;
         }
 
@@ -712,6 +1015,31 @@ static void clock_task(void *arg)
                              (CLOCK_FULL_REFRESH_STEP_MIN <= 1 ||
                               (tm.tm_min % CLOCK_FULL_REFRESH_STEP_MIN) == 0);
 
+        if (calendar_may_refresh && minute_changed &&
+            calendar_display_needs_midnight_refresh()) {
+            ESP_LOGI(TAG, "calendar date changed, refreshing calendar page");
+            unsigned cal_epoch = display_policy_display_epoch();
+            if (display_mode_show_request(DISPLAY_MODE_CALENDAR, &cal_epoch) == ESP_OK)
+                calendar_display_wait_render_idle();
+            portENTER_CRITICAL(&s_state_mux);
+            s_state.last_minute = tm.tm_min;
+            s_state.last_hour = tm.tm_hour;
+            s_state.last_mday = tm.tm_mday;
+            portEXIT_CRITICAL(&s_state_mux);
+            continue;
+        }
+
+        if (!clock_may_refresh) {
+            if (minute_changed) {
+                portENTER_CRITICAL(&s_state_mux);
+                s_state.last_minute = tm.tm_min;
+                s_state.last_hour = tm.tm_hour;
+                s_state.last_mday = tm.tm_mday;
+                portEXIT_CRITICAL(&s_state_mux);
+            }
+            continue;
+        }
+
         bool need_render = false;
 
         if (cfg_changed)                          need_render = true;
@@ -734,15 +1062,15 @@ static void clock_task(void *arg)
             continue;
         }
 
-        ESP_LOGI(TAG,
-                 "tick %02d:%02d -> render clock  min=%d step=%d hr=%d day=%d cfg=%d "
-                 "sw_vis=%d wx=%d ff=%d",
-                 tm.tm_hour, tm.tm_min,
-                 minute_changed, full_step_due, hour_changed, day_changed, cfg_changed,
-                 sw_visibility_changed, weather_data_changed, s_force_full);
-
         unsigned epoch = display_policy_display_epoch();
-        render_clock(false, epoch, false);
+        ESP_LOGI(TAG,
+                 "tick %02d:%02d -> render clock refresh=full min=%d full_step=%d "
+                 "hr=%d day=%d cfg=%d sw_vis=%d wx=%d ff=%d",
+                 tm.tm_hour, tm.tm_min,
+                 minute_changed, full_step_due,
+                 hour_changed, day_changed, cfg_changed,
+                 sw_visibility_changed, weather_data_changed, s_force_full);
+        render_clock(epoch, false);
     }
 }
 
@@ -833,7 +1161,7 @@ esp_err_t clock_display_show(void)
     /* 同步渲染（耗时 ~18.8s 全刷）。render_clock 末尾会更新 s_state，
      * 任务循环看到 s_state.last_minute 已是当前分钟 → 不会立即重复刷。 */
     unsigned epoch = display_policy_display_epoch();
-    esp_err_t err = render_clock(false, epoch, true);
+    esp_err_t err = render_clock(epoch, true);
     if (err != ESP_OK)
         return err;
 

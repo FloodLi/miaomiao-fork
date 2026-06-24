@@ -6,7 +6,7 @@
 
 - 芯片：ESP32-S3，建议 16MB Flash；有 8MB PSRAM 时图片转换体验更好。
 - ESP-IDF：最低 `v5.5.1`，建议使用同一 5.5.x 系列。
-- 默认分区：`partitions.csv`，包含 factory、双 OTA 和约 10MB SPIFFS。
+- 默认分区：`partitions.csv`，包含 factory、双 OTA、128KB coredump、2.875MB fontfs 和 3.875MB 用户 SPIFFS。
 - 推荐命令：
 
 ```powershell

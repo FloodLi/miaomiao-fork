@@ -1,5 +1,5 @@
 /**
- * EPD 驱动 — 主测 SSD1619 / UC8179，并接入 ATC/Solum 实验面板配置
+ * EPD 驱动 — 主测 SSD1619 / UC8179，并接入 ATC/Solum 面板配置
  *
  * 引脚与工程原理图一致：SCK=4 MOSI=5 DC=7 CS=15 RST=6 BUSY=16，SPI2，Mode0，2MHz。
  * BUSY：Waveshare SSD1619 4.2 B（epd4in2b_V2 ReadBusy，flag=新）为「忙=高、空闲=低」，默认 idle=0。
@@ -25,6 +25,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
+#include "power_mgr.h"
 
 /* ── 硬件引脚 ─────────────────────────────────────────────────────── */
 
@@ -40,6 +41,12 @@
 #define EPD_SPI_MAX_TX    16384
 #define EPD_FILL_CHUNK    4096
 #define EPD_BUSY_TIMEOUT_MS  60000
+#define EPD_ATC29_BUSY_TIMEOUT_MS  2500
+#define EPD_ATC29_SAFE_REFRESH_MS  12000
+#define HINK29_REFRESH_MS          15000
+#define HINK29_LOGICAL_W 128
+#define HINK29_LOGICAL_H 296
+#define EPD_REPAIR_MAX_CYCLES      8
 
 static const char *TAG = "epd";
 
@@ -67,7 +74,7 @@ static int busy_idle_effective(void);
 
 typedef enum {
     EPD_CMD_DATA_24_26,          /* black:0x24, red:0x26, red bit 1 = red */
-    EPD_CMD_DATA_24_26_SSD16XX,  /* SSD1677: black:0x24, color:0x26, red bit 0 = red */
+    EPD_CMD_DATA_24_26_SSD16XX,  /* SSD16xx 0x24/0x26; SSD1683 BWR uses red bit 1 = red */
     EPD_CMD_DATA_10_13,          /* black:0x10, red:0x13, red bit 1 = red */
     EPD_CMD_DATA_10_92_13,       /* black:0x10, partial-out marker, red:0x13 */
     EPD_CMD_DATA_10_13_INV_RED,  /* black:0x10, red:0x13, red bit 0 = red */
@@ -102,6 +109,8 @@ static void uc8179_init_sequence(void);
 static void uc8179_refresh(void);
 static void ws_583_bwr_init(void);
 static void atc_unissd_init(void);
+static void hink_ssd1619_29_init(void);
+static void hink_ssd1619_29_refresh(void);
 static void atc_unissd_97_init(void);
 static void atc_ucvar29_init(void);
 static void atc_ucvar43_init(void);
@@ -111,6 +120,8 @@ static void atc_uc8179_init(void);
 static void ref_uc81xx_init(void);
 static void ref_uc8159_init(void);
 static void ref_ssd1619_init(void);
+static void ref_ssd1683_init(void);
+static void fpc194_ssd1683_init(void);
 static void ref_ssd1677_init(void);
 static void ref_jd796xx_init(void);
 static void refresh_22_f7_20(void);
@@ -118,13 +129,18 @@ static void refresh_12(void);
 static void refresh_power_on_12(void);
 static void ref_uc81xx_refresh(void);
 static void ref_ssd16xx_refresh(void);
+static void ref_ssd1683_refresh(void);
+static void fpc194_ssd1683_refresh(void);
 static void ref_jd796xx_refresh(void);
 static void refresh_atc_dualssd(void);
 static void panel_ensure_ready(void);
 static void atc_unissd_cursor_home(void);
+static void hink_ssd1619_29_cursor_home(void);
 static void atc_unissd_97_cursor_home(void);
 static void ref_uc81xx_cursor_home(void);
 static void ref_ssd1619_cursor_home(void);
+static void ref_ssd1683_cursor_home(void);
+static void fpc194_ssd1683_cursor_home(void);
 static void ref_ssd1677_cursor_home(void);
 static void ref_jd796xx_cursor_home(void);
 static void cursor_none(void);
@@ -133,30 +149,34 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_42_BWR]     = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26,         "SSD1619 4.2\" BWR",         ssd1619_init_sequence, ssd1619_refresh, cursor_none },
     [EPD_PANEL_583_BWR]    = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "UC8179 5.83\" BWR",         uc8179_init_sequence,  uc8179_refresh,  cursor_none },
     [EPD_PANEL_WS_583_BWR] = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BWR B V2", ws_583_bwr_init,      refresh_12,       cursor_none },
-    [EPD_PANEL_ATC_SSD1619_16_BWR] = { 200, 200, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 1.6\" BWR SSD1619 exp", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 0, true },
-    [EPD_PANEL_ATC_SSD1619_22_BWR] = { 160, 296, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 2.2\" BWR SSD1619 exp", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
-    [EPD_PANEL_ATC_SSD1619_26_BWR] = { 184, 360, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 2.6\" BWR SSD1619 exp", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
-    [EPD_PANEL_ATC_SSD1619_29_BWR] = { 168, 384, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 2.9\" BWR SSD1619 exp", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
-    [EPD_PANEL_ATC_UC8151_29_BWR]  = { 168, 384, true,  1, false, EPD_CMD_DATA_10_13_INV_BLACK_DUMMY, "ATC/Solum 2.9\" BWR UC8151 exp", atc_ucvar29_init, refresh_power_on_12, cursor_none },
-    [EPD_PANEL_ATC_UCVAR43_BWR]    = { 152, 522, true,  1, false, EPD_CMD_DATA_10_13_DUMMY, "ATC/Solum 4.3\" BWR UC variant exp", atc_ucvar43_init, refresh_power_on_12, cursor_none },
-    [EPD_PANEL_ATC_DUALSSD_585_BWR] = { 792, 272, true, 0, false, EPD_CMD_DATA_DUAL_SSD, "ATC/Solum 5.85\" BWR dual SSD exp", atc_dualssd_init, refresh_atc_dualssd, cursor_none },
-    [EPD_PANEL_ATC_DUALSSD_585_BW]  = { 792, 272, false, 0, false, EPD_CMD_DATA_DUAL_SSD, "ATC/Solum 5.85\" BW dual SSD exp", atc_dualssd_init, refresh_atc_dualssd, cursor_none },
-    [EPD_PANEL_ATC_UC8159_60_BWR]  = { 600, 448, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "ATC/Solum 6.0\" BWR UC8159 exp", atc_uc8159_init, refresh_12, cursor_none },
-    [EPD_PANEL_ATC_UC8179_74_BWR]  = { 800, 480, true,  1, false, EPD_CMD_DATA_10_13, "ATC/Solum 7.4\" BWR UC8179 exp", atc_uc8179_init, refresh_power_on_12, cursor_none },
-    [EPD_PANEL_ATC_SSD_97_BWR]     = { 960, 672, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 9.7\" BWR SSD exp", atc_unissd_97_init, refresh_22_f7_20, atc_unissd_97_cursor_home },
-    [EPD_PANEL_ATC_PEGHOOK_13_BWR] = { 144, 200, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 1.3\" peghook BWR SSD exp", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
-    [EPD_PANEL_REF_UC8176_42_BW]      = { 400, 300, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "Ref UC8176 4.2\" BW exp", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
-    [EPD_PANEL_REF_UC8176_42_BWR]     = { 400, 300, true,  1, false, EPD_CMD_DATA_UC81XX_REF, "Ref UC8176 4.2\" BWR exp", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
-    [EPD_PANEL_REF_UC8179_75_BW]      = { 800, 480, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "Ref UC8179 7.5\" BW exp", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
-    [EPD_PANEL_REF_UC8179_75_BWR]     = { 800, 480, true,  1, true,  EPD_CMD_DATA_UC81XX_REF, "Ref UC8179 7.5\" BWR exp", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
-    [EPD_PANEL_REF_UC8159_583_BW]     = { 600, 448, false, 1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "Ref UC8159 5.83\" BW exp", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
-    [EPD_PANEL_REF_UC8159_75_LOW_BWR] = { 640, 384, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "Ref UC8159 7.5\" low BWR exp", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
-    [EPD_PANEL_REF_SSD1677_75_HD_BW]  = { 880, 528, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1677 7.5\" HD BW exp", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
-    [EPD_PANEL_REF_SSD1677_75_HD_BWR] = { 880, 528, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1677 7.5\" HD BWR exp", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
-    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "Ref JD79665 7.5\" BWRY exp", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
-    [EPD_PANEL_REF_SSD1619_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1619 4.2\" BW exp", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
-    [EPD_PANEL_REF_SSD1619_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "Ref SSD1619 4.2\" BWR exp", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
-    [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "Ref JD79668 4.2\" BWRY exp", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+    [EPD_PANEL_ATC_SSD1619_16_BWR] = { 200, 200, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 1.6\" BWR SSD1619", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 0, true },
+    [EPD_PANEL_ATC_SSD1619_22_BWR] = { 160, 296, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 2.2\" BWR SSD1619", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
+    [EPD_PANEL_ATC_SSD1619_26_BWR] = { 184, 360, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 2.6\" BWR SSD1619", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
+    [EPD_PANEL_HINK_SSD1619_29_BWR] = { HINK29_LOGICAL_W, HINK29_LOGICAL_H, true,  0, false, EPD_CMD_DATA_24_26, "HINK-E029A14-A1 2.9\" BWR SSD1619", hink_ssd1619_29_init, hink_ssd1619_29_refresh, hink_ssd1619_29_cursor_home, 8, false },
+    [EPD_PANEL_ATC_UC8151_29_BWR]  = { 168, 384, true,  1, false, EPD_CMD_DATA_10_13_INV_BLACK_DUMMY, "ATC/Solum 2.9\" BWR UC8151", atc_ucvar29_init, refresh_power_on_12, cursor_none },
+    [EPD_PANEL_ATC_UCVAR43_BWR]    = { 152, 522, true,  1, false, EPD_CMD_DATA_10_13_DUMMY, "ATC/Solum 4.3\" BWR UC", atc_ucvar43_init, refresh_power_on_12, cursor_none },
+    [EPD_PANEL_ATC_DUALSSD_585_BWR] = { 792, 272, true, 0, false, EPD_CMD_DATA_DUAL_SSD, "ATC/Solum 5.85\" BWR dual SSD", atc_dualssd_init, refresh_atc_dualssd, cursor_none },
+    [EPD_PANEL_ATC_DUALSSD_585_BW]  = { 792, 272, false, 0, false, EPD_CMD_DATA_DUAL_SSD, "ATC/Solum 5.85\" BW dual SSD", atc_dualssd_init, refresh_atc_dualssd, cursor_none },
+    [EPD_PANEL_ATC_UC8159_60_BWR]  = { 600, 448, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "ATC/Solum 6.0\" BWR UC8159", atc_uc8159_init, refresh_12, cursor_none },
+    [EPD_PANEL_ATC_UC8179_74_BWR]  = { 800, 480, true,  1, false, EPD_CMD_DATA_10_13, "ATC/Solum 7.4\" BWR UC8179", atc_uc8179_init, refresh_power_on_12, cursor_none },
+    [EPD_PANEL_ATC_SSD_97_BWR]     = { 960, 672, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 9.7\" BWR SSD", atc_unissd_97_init, refresh_22_f7_20, atc_unissd_97_cursor_home },
+    [EPD_PANEL_ATC_PEGHOOK_13_BWR] = { 144, 200, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 1.3\" peghook BWR SSD", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
+    [EPD_PANEL_REF_UC8176_42_BW]      = { 400, 300, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "UC8176 4.2\" BW", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+    [EPD_PANEL_REF_UC8176_42_BWR]     = { 400, 300, true,  1, false, EPD_CMD_DATA_UC81XX_REF, "UC8176 4.2\" BWR", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+    [EPD_PANEL_REF_UC8179_75_BW]      = { 800, 480, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "UC8179 7.5\" BW", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+    [EPD_PANEL_REF_UC8179_75_BWR]     = { 800, 480, true,  1, true,  EPD_CMD_DATA_UC81XX_REF, "UC8179 7.5\" BWR", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+    [EPD_PANEL_REF_UC8159_583_BW]     = { 600, 448, false, 1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "UC8159 5.83\" BW", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+    [EPD_PANEL_REF_UC8159_75_LOW_BWR] = { 640, 384, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "UC8159 7.5\" low BWR", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+    [EPD_PANEL_REF_SSD1677_75_HD_BW]  = { 880, 528, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BW", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
+    [EPD_PANEL_REF_SSD1677_75_HD_BWR] = { 880, 528, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BWR", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
+    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+    [EPD_PANEL_REF_SSD1619_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619 4.2\" BW", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
+    [EPD_PANEL_REF_SSD1619_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619 4.2\" BWR", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
+    [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79668 4.2\" BWRY", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+    [EPD_PANEL_REF_SSD1683_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BWR", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
+    [EPD_PANEL_REF_SSD1683_42_LEGACY] = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BWR", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
+    [EPD_PANEL_REF_SSD1683_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BW", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
+    [EPD_PANEL_FPC194_SSD1683_42_BWR] = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "FPC-194 4.2\" BWR SSD1683", fpc194_ssd1683_init, fpc194_ssd1683_refresh, fpc194_ssd1683_cursor_home },
 };
 
 static bool panel_valid(epd_panel_t panel)
@@ -171,6 +191,13 @@ static const epd_panel_desc_t *panel_desc(void)
     return &s_specs[s_panel];
 }
 
+static epd_panel_t panel_normalize(epd_panel_t panel)
+{
+    return panel == EPD_PANEL_REF_SSD1683_42_LEGACY
+               ? EPD_PANEL_REF_SSD1683_42_BWR
+               : panel;
+}
+
 int  epd_width(void)       { return panel_desc()->w; }
 int  epd_height(void)      { return panel_desc()->h; }
 int  epd_plane_bytes(void) { return panel_desc()->w * panel_desc()->h / 8; }
@@ -178,8 +205,32 @@ bool epd_has_red(void)     { return panel_desc()->has_red; }
 bool epd_has_yellow(void)  { return panel_desc()->has_yellow; }
 epd_panel_t epd_get_panel(void) { return s_panel; }
 
+static bool panel_is_atc_29_flexible(void)
+{
+    return s_panel == EPD_PANEL_HINK_SSD1619_29_BWR ||
+           s_panel == EPD_PANEL_ATC_UC8151_29_BWR;
+}
+
+static bool panel_is_hink_29(void)
+{
+    return s_panel == EPD_PANEL_HINK_SSD1619_29_BWR;
+}
+
+static bool panel_is_ref_ssd1683_bwr(void)
+{
+    return s_panel == EPD_PANEL_REF_SSD1683_42_BWR ||
+           s_panel == EPD_PANEL_REF_SSD1683_42_LEGACY ||
+           s_panel == EPD_PANEL_FPC194_SSD1683_42_BWR;
+}
+
+static bool panel_needs_inverted_black_plane(void)
+{
+    return s_panel == EPD_PANEL_HINK_SSD1619_29_BWR;
+}
+
 esp_err_t epd_save_panel_config(epd_panel_t panel, int busy_idle)
 {
+    panel = panel_normalize(panel);
     if (!panel_valid(panel))
         return ESP_ERR_INVALID_ARG;
     if (busy_idle != 0 && busy_idle != 1)
@@ -196,14 +247,48 @@ esp_err_t epd_save_panel_config(epd_panel_t panel, int busy_idle)
         e = nvs_commit(h);
     nvs_close(h);
     if (e == ESP_OK) {
-        ESP_LOGI(TAG, "Panel config saved for next boot: %s, busy_idle=%d",
+        bool applied_now = (panel == s_panel);
+        if (applied_now)
+            s_busy_idle_level = busy_idle;
+        ESP_LOGI(TAG, "Panel config saved%s: %s, busy_idle=%d",
+                 applied_now ? " and applied" : " for next boot",
                  s_specs[panel].name, busy_idle);
     }
     return e;
 }
 
+esp_err_t epd_get_saved_panel_config(epd_panel_t *panel, int *busy_idle)
+{
+    if (!panel && !busy_idle)
+        return ESP_ERR_INVALID_ARG;
+
+    epd_panel_t saved_panel = s_panel;
+    int saved_busy = busy_idle_effective();
+
+    nvs_handle_t h;
+    esp_err_t e = nvs_open("epd", NVS_READONLY, &h);
+    if (e == ESP_OK) {
+        uint8_t v;
+        if (nvs_get_u8(h, "panel", &v) == ESP_OK && panel_valid((epd_panel_t)v))
+            saved_panel = panel_normalize((epd_panel_t)v);
+        uint8_t bi;
+        if (nvs_get_u8(h, "busy_idle", &bi) == ESP_OK && bi <= 1)
+            saved_busy = (int)bi;
+        nvs_close(h);
+    } else if (e != ESP_ERR_NVS_NOT_FOUND) {
+        return e;
+    }
+
+    if (panel)
+        *panel = saved_panel;
+    if (busy_idle)
+        *busy_idle = saved_busy;
+    return ESP_OK;
+}
+
 esp_err_t epd_set_panel(epd_panel_t panel)
 {
+    panel = panel_normalize(panel);
     if (!panel_valid(panel))
         return ESP_ERR_INVALID_ARG;
 
@@ -272,7 +357,7 @@ static void nvs_load_panel(void)
         uint8_t v;
         if (nvs_get_u8(h, "panel", &v) == ESP_OK) {
             if (panel_valid((epd_panel_t)v)) {
-                s_panel = (epd_panel_t)v;
+                s_panel = panel_normalize((epd_panel_t)v);
             } else {
                 ESP_LOGW(TAG, "Saved panel id %u is no longer supported; using default panel", (unsigned)v);
             }
@@ -393,6 +478,16 @@ static void epd_hw_reset(void)
     delay_ms(200);
 }
 
+static void epd_hw_reset_waveshare_v2(void)
+{
+    gpio_set_level(PIN_EPD_RST, 1);
+    delay_ms(200);
+    gpio_set_level(PIN_EPD_RST, 0);
+    delay_ms(2);
+    gpio_set_level(PIN_EPD_RST, 1);
+    delay_ms(200);
+}
+
 /**
  * 等待 BUSY 释放。idle 电平见 busy_idle_effective()。
  * UC8179：轮询前可发 0x71；SSD1619 一般直接读 GPIO。
@@ -404,7 +499,9 @@ static void epd_wait_ready(bool after_update_cmd)
 {
     delay_ms(10);
     const bool probe_0x71 = panel_desc()->busy_probe_0x71;
-    const int idle = busy_idle_effective();
+    int idle = busy_idle_effective();
+    const bool flexible_busy = panel_is_atc_29_flexible();
+    const int timeout_ms = flexible_busy ? EPD_ATC29_BUSY_TIMEOUT_MS : EPD_BUSY_TIMEOUT_MS;
 
     if (probe_0x71)
         epd_cmd(0x71);
@@ -419,10 +516,21 @@ static void epd_wait_ready(bool after_update_cmd)
             if (probe_0x71)
                 epd_cmd(0x71);
         }
-        if (phase1 >= phase1_max_ms)
+        if (phase1 >= phase1_max_ms && !flexible_busy)
             ESP_LOGW(TAG, "BUSY: no busy phase after update (still idle %d ms). "
-                          "Check GPIO4 / NVS epd/busy_idle (0=Waveshare idle-low).",
-                     phase1_max_ms);
+                          "Check GPIO%d / NVS epd/busy_idle (0=Waveshare idle-low).",
+                     phase1_max_ms, PIN_EPD_BUSY);
+    }
+
+    if (flexible_busy && !after_update_cmd && gpio_get_level(PIN_EPD_BUSY) != idle) {
+        int busy_level = gpio_get_level(PIN_EPD_BUSY);
+        delay_ms(80);
+        if (gpio_get_level(PIN_EPD_BUSY) == busy_level) {
+            ESP_LOGW(TAG, "%s: BUSY stayed at %d while idle=%d; "
+                          "using flexible idle=%d for this boot",
+                     panel_desc()->name, busy_level, idle, busy_level);
+            idle = busy_level;
+        }
     }
 
     int waited = 0;
@@ -432,7 +540,7 @@ static void epd_wait_ready(bool after_update_cmd)
             epd_cmd(0x71);
         delay_ms(200);
         waited += 200;
-        if (waited >= EPD_BUSY_TIMEOUT_MS) {
+        if (waited >= timeout_ms) {
             ESP_LOGW(TAG, "BUSY timeout %d ms (expect idle=%d, gpio=%d). "
                           "Try NVS key busy_idle=0 or 1 on namespace 'epd'. "
                           "Display may continue with conservative fixed waits.",
@@ -502,6 +610,17 @@ static void atc_unissd_cursor_home(void)
     epd_dat((uint8_t)(y >> 8));
 }
 
+static void hink_ssd1619_29_cursor_home(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    uint16_t y = (uint16_t)(HINK29_LOGICAL_H - 1u);
+    epd_cmd(0x4E);
+    epd_dat((uint8_t)(d->x_offset / 8u));
+    epd_cmd(0x4F);
+    epd_dat((uint8_t)y);
+    epd_dat((uint8_t)(y >> 8));
+}
+
 static void atc_unissd_97_cursor_home(void)
 {
     epd_cmd(0x4E);
@@ -559,6 +678,44 @@ static void ref_ssd1619_full_window(void)
     cmd2(0x4F, (uint8_t)y0, (uint8_t)(y0 >> 8));
 }
 
+static void ref_ssd1683_set_window(int x, int y, int w, int h)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    int x0 = x & ~0x07;
+    int x1 = (x + w - 1) | 0x07;
+    int y0 = y;
+    int y1 = y + h - 1;
+
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= d->w) x1 = d->w - 1;
+    if (y1 >= d->h) y1 = d->h - 1;
+
+    cmd1(0x11, 0x03);
+    cmd2(0x44, (uint8_t)(x0 / 8), (uint8_t)(x1 / 8));
+    cmd4(0x45, (uint8_t)y0, (uint8_t)(y0 >> 8),
+         (uint8_t)y1, (uint8_t)(y1 >> 8));
+    cmd1(0x4E, (uint8_t)(x0 / 8));
+    cmd2(0x4F, (uint8_t)y0, (uint8_t)(y0 >> 8));
+}
+
+static void ref_ssd1683_full_window(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    ref_ssd1683_set_window(0, 0, d->w, d->h);
+}
+
+static void ref_ssd1683_apply_full_refresh_config(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    uint16_t y1 = (uint16_t)(d->h - 1);
+
+    cmd3(0x01, (uint8_t)(y1 & 0xFF), (uint8_t)(y1 >> 8), 0x00);
+    cmd1(0x3C, 0x05);
+    cmd1(0x18, 0x80);
+    ref_ssd1683_full_window();
+}
+
 static void ref_ssd1677_full_window(void)
 {
     const epd_panel_desc_t *d = panel_desc();
@@ -605,6 +762,16 @@ static void ref_ssd1619_cursor_home(void)
     ref_ssd1619_full_window();
 }
 
+static void ref_ssd1683_cursor_home(void)
+{
+    ref_ssd1683_full_window();
+}
+
+static void fpc194_ssd1683_cursor_home(void)
+{
+    ref_ssd1683_full_window();
+}
+
 static void ref_ssd1677_cursor_home(void)
 {
     ref_ssd1677_full_window();
@@ -620,7 +787,19 @@ static void refresh_22_f7_20(void)
     cmd1(0x22, 0xF7);
     epd_cmd(0x20);
     epd_wait_ready(true);
-    delay_ms(200);
+    delay_ms(panel_is_atc_29_flexible() ? EPD_ATC29_SAFE_REFRESH_MS : 200);
+}
+
+static void hink_ssd1619_29_refresh(void)
+{
+    cmd1(0x22, 0xCF);
+    epd_cmd(0x20);
+    /*
+     * HINK-E029A14-A1 real boards have shown BUSY staying high during the
+     * full refresh even when the image is displayed correctly.  Polling it
+     * here creates a false timeout, so use a conservative fixed refresh wait.
+     */
+    delay_ms(HINK29_REFRESH_MS);
 }
 
 static void refresh_12(void)
@@ -639,7 +818,7 @@ static void refresh_power_on_12(void)
     epd_cmd(0x12);
     delay_ms(100);
     epd_wait_ready(true);
-    delay_ms(200);
+    delay_ms(panel_is_atc_29_flexible() ? EPD_ATC29_SAFE_REFRESH_MS : 200);
 }
 
 static void ref_uc81xx_refresh(void)
@@ -671,6 +850,57 @@ static void ref_ssd16xx_refresh(void)
     cmd1(0x22, 0x83);
     epd_cmd(0x20);
     delay_ms(200);
+}
+
+static uint32_t ref_ssd1683_update_once(uint8_t ctrl2, const char *label)
+{
+    ESP_LOGI(TAG, "SSD1683 %s start: ctrl2=0x%02X", label, ctrl2);
+    epd_cmd(0x22);
+    epd_dat(ctrl2);
+    delay_ms(2);
+    epd_cmd(0x20);
+
+    TickType_t t0 = xTaskGetTickCount();
+    epd_wait_ready(true);
+    uint32_t elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - t0);
+
+    if (elapsed_ms < 100) {
+        ESP_LOGW(TAG, "SSD1683 %s BUSY only %u ms, waiting 2s safety",
+                 label, (unsigned)elapsed_ms);
+        delay_ms(2000);
+    } else {
+        delay_ms(200);
+    }
+    ESP_LOGI(TAG, "SSD1683 %s done in %u ms", label, (unsigned)elapsed_ms);
+    return elapsed_ms;
+}
+
+static uint32_t ref_ssd1683_update(uint8_t ctrl2, const char *label)
+{
+    ref_ssd1683_apply_full_refresh_config();
+    return ref_ssd1683_update_once(ctrl2, label);
+}
+
+static void ref_ssd1683_refresh(void)
+{
+    if (!panel_desc()->has_red) {
+        cmd2(0x21, 0x40, 0x00);
+        ref_ssd1683_update(0xF7, "BW full refresh");
+        ref_ssd1683_full_window();
+        cmd1(0x22, 0x83);
+        epd_cmd(0x20);
+        delay_ms(200);
+        return;
+    }
+    ref_ssd1683_update(0xF7, "full refresh");
+    ref_ssd1683_full_window();
+}
+
+static void fpc194_ssd1683_refresh(void)
+{
+    ref_ssd1683_full_window();
+    ref_ssd1683_update_once(0xF7, "FPC-194 full refresh");
+    ref_ssd1683_full_window();
 }
 
 static void ref_jd796xx_refresh(void)
@@ -715,6 +945,53 @@ static void panel_write_plane(uint8_t cmd, const uint8_t *data, uint8_t fill, bo
         offset += n;
     }
     free(buf);
+}
+
+static void hink_ssd1619_write_plane(uint8_t cmd, const uint8_t *data,
+                                     uint8_t fill, bool invert, int pb)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    int rb = d->w / 8;
+    if (d->w != HINK29_LOGICAL_W || d->h != HINK29_LOGICAL_H ||
+        rb <= 0 || rb > 64 || pb != rb * d->h) {
+        ESP_LOGE(TAG, "HINK plane geometry invalid: rb=%d pb=%d panel=%dx%d",
+                 rb, pb, d->w, d->h);
+        return;
+    }
+
+    uint8_t line[64];
+    epd_cmd(cmd);
+    for (int y = 0; y < d->h; y++) {
+        const size_t row = (size_t)y * (size_t)rb;
+        for (int x = 0; x < rb; x++) {
+            uint8_t v = data ? data[row + (size_t)x] : fill;
+            if (invert)
+                v = (uint8_t)~v;
+            line[x] = v;
+        }
+        epd_bulk(line, (size_t)rb);
+    }
+}
+
+static esp_err_t hink_ssd1619_file_plane(uint8_t cmd, FILE *f, int pb, bool has_data,
+                                         bool invert, uint8_t fill)
+{
+    uint8_t *plane = NULL;
+    if (has_data) {
+        plane = heap_caps_malloc((size_t)pb, MALLOC_CAP_8BIT);
+        if (!plane) {
+            ESP_LOGE(TAG, "HINK file plane malloc failed: %d", pb);
+            return ESP_ERR_NO_MEM;
+        }
+        if (fread(plane, 1, (size_t)pb, f) != (size_t)pb) {
+            free(plane);
+            ESP_LOGE(TAG, "HINK file plane short read");
+            return ESP_ERR_INVALID_SIZE;
+        }
+    }
+    hink_ssd1619_write_plane(cmd, plane, fill, invert, pb);
+    free(plane);
+    return ESP_OK;
 }
 
 static uint8_t plane_byte_or_fill(const uint8_t *data, size_t index, uint8_t fill)
@@ -858,7 +1135,16 @@ static void panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, int p
 
     switch (d->data_mode) {
     case EPD_CMD_DATA_24_26:
-        panel_write_plane(0x24, bw, 0xFF, false, pb);
+        if (panel_is_hink_29()) {
+            if (d->has_red) {
+                hink_ssd1619_write_plane(0x26, red, 0x00, false, pb);
+                if (d->cursor_home)
+                    d->cursor_home();
+            }
+            hink_ssd1619_write_plane(0x24, bw, 0xFF, true, pb);
+            break;
+        }
+        panel_write_plane(0x24, bw, 0xFF, panel_needs_inverted_black_plane(), pb);
         if (d->has_red) {
             if (d->cursor_home)
                 d->cursor_home();
@@ -870,11 +1156,17 @@ static void panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, int p
         if (d->has_red) {
             if (d->cursor_home)
                 d->cursor_home();
-            panel_write_plane(0x26, red, 0xFF, true, pb);
+            if (panel_is_ref_ssd1683_bwr()) {
+                /* Waveshare sends ~ryimage because its source image uses 0=red;
+                   our framebuffer red plane is already 1=red. */
+                panel_write_plane(0x26, red, 0x00, false, pb);
+            } else {
+                panel_write_plane(0x26, red, 0xFF, true, pb);
+            }
         } else {
             if (d->cursor_home)
                 d->cursor_home();
-            panel_write_plane(0x26, bw, 0xFF, false, pb);
+            panel_write_plane(0x26, NULL, 0xFF, false, pb);
         }
         break;
     case EPD_CMD_DATA_10_13:
@@ -1108,16 +1400,29 @@ static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file,
 
     switch (d->data_mode) {
     case EPD_CMD_DATA_24_26:
-        epd_cmd(0x24);
-        ret = file_send_plane(f, pb, false);
-        if (ret != ESP_OK)
-            return ret;
-        if (d->has_red) {
+        if (panel_is_hink_29()) {
+            if (has_red_file && fseek(f, (long)pb, SEEK_SET) != 0)
+                return ESP_FAIL;
+            ret = hink_ssd1619_file_plane(0x26, f, pb, has_red_file, false, 0x00);
+            if (ret != ESP_OK)
+                return ret;
+            if (fseek(f, 0, SEEK_SET) != 0)
+                return ESP_FAIL;
             if (d->cursor_home)
                 d->cursor_home();
-            epd_cmd(0x26);
-            ret = has_red_file ? file_send_plane(f, pb, false)
-                               : (epd_fill(0x00, (size_t)pb), ESP_OK);
+            ret = hink_ssd1619_file_plane(0x24, f, pb, true, true, 0xFF);
+        } else {
+            epd_cmd(0x24);
+            ret = file_send_plane(f, pb, panel_needs_inverted_black_plane());
+            if (ret != ESP_OK)
+                return ret;
+            if (d->has_red) {
+                if (d->cursor_home)
+                    d->cursor_home();
+                epd_cmd(0x26);
+                ret = has_red_file ? file_send_plane(f, pb, false)
+                                   : (epd_fill(0x00, (size_t)pb), ESP_OK);
+            }
         }
         break;
     case EPD_CMD_DATA_24_26_SSD16XX:
@@ -1129,12 +1434,17 @@ static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file,
             d->cursor_home();
         epd_cmd(0x26);
         if (d->has_red) {
-            ret = has_red_file ? file_send_plane(f, pb, true)
-                               : (epd_fill(0xFF, (size_t)pb), ESP_OK);
+            if (panel_is_ref_ssd1683_bwr())
+                ret = has_red_file ? file_send_plane(f, pb, false)
+                                   : (epd_fill(0x00, (size_t)pb), ESP_OK);
+            else
+                ret = has_red_file ? file_send_plane(f, pb, true)
+                                   : (epd_fill(0xFF, (size_t)pb), ESP_OK);
         } else {
             if (fseek(f, 0, SEEK_SET) != 0)
                 return ESP_FAIL;
-            ret = file_send_plane(f, pb, false);
+            epd_fill(0xFF, (size_t)pb);
+            ret = ESP_OK;
         }
         break;
     case EPD_CMD_DATA_10_13:
@@ -1231,7 +1541,18 @@ static void panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
 
     switch (d->data_mode) {
     case EPD_CMD_DATA_24_26:
-        panel_write_plane(0x24, NULL, bw_byte, false, pb);
+        if (panel_is_hink_29()) {
+            if (d->has_red) {
+                hink_ssd1619_write_plane(0x26, NULL, red_byte, false, pb);
+                if (d->cursor_home)
+                    d->cursor_home();
+            }
+            hink_ssd1619_write_plane(0x24, NULL, bw_byte, true, pb);
+            break;
+        }
+        panel_write_plane(0x24, NULL,
+                          panel_needs_inverted_black_plane() ? (uint8_t)~bw_byte : bw_byte,
+                          false, pb);
         if (d->has_red) {
             if (d->cursor_home)
                 d->cursor_home();
@@ -1242,7 +1563,10 @@ static void panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
         panel_write_plane(0x24, NULL, bw_byte, false, pb);
         if (d->cursor_home)
             d->cursor_home();
-        panel_write_plane(0x26, NULL, d->has_red ? (uint8_t)~red_byte : bw_byte, false, pb);
+        if (d->has_red && panel_is_ref_ssd1683_bwr())
+            panel_write_plane(0x26, NULL, red_byte, false, pb);
+        else
+            panel_write_plane(0x26, NULL, d->has_red ? (uint8_t)~red_byte : 0xFF, false, pb);
         break;
     case EPD_CMD_DATA_10_13:
         panel_write_plane(0x10, NULL, bw_byte, false, pb);
@@ -1287,7 +1611,7 @@ static void panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
     d->refresh();
 }
 
-/* Experimental ATC/Solum tag controller sequences, adapted from
+/* ATC/Solum tag controller sequences, adapted from
  * atc1441/Tag_FW_nRF52811 tag_fw/src/epd_driver. The nRF project reads
  * tag metadata from UICR; this firmware exposes common tag types manually
  * and keeps the existing ESP-IDF SPI/BUSY/framebuffer layer.
@@ -1316,7 +1640,43 @@ static void atc_unissd_init(void)
     cmd1(0x18, 0x80);
     cmd2(0x21, d->has_red ? 0x08 : 0x48, 0x00);
     atc_unissd_cursor_home();
-    ESP_LOGI(TAG, "%s init OK (experimental)", d->name);
+    if (s_panel == EPD_PANEL_ATC_SSD1619_29_BWR)
+        ESP_LOGI(TAG, "%s init OK", d->name);
+    else
+        ESP_LOGI(TAG, "%s init OK", d->name);
+}
+
+static void hink_ssd1619_29_init(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    uint16_t y0 = 0;
+    uint16_t y1 = (uint16_t)(HINK29_LOGICAL_H - 1u);
+    uint8_t x0 = (uint8_t)(d->x_offset / 8u);
+    uint8_t x1 = (uint8_t)(((d->x_offset + HINK29_LOGICAL_W) / 8u) - 1u);
+
+    epd_hw_reset();
+    epd_cmd(0x12);
+    delay_ms(10);
+
+    cmd1(0x74, 0x54);
+    cmd1(0x7E, 0x3B);
+    cmd2(0x2B, 0x04, 0x63);
+    cmd4(0x0C, 0x8F, 0x8F, 0x8F, 0x3F);
+    cmd3(0x01, (uint8_t)(y1 & 0xFF), (uint8_t)(y1 >> 8), 0x00);
+    cmd1(0x11, 0x01);
+    cmd2(0x44, x0, x1);
+    cmd4(0x45, (uint8_t)y1, (uint8_t)(y1 >> 8),
+         (uint8_t)y0, (uint8_t)(y0 >> 8));
+    cmd1(0x3C, 0x01);
+    cmd1(0x18, 0x80);
+    cmd2(0x21, 0x08, 0x00);
+    cmd1(0x22, 0xB1);
+    epd_cmd(0x20);
+    epd_wait_ready(true);
+    hink_ssd1619_29_cursor_home();
+    ESP_LOGI(TAG, "%s init OK (%dx%d, x window=%u..%u)",
+             panel_desc()->name, HINK29_LOGICAL_W, HINK29_LOGICAL_H,
+             (unsigned)x0, (unsigned)x1);
 }
 
 static void atc_unissd_97_init(void)
@@ -1336,7 +1696,7 @@ static void atc_unissd_97_init(void)
     cmd1(0x22, 0xF7);
     cmd2(0x21, 0x08, 0x00);
     atc_unissd_97_cursor_home();
-    ESP_LOGI(TAG, "ATC/Solum 9.7 SSD init OK (experimental)");
+    ESP_LOGI(TAG, "ATC/Solum 9.7 SSD init OK");
 }
 
 static void atc_ucvar29_init(void)
@@ -1348,7 +1708,7 @@ static void atc_ucvar29_init(void)
     cmd3(0x06, 0xE5, 0x35, 0x3C);
     cmd1(0x50, 0x57);
     cmd2(0x00, 0x07, 0x09);
-    ESP_LOGI(TAG, "ATC/Solum UC8151 2.9 init OK (experimental)");
+    ESP_LOGI(TAG, "ATC/Solum UC8151 2.9 init OK");
 }
 
 static void atc_ucvar43_init(void)
@@ -1366,7 +1726,7 @@ static void atc_ucvar43_init(void)
     cmd4(0x61, 0x00, 0x98, 0x02, 0x0A);
     cmd3(0x06, 0x57, 0x63, 0x3A);
     cmd1(0x50, 0x87);
-    ESP_LOGI(TAG, "ATC/Solum UC 4.3 variant init OK (experimental)");
+    ESP_LOGI(TAG, "ATC/Solum UC 4.3 init OK");
 }
 
 static void atc_dualssd_init(void)
@@ -1386,7 +1746,7 @@ static void atc_dualssd_init(void)
     cmd1(0xCE, 0x00);
     cmd2(0xCF, 0x0F, 0x01);
     cmd1(0x3C, 0x01);
-    ESP_LOGI(TAG, "%s init OK (experimental)", panel_desc()->name);
+    ESP_LOGI(TAG, "%s init OK", panel_desc()->name);
 }
 
 static void atc_uc8159_init(void)
@@ -1416,7 +1776,7 @@ static void atc_uc8179_init(void)
     cmd1(0x00, 0x0F);
     cmd2(0x50, 0x30, 0x07);
     cmd4(0x61, 0x03, 0x20, 0x01, 0xE0);
-    ESP_LOGI(TAG, "ATC/Solum UC8179 7.4 init OK (experimental)");
+    ESP_LOGI(TAG, "ATC/Solum UC8179 7.4 init OK");
 }
 
 static void ref_uc81xx_init(void)
@@ -1427,7 +1787,7 @@ static void ref_uc81xx_init(void)
     cmd1(0x50, d->has_red ? 0x77 : 0x97);
     ref_send_tres();
     ref_uc81xx_full_window();
-    ESP_LOGI(TAG, "%s init OK (experimental reference)", d->name);
+    ESP_LOGI(TAG, "%s init OK", d->name);
 }
 
 static void ref_uc8159_init(void)
@@ -1445,7 +1805,7 @@ static void ref_uc8159_init(void)
     cmd1(0xE5, 0x03);
     ref_send_tres();
     ref_uc81xx_full_window();
-    ESP_LOGI(TAG, "%s init OK (experimental reference)", d->name);
+    ESP_LOGI(TAG, "%s init OK", d->name);
 }
 
 static void ref_ssd1619_init(void)
@@ -1457,7 +1817,42 @@ static void ref_ssd1619_init(void)
     cmd1(0x3C, 0x01);
     cmd1(0x18, 0x80);
     ref_ssd1619_full_window();
-    ESP_LOGI(TAG, "%s init OK (experimental reference)", d->name);
+    ESP_LOGI(TAG, "%s init OK", d->name);
+}
+
+static void ref_ssd1683_init(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    epd_hw_reset_waveshare_v2();
+    epd_wait_ready(false);
+
+    epd_cmd(0x12);
+    epd_wait_ready(false);
+
+    cmd1(0x74, 0x54);
+    cmd1(0x7E, 0x3B);
+    cmd1(0x2C, 0x55);
+    cmd1(0x03, 0x15);
+    cmd3(0x04, 0x41, 0xA8, 0x32);
+    cmd1(0x3A, 0x2C);
+    cmd1(0x3B, 0x0B);
+    ref_ssd1683_apply_full_refresh_config();
+    epd_wait_ready(false);
+    ESP_LOGI(TAG, "%s init OK", d->name);
+}
+
+static void fpc194_ssd1683_init(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    epd_hw_reset_waveshare_v2();
+    epd_wait_ready(false);
+
+    epd_cmd(0x12);
+    delay_ms(10);
+
+    ref_ssd1683_apply_full_refresh_config();
+    epd_wait_ready(false);
+    ESP_LOGI(TAG, "%s init OK (OTP waveform reference)", d->name);
 }
 
 static void ref_ssd1677_init(void)
@@ -1469,7 +1864,7 @@ static void ref_ssd1677_init(void)
     cmd1(0x3C, 0x01);
     cmd1(0x18, 0x80);
     ref_ssd1677_full_window();
-    ESP_LOGI(TAG, "%s init OK (experimental reference)", d->name);
+    ESP_LOGI(TAG, "%s init OK", d->name);
 }
 
 static void ref_jd796xx_init(void)
@@ -1493,7 +1888,7 @@ static void ref_jd796xx_init(void)
     ref_jd796xx_full_window();
     epd_cmd(0x04);
     epd_wait_ready(false);
-    ESP_LOGW(TAG, "%s init OK (experimental BWRY 2bpp)", d->name);
+    ESP_LOGW(TAG, "%s init OK (BWRY 2bpp)", d->name);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1594,71 +1989,6 @@ static void ssd1619_refresh(void)
     }
 }
 
-/*
- * Fast BW-only LUT for SSD1619 (based on Waveshare EPD_4in2_V2 fast waveform).
- * Uses fewer drive phases → refresh in ~1-2s with acceptable ghosting.
- * Structure: 5 VS groups × 12 bytes + 9 TP groups × 5 bytes = 105 bytes.
- */
-static const uint8_t SSD1619_LUT_FAST[105] = {
-    /* VS group 0 (VCOM) */
-    0x80, 0x48, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    /* VS group 1 (WW) */
-    0x40, 0x48, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    /* VS group 2 (BW) */
-    0x80, 0x48, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    /* VS group 3 (WB) */
-    0x40, 0x48, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    /* VS group 4 (BB) */
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    /* TP (timing) */
-    0x0A, 0x00, 0x00, 0x00, 0x00,
-    0x08, 0x01, 0x00, 0x08, 0x01,
-    0x00, 0x02, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00,
-};
-
-static void ssd1619_refresh_fast(void)
-{
-    /* Load custom fast LUT */
-    epd_cmd(0x32);
-    epd_bulk(SSD1619_LUT_FAST, sizeof(SSD1619_LUT_FAST));
-
-    /* Border waveform for fast mode */
-    epd_cmd(0x3C);
-    epd_dat(0x80);
-
-    /*
-     * Display Update Control 2:
-     * 0xC7 = Enable CLK + Enable CP + (skip temp & LUT reload) +
-     *        Display + Disable CP + Disable CLK
-     * Bit4=0 → use register LUT (our fast table), not OTP.
-     */
-    epd_cmd(0x22);
-    epd_dat(0xC7);
-    delay_ms(2);
-    epd_cmd(0x20);
-
-    TickType_t t0 = xTaskGetTickCount();
-    epd_wait_ready(true);
-    uint32_t elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - t0);
-
-    if (elapsed_ms < 100) {
-        ESP_LOGW(TAG, "fast refresh BUSY only %u ms, waiting 2s safety",
-                 (unsigned)elapsed_ms);
-        delay_ms(2000);
-    } else {
-        delay_ms(200);
-    }
-    ESP_LOGI(TAG, "fast refresh done in %u ms", (unsigned)elapsed_ms);
-}
-
-
-
 /* ═══════════════════════════════════════════════════════════════════
  * UC8179 — 5.83" 648×480 BWR（参考 Waveshare 5.83 BWR）
  * ═══════════════════════════════════════════════════════════════════ */
@@ -1743,31 +2073,6 @@ static void prepare_for_forced_full_refresh(void)
 void epd_request_full_refresh_next(void)
 {
     atomic_store(&s_force_full_refresh_next, true);
-}
-
-static esp_err_t epd_display_from_buffer_fast_locked(const fb_t *fb)
-{
-    int pb = epd_plane_bytes();
-    panel_ensure_ready();
-
-    if (s_panel == EPD_PANEL_42_BWR) {
-        /* BW plane only - skip red for speed */
-        ssd1619_cursor_home();
-        epd_cmd(0x24);
-        epd_bulk(fb->black, (size_t)pb);
-
-        /* Clear red plane to avoid stale red artifacts */
-        ssd1619_cursor_home();
-        epd_cmd(0x26);
-        epd_fill(0x00, (size_t)pb);
-
-        ssd1619_refresh_fast();
-        ESP_LOGI(TAG, "display from buffer (fast SSD1619)");
-        return ESP_OK;
-    }
-
-    ESP_LOGW(TAG, "fast refresh unsupported on this panel, falling back to full");
-    return ESP_ERR_NOT_SUPPORTED;
 }
 
 static void panel_ensure_ready(void)
@@ -1890,6 +2195,64 @@ esp_err_t epd_clear_screen(void)
     return ESP_OK;
 }
 
+static inline void test_set_black(uint8_t *bw, uint8_t *red, int rb, int x, int y)
+{
+    if (x < 0 || y < 0 || x >= epd_width() || y >= epd_height())
+        return;
+    size_t off = (size_t)y * (size_t)rb + (size_t)(x >> 3);
+    uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+    bw[off] &= (uint8_t)~bit;
+    if (red)
+        red[off] &= (uint8_t)~bit;
+}
+
+static inline void test_set_red(uint8_t *bw, uint8_t *red, int rb, int x, int y)
+{
+    if (!red || x < 0 || y < 0 || x >= epd_width() || y >= epd_height())
+        return;
+    size_t off = (size_t)y * (size_t)rb + (size_t)(x >> 3);
+    uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+    bw[off] |= bit;
+    red[off] |= bit;
+}
+
+static void test_fill_rect(uint8_t *bw, uint8_t *red, int rb, int x, int y,
+                           int w, int h, bool color_red)
+{
+    for (int yy = y; yy < y + h; yy++) {
+        for (int xx = x; xx < x + w; xx++) {
+            if (color_red)
+                test_set_red(bw, red, rb, xx, yy);
+            else
+                test_set_black(bw, red, rb, xx, yy);
+        }
+    }
+}
+
+static void test_rect(uint8_t *bw, uint8_t *red, int rb, int x, int y,
+                      int w, int h, int t, bool color_red)
+{
+    test_fill_rect(bw, red, rb, x, y, w, t, color_red);
+    test_fill_rect(bw, red, rb, x, y + h - t, w, t, color_red);
+    test_fill_rect(bw, red, rb, x, y, t, h, color_red);
+    test_fill_rect(bw, red, rb, x + w - t, y, t, h, color_red);
+}
+
+static void test_checker(uint8_t *bw, uint8_t *red, int rb, int x, int y,
+                         int w, int h, int cell, bool color_red)
+{
+    for (int yy = 0; yy < h; yy++) {
+        for (int xx = 0; xx < w; xx++) {
+            if ((((xx / cell) + (yy / cell)) & 1) == 0) {
+                if (color_red)
+                    test_set_red(bw, red, rb, x + xx, y + yy);
+                else
+                    test_set_black(bw, red, rb, x + xx, y + yy);
+            }
+        }
+    }
+}
+
 esp_err_t epd_display_test_pattern(void)
 {
     if (!s_epd_mutex || !s_epd_ready)
@@ -1909,20 +2272,6 @@ esp_err_t epd_display_test_pattern(void)
     }
     memset(buf, 0xFF, (size_t)pb);
 
-    for (int y = 0; y < H; y++) {
-        for (int x = 0; x < W; x++) {
-            if (y < 2 || y >= H - 2 || x < 2 || x >= W - 2)
-                buf[y * rb + (x >> 3)] &= ~(0x80 >> (x & 7));
-        }
-    }
-
-    int mid_x = W / 2, mid_y = H / 2;
-    for (int y = 20; y < mid_y; y++) {
-        if ((y / 10) & 1) continue;
-        for (int x = 20; x < mid_x - 20; x++)
-            buf[y * rb + (x >> 3)] &= ~(0x80 >> (x & 7));
-    }
-
     uint8_t *red = heap_caps_calloc(1, (size_t)pb, MALLOC_CAP_DMA);
     uint8_t *yellow = epd_has_yellow() ? heap_caps_calloc(1, (size_t)pb, MALLOC_CAP_DMA) : NULL;
     if (!red || (epd_has_yellow() && !yellow)) {
@@ -1932,14 +2281,55 @@ esp_err_t epd_display_test_pattern(void)
         xSemaphoreGive(s_epd_mutex);
         return ESP_ERR_NO_MEM;
     }
-    for (int y = mid_y + 20; y < H - 20; y++) {
-        for (int x = mid_x + 20; x < W - 20; x++) {
-            size_t off = (size_t)y * rb + (size_t)(x >> 3);
-            uint8_t bit = (uint8_t)(0x80u >> (x & 7));
-            red[off] |= bit;
-            buf[off] |= bit;
-        }
+
+    int mid_x = W / 2, mid_y = H / 2;
+    test_rect(buf, red, rb, 0, 0, W, H, 1, false);
+    test_rect(buf, red, rb, 4, 4, W - 8, H - 8, 2, false);
+    if (epd_has_red())
+        test_rect(buf, red, rb, 10, 10, W - 20, H - 20, 1, true);
+
+    int corner = W < 300 ? 44 : 58;
+    test_checker(buf, red, rb, 14, 14, corner, corner, 2, false);
+    test_checker(buf, red, rb, W - 14 - corner, 14, corner, corner, 4, false);
+    test_checker(buf, red, rb, 14, H - 14 - corner, corner, corner, 6, false);
+    test_checker(buf, red, rb, W - 14 - corner, H - 14 - corner, corner, corner, 8, false);
+
+    for (int i = 0; i < 8; i++) {
+        int x = 28 + i * 10;
+        test_fill_rect(buf, red, rb, x, mid_y - 46, i + 1, 92, false);
     }
+    for (int i = 0; i < 8; i++) {
+        int y = mid_y + 8 + i * 8;
+        test_fill_rect(buf, red, rb, 24, y, W / 2 - 48, i + 1, false);
+    }
+
+    test_rect(buf, red, rb, mid_x - 52, mid_y - 52, 104, 104, 1, false);
+    test_rect(buf, red, rb, mid_x - 42, mid_y - 42, 84, 84, 2, false);
+    test_fill_rect(buf, red, rb, mid_x - 28, mid_y - 28, 56, 56, false);
+    test_checker(buf, red, rb, mid_x - 24, mid_y - 24, 48, 48, 4, false);
+
+    if (epd_has_red()) {
+        test_fill_rect(buf, red, rb, W - 96, mid_y - 46, 66, 28, true);
+        test_rect(buf, red, rb, W - 96, mid_y - 8, 66, 54, 2, true);
+        for (int i = 0; i < 5; i++)
+            test_fill_rect(buf, red, rb, W - 92 + i * 12, mid_y + 58, i + 1, 48, true);
+    }
+
+    const char *label = "FPC-194 SSD1683 EDGE TEST";
+    int label_w = fb_utf8_scaled_width(label, 1);
+    fb_t label_fb = {
+        .black = buf,
+        .red = red,
+        .width = W,
+        .height = H,
+        .plane_bytes = pb,
+        .row_bytes = rb,
+    };
+    fb_utf8_scaled(&label_fb, (W - label_w) / 2, H - 30, label, COLOR_BLACK, 1);
+    fb_utf8_scaled(&label_fb, 18, mid_y - 66, "1-8px", COLOR_BLACK, 1);
+    if (epd_has_red())
+        fb_utf8_scaled(&label_fb, W - 98, mid_y - 66, "RED", COLOR_RED, 1);
+
     if (yellow) {
         for (int y = mid_y + 20; y < H - 20; y++) {
             for (int x = 20; x < mid_x - 20; x++) {
@@ -1965,6 +2355,145 @@ esp_err_t epd_display_test_pattern(void)
     free(buf);
     xSemaphoreGive(s_epd_mutex);
     ESP_LOGI(TAG, "test pattern done");
+    return ESP_OK;
+}
+
+static void repair_fill_pattern(uint8_t *bw, uint8_t *red, uint8_t *yellow,
+                                int variant, bool color_pattern)
+{
+    const int W = epd_width();
+    const int H = epd_height();
+    const int rb = W / 8;
+    const int pb = epd_plane_bytes();
+    memset(bw, 0xFF, (size_t)pb);
+    if (red)
+        memset(red, 0x00, (size_t)pb);
+    if (yellow)
+        memset(yellow, 0x00, (size_t)pb);
+
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            bool active;
+            switch (variant & 3) {
+            case 0: active = (((x >> 3) + (y >> 3)) & 1) == 0; break; /* 8x8 checker */
+            case 1: active = (((x >> 3) + (y >> 3)) & 1) != 0; break;
+            case 2: active = ((x >> 2) & 1) == 0; break;              /* vertical stripes */
+            default: active = ((y >> 2) & 1) == 0; break;             /* horizontal stripes */
+            }
+            if (!active)
+                continue;
+            size_t off = (size_t)y * (size_t)rb + (size_t)(x >> 3);
+            uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+            if (color_pattern && red && epd_has_red() && ((variant + x / 16 + y / 16) & 1)) {
+                red[off] |= bit;
+                bw[off] |= bit;
+            } else if (color_pattern && yellow && epd_has_yellow()) {
+                yellow[off] |= bit;
+                bw[off] |= bit;
+            } else {
+                bw[off] &= (uint8_t)~bit;
+                if (red)
+                    red[off] &= (uint8_t)~bit;
+                if (yellow)
+                    yellow[off] &= (uint8_t)~bit;
+            }
+        }
+    }
+}
+
+static void repair_display_pattern(const uint8_t *bw, const uint8_t *red,
+                                   const uint8_t *yellow)
+{
+    if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP) {
+        panel_write_jd796xx_2bpp(bw, red, yellow, 0xFF, 0x00, 0x00);
+        panel_desc()->refresh();
+    } else {
+        panel_write_bw_red(bw, red, epd_plane_bytes());
+    }
+}
+
+static uint8_t *repair_alloc_plane_buffer(int pb, const char *name)
+{
+    uint8_t *buf = heap_caps_malloc((size_t)pb, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf)
+        buf = heap_caps_malloc((size_t)pb, MALLOC_CAP_8BIT);
+    if (!buf)
+        ESP_LOGE(TAG, "ghost repair %s buffer malloc failed: %d bytes", name, pb);
+    return buf;
+}
+
+esp_err_t epd_repair_ghosting(int cycles, int pattern)
+{
+    if (!s_epd_mutex || !s_epd_ready)
+        return ESP_ERR_INVALID_STATE;
+    if (cycles < 1)
+        cycles = 1;
+    if (cycles > EPD_REPAIR_MAX_CYCLES)
+        cycles = EPD_REPAIR_MAX_CYCLES;
+    if (pattern < 0 || pattern > 2)
+        pattern = 0;
+
+    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+
+    int pb = epd_plane_bytes();
+    uint8_t *bw = NULL;
+    uint8_t *red = NULL;
+    uint8_t *yellow = NULL;
+    if (pattern != 0) {
+        bw = repair_alloc_plane_buffer(pb, "bw");
+        red = repair_alloc_plane_buffer(pb, "red");
+        yellow = epd_has_yellow() ? repair_alloc_plane_buffer(pb, "yellow") : NULL;
+        if (!bw || !red || (epd_has_yellow() && !yellow)) {
+            free(yellow);
+            free(red);
+            free(bw);
+            xSemaphoreGive(s_epd_mutex);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    ESP_LOGI(TAG, "ghost repair start: cycles=%d, pattern=%d, panel=%s",
+             cycles, pattern, panel_desc()->name);
+    panel_ensure_ready();
+
+    for (int i = 0; i < cycles; i++) {
+        if (pattern == 0 || pattern == 2) {
+            ESP_LOGI(TAG, "ghost repair cycle %d/%d: white", i + 1, cycles);
+            panel_fill_bw_red(0xFF, 0x00, pb);
+            delay_ms(300);
+
+            ESP_LOGI(TAG, "ghost repair cycle %d/%d: black", i + 1, cycles);
+            panel_fill_bw_red(0x00, 0x00, pb);
+            delay_ms(300);
+
+            if (epd_has_red() || epd_has_yellow()) {
+                ESP_LOGI(TAG, "ghost repair cycle %d/%d: color", i + 1, cycles);
+                panel_fill_bw_red(0xFF, 0xFF, pb);
+                delay_ms(300);
+            }
+        }
+
+        if (pattern == 1 || pattern == 2) {
+            ESP_LOGI(TAG, "ghost repair cycle %d/%d: checker A", i + 1, cycles);
+            repair_fill_pattern(bw, red, yellow, i * 2, false);
+            repair_display_pattern(bw, red, yellow);
+            delay_ms(300);
+
+            ESP_LOGI(TAG, "ghost repair cycle %d/%d: checker B", i + 1, cycles);
+            repair_fill_pattern(bw, red, yellow, i * 2 + 1, epd_has_red() || epd_has_yellow());
+            repair_display_pattern(bw, red, yellow);
+            delay_ms(300);
+        }
+    }
+
+    ESP_LOGI(TAG, "ghost repair finish: white");
+    panel_fill_bw_red(0xFF, 0x00, pb);
+
+    free(yellow);
+    free(red);
+    free(bw);
+    xSemaphoreGive(s_epd_mutex);
+    ESP_LOGI(TAG, "ghost repair done");
     return ESP_OK;
 }
 
@@ -2008,6 +2537,8 @@ esp_err_t epd_display_from_file(const char *path)
         prepare_for_forced_full_refresh();
     panel_ensure_ready();
     esp_err_t ret = panel_write_bw_red_file(f, pb, has_red_file, has_yellow_file);
+    if (ret == ESP_OK)
+        power_mgr_note_epd_refresh_complete();
     xSemaphoreGive(s_epd_mutex);
     fclose(f);
     if (ret != ESP_OK)
@@ -2038,6 +2569,7 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
 
     panel_write_bw_red(fb->black, fb->red, pb);
 
+    power_mgr_note_epd_refresh_complete();
     xSemaphoreGive(s_epd_mutex);
 
     ESP_LOGI(TAG, "display from buffer");
@@ -2071,31 +2603,9 @@ esp_err_t epd_display_fb_free(fb_t *fb)
     panel_desc()->refresh();
     fb_destroy(fb);
 
+    power_mgr_note_epd_refresh_complete();
     xSemaphoreGive(s_epd_mutex);
 
     ESP_LOGI(TAG, "display from buffer");
     return ESP_OK;
-}
-
-esp_err_t epd_display_from_buffer_fast(const fb_t *fb)
-{
-    if (!fb) return ESP_ERR_INVALID_ARG;
-    if (!s_epd_mutex || !s_epd_ready)
-        return ESP_ERR_INVALID_STATE;
-
-    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
-    esp_err_t ret = fb_matches_current_panel(fb) ? epd_display_from_buffer_fast_locked(fb) : ESP_ERR_INVALID_SIZE;
-    xSemaphoreGive(s_epd_mutex);
-    if (ret != ESP_OK && ret != ESP_ERR_NOT_SUPPORTED && ret != ESP_ERR_INVALID_SIZE) {
-        return ret;
-    }
-    if (ret == ESP_OK)
-        return ESP_OK;
-    if (ret == ESP_ERR_INVALID_SIZE) {
-        ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
-                 fb->width, fb->height, fb->plane_bytes,
-                 epd_width(), epd_height(), epd_plane_bytes());
-        return ESP_ERR_INVALID_SIZE;
-    }
-    return epd_display_from_buffer(fb);
 }

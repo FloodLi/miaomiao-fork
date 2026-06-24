@@ -320,6 +320,14 @@ static inline int clamp_dim(int v) {
     return v;
 }
 
+static int canvas_text_px_for_scale(int scale)
+{
+    if (scale < 1) scale = 1;
+    if (scale > 6) scale = 6;
+    static const uint8_t px_by_scale[] = { 16, 24, 32, 40, 48, 56 };
+    return px_by_scale[scale - 1];
+}
+
 static void render_element(fb_t *fb, cJSON *el)
 {
     const char *type_str = cJSON_GetStringValue(cJSON_GetObjectItem(el, "type"));
@@ -340,7 +348,7 @@ static void render_element(fb_t *fb, cJSON *el)
         int scale = js && cJSON_IsNumber(js) ? js->valueint : 1;
         if (scale < 1) scale = 1;
         if (scale > 6) scale = 6;
-        fb_utf8_scaled(fb, x, y, text, color, scale);
+        fb_utf8_px(fb, x, y, text, color, canvas_text_px_for_scale(scale));
         return;
     }
 

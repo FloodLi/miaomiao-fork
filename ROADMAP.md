@@ -1,15 +1,15 @@
 # 水墨屏产品开发规划方案
 
-## 当前开发状态（2026-06-04）
+## 当前开发状态（2026-06-25）
 
-功能主线已经基本完成，当前阶段重点转向稳定性、适配性和复刻体验。本轮已完成全局显示 epoch 仲裁、日历/画布/留言异步显示语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 不自动格式化与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、天气后台策略收紧、EPD 初始化失败降级、AP 密码日志脱敏、Codex/中转站额度看板和启动 main task 栈稳定性修复。
+功能主线已经基本完成，当前阶段重点转向稳定性、适配性、复刻体验和发布一致性。本轮已完成全局显示 epoch 仲裁、日历/画布/留言异步显示语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 不自动格式化与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、天气后台策略收紧、EPD 初始化失败降级、AP 密码日志脱敏、Codex/中转站额度看板、外置 fontfs 字库、低功耗按模式唤醒、正常后台/定时 quick-refresh 分离、日历跨日刷新、5.83" 页面适配和上线前清理检查。
 
-下一步优先级：额度接口更多返回格式实机验证、OTA 成功/失败/回滚全流程、低功耗定时唤醒、轮播+天气 24 小时稳定性测试、连续上传/按键/网页推屏抢占回归、图片算法可配置与网页预览，以及更多屏幕型号适配。
+下一步优先级：发布前完整 `idf.py build`、重新生成 release 整包、OTA 成功/失败/回滚全流程、低功耗定时唤醒长稳、轮播+天气 24 小时稳定性测试、连续上传/按键/网页推屏抢占回归，以及更多屏幕型号适配。
 
 > 项目代号：epaper_uploader  
 > 硬件平台：ESP32-S3 + 三色墨水屏（4.2" 400×300 SSD1619 / 5.83" 648×480 UC8179）  
 > 技术栈：ESP-IDF（**最低 v5.5.1**；5.5.x 可） / C / SPI / WiFi SoftAP / HTTP  
-> 固件版本：v2.3.1（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-06-04
+> 固件版本：v2.3.3（`CMakeLists.txt` / `GET /version`） | 文档修订：2026-06-25
 
 ---
 
@@ -20,7 +20,7 @@
 ### 2026-04-28（稳定性与公开文档整理）
 
 - 明确当前阶段优先级从新增功能切换为稳定性闭环：全局显示仲裁、GET 数据/媒体接口 Basic Auth、异步显示语义收紧、SPIFFS 用户数据保护与挂载失败降级启动、配置备份排除 Basic Auth、面板切换重启生效、EPD 初始化失败降级、OTA/低功耗/轮播长稳测试。
-- 修正文档同步状态：HTTP 路由按当前注册表/日志更新为约 60 条；图片上传、按键/HTTP 手动显示、天气/课程/待办/倒计时等关键入口已接入 display epoch 仲裁，日历/画布/留言 HTTP 推屏改为等待完成或返回取消。
+- 修正文档同步状态：HTTP 路由按当前注册表更新为 73 条；图片上传、按键/HTTP 手动显示、天气/课程/待办/倒计时等关键入口已接入 display epoch 仲裁，日历/画布/留言 HTTP 推屏改为等待完成或返回取消。
 
 ### 2026-04-26（v2.3.x — EPD 局部刷新 / 启动回落 / 渲染修复）
 
@@ -103,7 +103,7 @@
 ### 2026-04（v2.2.0）
 
 - **文档与工程对齐**：
-  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由约 60 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
+  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由 73 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
   - 工程技术文档补充 **§4.4 低功耗与功能**、**§4.5 HTTP Basic Auth**（含前端 `localStorage` 凭据与天气 Key 脱敏说明）。
 - **HTTP 安全加固（固件 + Web）**（与审计一致时）：
   - 敏感推屏/配置类 **POST** 走 `http_check_basic_auth`；`GET /weather_config` 不透传明文 API Key。
@@ -385,7 +385,7 @@
 - **涉及文件**：新建 `weather.c`、`weather.h`、`fb_render.c`、`fb_render.h`、`font_data.h`、`tools/gen_font.py`；修改 `http_app.c`、`web/config.html`、`epd_stub.c`、`app_main.c`、`CMakeLists.txt`、`sdkconfig.defaults`
 - **实现**：
   - 和风天气 QWeather API（独立 API Host + HTTPS + 证书包）
-  - 95 个 ASCII + 81 个中文字符点阵字体（SimHei 渲染）
+  - 紧凑内置字库为 95 个 ASCII + 6814 个中文字符，当前由 OFL 开源 LXGW 975 Yuan 生成。
   - 24×24 天气图标（晴/多云/雨/雪）
   - Web 配置卡片（API Key、API Host、城市 ID、刷新间隔）
   - NVS 持久化配置，自动定时刷新
@@ -462,7 +462,7 @@ msp/
 │   ├── app_main.c                 # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h        # EPD 驱动（SSD1619 4.2" + UC8179 5.83"，SPI DMA）
 │   ├── image_convert.c/h         # JPEG/PNG/BMP → EPD 帧缓冲（Floyd-Steinberg 抖色）
-│   ├── http_app.c/h              # HTTP 服务 + 约 63 条 API 路由 + Basic Auth + OTA
+│   ├── http_app.c/h              # HTTP 服务 + 73 条 API 路由 + Basic Auth + OTA
 │   ├── http_gallery.c             # 画廊 HTTP 路由
 │   ├── http_features.c            # 功能模块 HTTP 路由
 │   ├── http_internal.h            # HTTP 子模块共享声明
@@ -502,7 +502,7 @@ msp/
 │   ├── countdown.html             # 倒计时配置
 │   └── board.html                 # 画布留言板可视化编辑器
 ├── .gitignore
-├── partitions.csv                 # 分区表（factory + 双 OTA + 10MB SPIFFS）
+├── partitions.csv                 # 分区表（factory + 双 OTA + coredump + fontfs + 用户 SPIFFS）
 ├── sdkconfig.defaults
 ├── release/                       # 免编译烧录包与说明
 ├── CMakeLists.txt
@@ -579,10 +579,12 @@ Week 1          Week 2          Week 3          Week 4          Week 5          
 nvs,         data, nvs,      0x9000,    0xC000      # 48KB
 otadata,     data, ota,      0x15000,   0x2000      # 8KB — OTA 启动选择
 phy_init,    data, phy,      0x17000,   0x1000      # 4KB
-factory,     app,  factory,  0x20000,   0x200000    # 2MB — 出厂固件 (回滚保护)
-ota_0,       app,  ota_0,    0x220000,  0x200000    # 2MB — OTA 分区 A
-ota_1,       app,  ota_1,    0x420000,  0x200000    # 2MB — OTA 分区 B
-spiffs,      data, spiffs,   0x620000,  0x9E0000    # ~10MB — 图片存储
+factory,     app,  factory,  0x20000,   0x300000    # 3MB — 出厂固件
+ota_0,       app,  ota_0,    0x320000,  0x300000    # 3MB — OTA 分区 A
+ota_1,       app,  ota_1,    0x620000,  0x300000    # 3MB — OTA 分区 B
+coredump,    data, coredump, 0x920000,  0x20000     # 128KB — 崩溃转储
+fontfs,      data, spiffs,   0x940000,  0x2E0000    # 2.875MB — 内置字库
+spiffs,      data, spiffs,   0xC20000,  0x3E0000    # 3.875MB — 用户文件
 ```
 
 ---

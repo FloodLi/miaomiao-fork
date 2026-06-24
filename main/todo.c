@@ -123,7 +123,9 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
 
     const int W = fb->width;
     const int H = fb->height;
-    const int s = (W >= 600) ? 2 : 1;
+    const bool is_583 = ui_layout_is_583(fb);
+    const bool large = (ui_layout_for(fb) == UI_LAYOUT_LARGE);
+    const int s = (is_583 || large) ? 2 : 1;
     const int pad = 14 * s;
 
     int done_n = 0;
@@ -132,7 +134,7 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
 
     char right[16] = "";
     struct tm now;
-    if (time_sync_get_local(&now)) {
+    if (time_sync_get_local_relaxed(&now)) {
         snprintf(right, sizeof(right), "%02d:%02d", now.tm_hour, now.tm_min);
     }
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
@@ -161,9 +163,9 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
             important_n++;
     }
 
-    int summary_y = 32 * s;
-    int summary_h = 42 * s;
-    int gap = 6 * s;
+    int summary_y = is_583 ? 58 : 32 * s;
+    int summary_h = is_583 ? 78 : 42 * s;
+    int gap = is_583 ? 12 : 6 * s;
     int stat_w = (W - 2 * pad - 2 * gap) / 3;
 
     char pending_str[16];
@@ -184,23 +186,24 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
                         "\xe7\xb4\xa7\xe6\x80\xa5/\xe9\x87\x8d\xe8\xa6\x81",
                         focus_str, urgent_n ? COLOR_RED : COLOR_BLACK, 2);
 
-    int bar_y = summary_y + summary_h + 5 * s;
-    ui_draw_progress_bar(fb, pad, bar_y, W - 2 * pad, 5 * s, pct,
+    int bar_y = summary_y + summary_h + (is_583 ? 10 : 5 * s);
+    ui_draw_progress_bar(fb, pad, bar_y, W - 2 * pad, is_583 ? 8 : 5 * s, pct,
                          (pct >= 100) ? COLOR_BLACK : COLOR_RED);
 
-    int list_y = bar_y + 9 * s;
+    int list_y = bar_y + (is_583 ? 18 : 9 * s);
     int footer_h = 22 * s;
-    int avail  = H - list_y - footer_h - 6 * s;
-    int item_gap = 4 * s;
-    const int min_item_h = 20 * s;
-    const int max_item_h = 32 * s;
+    int avail  = H - list_y - footer_h - (is_583 ? 14 : 6 * s);
+    int item_gap = is_583 ? 8 : 4 * s;
+    const int min_item_h = is_583 ? 50 : 20 * s;
+    const int max_item_h = is_583 ? 62 : 32 * s;
     if (avail < min_item_h)
         avail = min_item_h;
 
     int max_fit = (avail + item_gap) / (min_item_h + item_gap);
     if (max_fit < 1) max_fit = 1;
     if (max_fit > 6) max_fit = 6;
-    if (W <= 400 && max_fit > 5) max_fit = 5;
+    if (is_583 && max_fit > 4) max_fit = 4;
+    else if (W <= 400 && max_fit > 5) max_fit = 5;
 
     int n_show = cfg->count < max_fit ? (int)cfg->count : max_fit;
     int visible_idx[6];
@@ -208,7 +211,7 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
     int item_h = (avail - item_gap * (n_show - 1)) / n_show;
     if (item_h > max_item_h) item_h = max_item_h;
     if (item_h < min_item_h) item_h = min_item_h;
-    int sc   = (s > 1 && item_h >= 54) ? 2 : 1;
+    int sc   = (s > 1 && item_h >= (is_583 ? 50 : 54)) ? 2 : 1;
     int ch_h = 16 * sc;
     const int pri_sc = 1;
 
@@ -225,7 +228,7 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
         else if (it->priority == 1)
             fb_fill_rect(fb, pad + 1, y + 5, 3 * s, item_h - 10, COLOR_BLACK);
 
-        int cb_x  = pad + 12 * s;
+        int cb_x  = pad + (is_583 ? 18 : 12 * s);
         int cb_sz = ch_h - 2;
         if (cb_sz > 14 * s) cb_sz = 14 * s;
         if (cb_sz < 10) cb_sz = 10;
@@ -248,7 +251,7 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
             fb_rect(fb, cb_x, cb_y, cb_sz, cb_sz, COLOR_BLACK);
         }
 
-        int tx    = cb_x + cb_sz + 8 * s;
+        int tx    = cb_x + cb_sz + (is_583 ? 14 : 8 * s);
         bool show_pri = (it->priority > 0);
         int pri_w = show_pri ? (2 * 16 * pri_sc + 12 * s) : 0;
         int max_w = W - tx - pri_w - 16 * s;

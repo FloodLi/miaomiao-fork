@@ -17,6 +17,7 @@ idf_component_register(
         "time_sync.c"
         "scheduler.c"
         "fb_render.c"
+        "font_ext.c"
         "ui_theme.c"
         "weather.c"
         "weather_icons_qw.c"
@@ -42,10 +43,17 @@ idf_component_register(
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"
         "${PROJECT_DIR}/web/config.html"
+        "${PROJECT_DIR}/web/gallery.html"
+        "${PROJECT_DIR}/web/weather.html"
+        "${PROJECT_DIR}/web/clock.html"
+        "${PROJECT_DIR}/web/calendar.html"
+        "${PROJECT_DIR}/web/message.html"
+        "${PROJECT_DIR}/web/codex.html"
         "${PROJECT_DIR}/web/timetable.html"
         "${PROJECT_DIR}/web/todo.html"
         "${PROJECT_DIR}/web/countdown.html"
         "${PROJECT_DIR}/web/board.html"
+        "${PROJECT_DIR}/web/miaooaim-mark.png"
     PRIV_REQUIRES
         nvs_flash
         esp_wifi
@@ -68,5 +76,16 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     LODEPNG_NO_COMPILE_DISK=1
     LODEPNG_NO_COMPILE_ANCILLARY_CHUNKS=1
     LODEPNG_NO_COMPILE_CPP=1
+)
+
+# Under -Os (CONFIG_COMPILER_OPTIMIZATION_SIZE) GCC's stricter static analysis
+# emits false-positive -Wformat-truncation/-Wformat-overflow on snprintf calls
+# whose runtime values are bounded (e.g. struct tm month/day) but unknown to the
+# compiler. Demote these two diagnostics from fatal (-Werror) back to plain
+# warnings for our own app component only; IDF components keep their full
+# warnings-as-errors integrity.
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    -Wno-error=format-truncation
+    -Wno-error=format-overflow
 )
 

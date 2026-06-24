@@ -110,6 +110,42 @@ static void weather_disable_if_enabled_for_image_focus(void)
     /* Kept as a call-site marker; do not disable the user's weather configuration here. */
 }
 
+static bool gallery_needs_precise_image_clear(void)
+{
+    return epd_get_panel() == EPD_PANEL_ATC_SSD1619_29_BWR;
+}
+
+static esp_err_t gallery_prepare_image_refresh(const char *reason)
+{
+    if (!gallery_needs_precise_image_clear()) {
+        epd_request_full_refresh_next();
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "%s: clearing 2.9 SSD1619 before manual image refresh", reason);
+    esp_err_t err = epd_clear_screen();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "%s: pre-clear failed: %s", reason, esp_err_to_name(err));
+        return err;
+    }
+    epd_request_full_refresh_next();
+    return ESP_OK;
+}
+
+static esp_err_t gallery_display_raw_like_canvas(const char *raw_path)
+{
+    fb_t *fb = fb_create();
+    if (!fb)
+        return ESP_ERR_NO_MEM;
+
+    esp_err_t err = fb_import(fb, raw_path);
+    if (err != ESP_OK) {
+        fb_destroy(fb);
+        return err;
+    }
+    return epd_display_fb_free(fb);
+}
+
 esp_err_t gallery_images_get_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
@@ -268,12 +304,27 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     }
     esp_err_t cerr = image_convert_file_to_epd_raw(jpeg_path, raw_path);
     esp_err_t derr = ESP_OK;
-    if (cerr == ESP_OK && display_policy_epoch_is_current(display_epoch))
-        derr = epd_display_from_file(raw_path);
+    bool skipped_by_newer = false;
+    if (cerr == ESP_OK && display_policy_epoch_is_current(display_epoch)) {
+        derr = gallery_prepare_image_refresh("gallery show");
+        if (derr == ESP_OK && gallery_upload_epoch() == upload_epoch &&
+            !gallery_upload_busy() &&
+            display_policy_epoch_is_current(display_epoch)) {
+            derr = gallery_display_raw_like_canvas(raw_path);
+        } else if (derr == ESP_OK) {
+            skipped_by_newer = true;
+        }
+    }
     fb_raw_file_unlock();
     if (cerr != ESP_OK) {
             gallery_restore_manual_if_current(was_manual, display_epoch);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "图片转换失败");
+        return ESP_OK;
+    }
+    if (skipped_by_newer) {
+        ESP_LOGI(TAG, "Gallery show '%s' skipped after pre-clear: newer request owns display", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "stale gallery show skipped");
         return ESP_OK;
     }
     if (!display_policy_epoch_is_current(display_epoch)) {
@@ -530,8 +581,22 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    esp_err_t derr = epd_display_from_file(raw_path);
+    esp_err_t derr = gallery_prepare_image_refresh("upload");
+    bool upload_skipped_by_newer = false;
+    if (derr == ESP_OK && display_policy_epoch_is_current(display_epoch) &&
+        gallery_upload_epoch() == upload_epoch) {
+        derr = gallery_display_raw_like_canvas(raw_path);
+    } else if (derr == ESP_OK) {
+        upload_skipped_by_newer = true;
+    }
     fb_raw_file_unlock();
+    if (upload_skipped_by_newer) {
+        gallery_upload_end(upload_epoch);
+        ESP_LOGI(TAG, "Upload '%s' display skipped after pre-clear: newer request owns display", name);
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "upload saved, display skipped by newer request");
+        return ESP_OK;
+    }
     if (derr != ESP_OK) {
         ESP_LOGW(TAG, "EPD display failed: %s", esp_err_to_name(derr));
         gallery_upload_end(upload_epoch);

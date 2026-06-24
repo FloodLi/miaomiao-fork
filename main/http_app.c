@@ -21,6 +21,8 @@
 #include "mbedtls/base64.h"
 
 #include "epd.h"
+#include "fb_render.h"
+#include "font_ext.h"
 #include "image_convert.h"
 #include "device_identity.h"
 #include "wifi_manager.h"
@@ -61,9 +63,11 @@ const int         http_upload_max_bytes = 2 * 1024 * 1024;
 #define AUTH_NVS_NS   "http_auth"
 #define AUTH_NVS_USER "user"
 #define AUTH_NVS_PASS "pass"
+#define EPD_REPAIR_TASK_STACK 4096
 
 static char s_auth_user[32];
 static char s_auth_pass[64];
+static TaskHandle_t s_epd_repair_task;
 
 void http_auth_load_from_nvs(void)
 {
@@ -261,11 +265,7 @@ bool http_get_query_param(httpd_req_t *req, const char *key,
 
 static esp_err_t index_get_handler(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_send(req, (const char *)index_html_start,
-                    (ssize_t)(index_html_end - index_html_start));
-    return ESP_OK;
+    return http_send_embedded_html(req, index_html_start, index_html_end);
 }
 
 static const char *http_panel_name(epd_panel_t panel)
@@ -274,30 +274,34 @@ static const char *http_panel_name(epd_panel_t panel)
     case EPD_PANEL_42_BWR: return "4.2 BWR SSD1619";
     case EPD_PANEL_583_BWR: return "5.83 BWR UC8179";
     case EPD_PANEL_WS_583_BWR: return "Waveshare 5.83 BWR B V2";
-    case EPD_PANEL_ATC_SSD1619_16_BWR: return "ATC/Solum 1.6 BWR SSD1619 exp";
-    case EPD_PANEL_ATC_SSD1619_22_BWR: return "ATC/Solum 2.2 BWR SSD1619 exp";
-    case EPD_PANEL_ATC_SSD1619_26_BWR: return "ATC/Solum 2.6 BWR SSD1619 exp";
-    case EPD_PANEL_ATC_SSD1619_29_BWR: return "ATC/Solum 2.9 BWR SSD1619 exp";
-    case EPD_PANEL_ATC_UC8151_29_BWR: return "ATC/Solum 2.9 BWR UC8151 exp";
-    case EPD_PANEL_ATC_UCVAR43_BWR: return "ATC/Solum 4.3 BWR UC variant exp";
-    case EPD_PANEL_ATC_DUALSSD_585_BWR: return "ATC/Solum 5.85 BWR dual SSD exp";
-    case EPD_PANEL_ATC_DUALSSD_585_BW: return "ATC/Solum 5.85 BW dual SSD exp";
-    case EPD_PANEL_ATC_UC8159_60_BWR: return "ATC/Solum 6.0 BWR UC8159 exp";
-    case EPD_PANEL_ATC_UC8179_74_BWR: return "ATC/Solum 7.4 BWR UC8179 exp";
-    case EPD_PANEL_ATC_SSD_97_BWR: return "ATC/Solum 9.7 BWR SSD exp";
-    case EPD_PANEL_ATC_PEGHOOK_13_BWR: return "ATC/Solum 1.3 peghook BWR SSD exp";
-    case EPD_PANEL_REF_UC8176_42_BW: return "Ref UC8176 4.2 BW exp";
-    case EPD_PANEL_REF_UC8176_42_BWR: return "Ref UC8176 4.2 BWR exp";
-    case EPD_PANEL_REF_UC8179_75_BW: return "Ref UC8179 7.5 BW exp";
-    case EPD_PANEL_REF_UC8179_75_BWR: return "Ref UC8179 7.5 BWR exp";
-    case EPD_PANEL_REF_UC8159_583_BW: return "Ref UC8159 5.83 BW exp";
-    case EPD_PANEL_REF_UC8159_75_LOW_BWR: return "Ref UC8159 7.5 low BWR exp";
-    case EPD_PANEL_REF_SSD1677_75_HD_BW: return "Ref SSD1677 7.5 HD BW exp";
-    case EPD_PANEL_REF_SSD1677_75_HD_BWR: return "Ref SSD1677 7.5 HD BWR exp";
-    case EPD_PANEL_REF_JD79665_75_BWRY: return "Ref JD79665 7.5 BWRY exp";
-    case EPD_PANEL_REF_SSD1619_42_BW: return "Ref SSD1619 4.2 BW exp";
-    case EPD_PANEL_REF_SSD1619_42_BWR: return "Ref SSD1619 4.2 BWR exp";
-    case EPD_PANEL_REF_JD79668_42_BWRY: return "Ref JD79668 4.2 BWRY exp";
+    case EPD_PANEL_ATC_SSD1619_16_BWR: return "ATC/Solum 1.6 BWR SSD1619";
+    case EPD_PANEL_ATC_SSD1619_22_BWR: return "ATC/Solum 2.2 BWR SSD1619";
+    case EPD_PANEL_ATC_SSD1619_26_BWR: return "ATC/Solum 2.6 BWR SSD1619";
+    case EPD_PANEL_HINK_SSD1619_29_BWR: return "HINK-E029A14-A1 2.9 BWR SSD1619";
+    case EPD_PANEL_ATC_UC8151_29_BWR: return "ATC/Solum 2.9 BWR UC8151";
+    case EPD_PANEL_ATC_UCVAR43_BWR: return "ATC/Solum 4.3 BWR UC";
+    case EPD_PANEL_ATC_DUALSSD_585_BWR: return "ATC/Solum 5.85 BWR dual SSD";
+    case EPD_PANEL_ATC_DUALSSD_585_BW: return "ATC/Solum 5.85 BW dual SSD";
+    case EPD_PANEL_ATC_UC8159_60_BWR: return "ATC/Solum 6.0 BWR UC8159";
+    case EPD_PANEL_ATC_UC8179_74_BWR: return "ATC/Solum 7.4 BWR UC8179";
+    case EPD_PANEL_ATC_SSD_97_BWR: return "ATC/Solum 9.7 BWR SSD";
+    case EPD_PANEL_ATC_PEGHOOK_13_BWR: return "ATC/Solum 1.3 peghook BWR SSD";
+    case EPD_PANEL_REF_UC8176_42_BW: return "UC8176 4.2 BW";
+    case EPD_PANEL_REF_UC8176_42_BWR: return "UC8176 4.2 BWR";
+    case EPD_PANEL_REF_UC8179_75_BW: return "UC8179 7.5 BW";
+    case EPD_PANEL_REF_UC8179_75_BWR: return "UC8179 7.5 BWR";
+    case EPD_PANEL_REF_UC8159_583_BW: return "UC8159 5.83 BW";
+    case EPD_PANEL_REF_UC8159_75_LOW_BWR: return "UC8159 7.5 low BWR";
+    case EPD_PANEL_REF_SSD1677_75_HD_BW: return "SSD1677 7.5 HD BW";
+    case EPD_PANEL_REF_SSD1677_75_HD_BWR: return "SSD1677 7.5 HD BWR";
+    case EPD_PANEL_REF_JD79665_75_BWRY: return "JD79665 7.5 BWRY";
+    case EPD_PANEL_REF_SSD1619_42_BW: return "SSD1619 4.2 BW";
+    case EPD_PANEL_REF_SSD1619_42_BWR: return "SSD1619 4.2 BWR";
+    case EPD_PANEL_REF_JD79668_42_BWRY: return "JD79668 4.2 BWRY";
+    case EPD_PANEL_REF_SSD1683_42_BWR: return "SSD1683 4.2 BWR";
+    case EPD_PANEL_REF_SSD1683_42_LEGACY: return "SSD1683 4.2 BWR";
+    case EPD_PANEL_REF_SSD1683_42_BW: return "SSD1683 4.2 BW";
+    case EPD_PANEL_FPC194_SSD1683_42_BWR: return "FPC-194 4.2 BWR SSD1683";
     default: return "Unknown panel";
     }
 }
@@ -315,7 +319,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
     size_t total = 0, used = 0;
     bool spiffs_ok = spiffs_mount_is_mounted() &&
-                     esp_spiffs_info(NULL, &total, &used) == ESP_OK;
+                     esp_spiffs_info("spiffs", &total, &used) == ESP_OK;
 
     char time_str[32] = "";
     time_sync_get_str(time_str, sizeof(time_str));
@@ -355,7 +359,6 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     json_escape(esc_wx_update, sizeof(esc_wx_update), wx_sum.valid ? wx_sum.update_time : "");
 
     bool wx_configured = wx_cfg.api_key[0] && wx_cfg.api_host[0] && wx_cfg.location[0];
-
     char json[2048];
     snprintf(json, sizeof(json),
              "{\"version\":\"%s\",\"idf\":\"%s\",\"build_date\":\"%s\",\"build_time\":\"%s\","
@@ -367,7 +370,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"current_mode\":%d,\"current_mode_name\":\"%s\","
              "\"current_mode_label\":\"%s\",\"active_mode\":%d,"
              "\"panel\":%d,\"panel_name\":\"%s\",\"panel_width\":%d,"
-             "\"panel_height\":%d,\"panel_has_red\":%s,\"busy_idle\":%d,\"epd_ready\":%s,"
+             "\"panel_height\":%d,\"panel_has_red\":%s,\"panel_has_yellow\":%s,"
+             "\"busy_idle\":%d,\"epd_ready\":%s,"
              "\"free_heap\":%u,\"min_free_heap\":%u,"
              "\"internal_free\":%u,\"psram_free\":%u,"
              "\"battery_pct\":%u,\"battery_valid\":%s,\"charging\":%s,"
@@ -384,9 +388,11 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              time_str, time_sync_is_synced() ? "true" : "false",
              current_mode, esc_mode_name, esc_mode_label, display_mode_active(),
              (int)panel, esc_panel, epd_width(), epd_height(),
-             epd_has_red() ? "true" : "false", epd_busy_idle_level(),
-             epd_is_ready() ? "true" : "false",
-             (unsigned)esp_get_free_heap_size(),
+              epd_has_red() ? "true" : "false",
+              epd_has_yellow() ? "true" : "false",
+              epd_busy_idle_level(),
+               epd_is_ready() ? "true" : "false",
+               (unsigned)esp_get_free_heap_size(),
              (unsigned)esp_get_minimum_free_heap_size(),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
@@ -415,11 +421,46 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
 static esp_err_t config_get_handler(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_send(req, (const char *)config_html_start,
-                    (ssize_t)(config_html_end - config_html_start));
+    return http_send_embedded_html(req, config_html_start, config_html_end);
+}
+
+static esp_err_t miaooaim_mark_png_get_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "image/png");
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400");
+    httpd_resp_send(req, (const char *)miaooaim_mark_png_start,
+                    (ssize_t)(miaooaim_mark_png_end - miaooaim_mark_png_start));
     return ESP_OK;
+}
+
+static esp_err_t gallery_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, gallery_html_start, gallery_html_end);
+}
+
+static esp_err_t weather_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, weather_html_start, weather_html_end);
+}
+
+static esp_err_t clock_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, clock_html_start, clock_html_end);
+}
+
+static esp_err_t calendar_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, calendar_html_start, calendar_html_end);
+}
+
+static esp_err_t message_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, message_html_start, message_html_end);
+}
+
+static esp_err_t codex_page_get_handler(httpd_req_t *req)
+{
+    return http_send_embedded_html(req, codex_html_start, codex_html_end);
 }
 
 /* timetable/todo/countdown UI handlers moved to http_features.c */
@@ -430,32 +471,39 @@ static esp_err_t wifi_status_get_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
-    char sta_ssid[80];
-    char sta_ip[32];
-    char ap_ssid[80];
-    char mdns_host[64];
-    char id6[16];
-    json_escape(sta_ssid, sizeof(sta_ssid), wifi_manager_get_sta_ssid());
-    json_escape(sta_ip, sizeof(sta_ip), wifi_manager_get_sta_ip());
-    json_escape(ap_ssid, sizeof(ap_ssid), wifi_manager_get_ap_ssid());
-    json_escape(mdns_host, sizeof(mdns_host), device_identity_get_mdns_hostname());
-    json_escape(id6, sizeof(id6), device_identity_get_id6_upper());
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
 
-    char json[384];
-    snprintf(json, sizeof(json),
-             "{\"mode\":%d,\"sta_connected\":%s,\"sta_ssid\":\"%s\",\"sta_ip\":\"%s\","
-             "\"ap_ssid\":\"%s\",\"mdns_host\":\"%s\",\"id6\":\"%s\","
-             "\"recovery_ap\":%s}",
-             (int)wifi_manager_get_mode(),
-             wifi_manager_sta_connected() ? "true" : "false",
-             sta_ssid,
-             sta_ip,
-             ap_ssid,
-             mdns_host,
-             id6,
-             device_identity_recovery_ap_mode() ? "true" : "false");
+    cJSON_AddNumberToObject(root, "mode", (int)wifi_manager_get_mode());
+    cJSON_AddBoolToObject(root, "sta_connected", wifi_manager_sta_connected());
+    cJSON_AddStringToObject(root, "sta_ssid", wifi_manager_get_sta_ssid());
+    cJSON_AddStringToObject(root, "sta_ip", wifi_manager_get_sta_ip());
+    cJSON_AddStringToObject(root, "ap_ssid", wifi_manager_get_ap_ssid());
+    cJSON_AddStringToObject(root, "mdns_host", device_identity_get_mdns_hostname());
+    cJSON_AddStringToObject(root, "id6", device_identity_get_id6_upper());
+    cJSON_AddBoolToObject(root, "recovery_ap", device_identity_recovery_ap_mode());
+
+    cJSON *saved_arr = cJSON_AddArrayToObject(root, "saved_wifi");
+    if (saved_arr) {
+        wifi_mgr_saved_cred_t saved[WIFI_MGR_MAX_CREDENTIALS];
+        int saved_count = wifi_manager_get_saved_credentials(saved, WIFI_MGR_MAX_CREDENTIALS);
+        for (int i = 0; i < saved_count; i++) {
+            cJSON_AddItemToArray(saved_arr, cJSON_CreateString(saved[i].ssid));
+        }
+    }
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    free(json);
     return ESP_OK;
 }
 
@@ -684,7 +732,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    if (req->content_len <= 0 || req->content_len > 2 * 1024 * 1024) {
+    if (req->content_len <= 0 || req->content_len > (int)update->size) {
         httpd_resp_set_type(req, "application/json");
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"Invalid firmware size\"}");
@@ -1174,6 +1222,93 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ── POST /msg_image_show ───────────────────────────────────────────
+ * Receive a browser-rendered PNG/JPEG/BMP message image and display it without
+ * adding it to the gallery. This keeps decorative/user fonts out of firmware
+ * fontfs while preserving message-board semantics.
+ */
+static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    if (req->content_len <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty image");
+        return ESP_OK;
+    }
+    if (req->content_len > http_upload_max_bytes) {
+        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "image too large");
+        return ESP_OK;
+    }
+    if (!http_require_epd_ready(req))
+        return ESP_OK;
+
+    uint8_t *img = (uint8_t *)heap_caps_malloc((size_t)req->content_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!img)
+        img = (uint8_t *)malloc((size_t)req->content_len);
+    if (!img) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "image buffer alloc failed");
+        return ESP_OK;
+    }
+
+    int remaining = req->content_len;
+    int total = 0;
+    bool ok = true;
+    while (remaining > 0) {
+        int got = httpd_req_recv(req, (char *)img + total, remaining);
+        if (got == HTTPD_SOCK_ERR_TIMEOUT)
+            continue;
+        if (got <= 0) {
+            ok = false;
+            break;
+        }
+        total += got;
+        remaining -= got;
+    }
+    if (!ok) {
+        free(img);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "receive image failed");
+        return ESP_OK;
+    }
+
+    bool was_manual = display_policy_manual_screen_active();
+    unsigned epoch = display_policy_begin_manual_display();
+    const char *raw_path = "/spiffs/image.bin";
+    fb_raw_file_lock();
+    esp_err_t cerr = image_convert_to_epd_raw(img, (size_t)total, raw_path);
+    free(img);
+    esp_err_t derr = ESP_OK;
+    if (cerr == ESP_OK && display_policy_epoch_is_current(epoch)) {
+        epd_request_full_refresh_next();
+        fb_t *fb = fb_create();
+        if (!fb) {
+            derr = ESP_ERR_NO_MEM;
+        } else {
+            derr = fb_import(fb, raw_path);
+            if (derr == ESP_OK)
+                derr = epd_display_fb_free(fb);
+            else
+                fb_destroy(fb);
+        }
+    }
+    fb_raw_file_unlock();
+
+    if (cerr != ESP_OK) {
+        if (!was_manual && display_policy_epoch_is_current(epoch))
+            display_policy_set_manual_screen_active(false);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "image convert failed");
+        return ESP_OK;
+    }
+    if (derr != ESP_OK) {
+        if (!was_manual && display_policy_epoch_is_current(epoch))
+            display_policy_set_manual_screen_active(false);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "EPD display failed");
+        return ESP_OK;
+    }
+    display_policy_set_manual_screen_active(true);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
 /* calendar_show moved to http_features.c */
 
 /* ── GET /panel_config ─────────────────────────────────────────────── */
@@ -1182,11 +1317,22 @@ static esp_err_t panel_config_get_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
 
-    char json[160];
+    epd_panel_t pending_panel = epd_get_panel();
+    int pending_busy = epd_busy_idle_level();
+    (void)epd_get_saved_panel_config(&pending_panel, &pending_busy);
+
+    bool reboot_required = (pending_panel != epd_get_panel()) ||
+                           (pending_busy != epd_busy_idle_level());
+    char json[384];
     snprintf(json, sizeof(json),
-             "{\"panel\":%d,\"width\":%d,\"height\":%d,\"has_red\":%s,\"busy_idle\":%d}",
-             (int)epd_get_panel(), epd_width(), epd_height(),
-             epd_has_red() ? "true" : "false", epd_busy_idle_level());
+             "{\"panel\":%d,\"active_panel\":%d,\"pending_panel\":%d,"
+             "\"width\":%d,\"height\":%d,\"has_red\":%s,"
+             "\"busy_idle\":%d,\"pending_busy_idle\":%d,"
+             "\"reboot_required\":%s}",
+             (int)pending_panel, (int)epd_get_panel(), (int)pending_panel,
+              epd_width(), epd_height(), epd_has_red() ? "true" : "false",
+               epd_busy_idle_level(), pending_busy,
+               reboot_required ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -1197,7 +1343,7 @@ static esp_err_t panel_config_get_handler(httpd_req_t *req)
 static esp_err_t panel_config_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
-    char buf[128] = {0};
+    char buf[256] = {0};
     if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
         return ESP_OK;
 
@@ -1232,17 +1378,16 @@ static esp_err_t panel_config_post_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"invalid panel config\"}");
         return ESP_OK;
     }
-
     bool reboot_required = (pending_panel != epd_get_panel()) ||
                            (pending_busy != epd_busy_idle_level());
-    char json[224];
+    char json[384];
     snprintf(json, sizeof(json),
              "{\"ok\":true,\"active_panel\":%d,\"pending_panel\":%d,"
              "\"width\":%d,\"height\":%d,\"busy_idle\":%d,\"pending_busy_idle\":%d,"
              "\"reboot_required\":%s,\"note\":\"panel config saved; reboot to apply\"}",
              (int)epd_get_panel(), (int)pending_panel,
-             epd_width(), epd_height(), epd_busy_idle_level(), pending_busy,
-             reboot_required ? "true" : "false");
+              epd_width(), epd_height(), epd_busy_idle_level(), pending_busy,
+              reboot_required ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -1306,6 +1451,7 @@ static esp_err_t power_config_post_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"low-power task failed\"}");
         return ESP_OK;
     }
+    (void)wifi_manager_set_power_save_enabled(pc.enabled);
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
 }
@@ -1338,6 +1484,160 @@ static esp_err_t epd_test_post_handler(httpd_req_t *req)
     display_policy_set_manual_screen_active(true);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
+static esp_err_t font_test_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    if (!http_require_epd_ready(req))
+        return ESP_OK;
+
+    font_ext_refresh();
+    font_ext_info_t fonts[FONT_EXT_COUNT] = {0};
+    font_ext_get_info(fonts);
+
+    fb_t *fb = fb_create();
+    if (!fb) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "framebuffer alloc failed");
+        return ESP_OK;
+    }
+    fb_clear(fb);
+
+    const int W = fb->width;
+    const int H = fb->height;
+    const int m = (W >= 360) ? 14 : 8;
+    int y = (H >= 300) ? 12 : 6;
+
+    fb_rect(fb, 0, 0, W, H, COLOR_BLACK);
+    fb_utf8_px(fb, m, y, "字库预览", COLOR_BLACK, (W >= 360) ? 30 : 24);
+    y += (W >= 360) ? 31 : 26;
+
+    char line[128];
+    snprintf(line, sizeof(line), "16:%s %luK 24:%s %luK 32:%s %luK",
+             fonts[0].present ? "OK" : "--",
+             fonts[0].present ? (unsigned long)(fonts[0].file_size / 1024) : 0UL,
+             fonts[1].present ? "OK" : "--",
+             fonts[1].present ? (unsigned long)(fonts[1].file_size / 1024) : 0UL,
+             fonts[2].present ? "OK" : "--",
+             fonts[2].present ? (unsigned long)(fonts[2].file_size / 1024) : 0UL);
+    fb_utf8_px_maxw(fb, m, y, line, COLOR_BLACK, 16, W - 2 * m);
+    y += 18;
+
+    fb_hline(fb, m, y, W - 2 * m, COLOR_BLACK);
+    y += 7;
+
+    const int label_w = (W >= 360) ? 54 : 42;
+    const int sample_x = m + label_w;
+    const int sample_w = W - sample_x - m;
+
+    fb_utf8_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
+    fb_utf8_px_maxw(fb, sample_x, y, "日历 天气 待办", COLOR_BLACK, 24, sample_w);
+    y += 28;
+    fb_utf8_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
+    fb_utf8_px_maxw(fb, sample_x, y, "0123456789 23:59", COLOR_BLACK, 24, sample_w);
+    y += 28;
+    fb_utf8_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
+    fb_utf8_px_maxw(fb, sample_x, y, "℃ ￥ ± % / () !?", COLOR_BLACK, 24, sample_w);
+    y += 32;
+
+    fb_hline(fb, m, y - 5, W - 2 * m, COLOR_BLACK);
+    fb_utf8_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
+    fb_utf8_px_maxw(fb, sample_x, y, "2026-06-21", COLOR_BLACK, 32, sample_w);
+    y += 38;
+    fb_utf8_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
+    fb_utf8_px_maxw(fb, sample_x, y, "25℃ 88% ￥9.9", COLOR_BLACK, 32, sample_w);
+    y += 40;
+
+    fb_hline(fb, m, y - 5, W - 2 * m, COLOR_BLACK);
+    if (H - y > 34) {
+        fb_utf8_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
+        fb_utf8_px_maxw(fb, sample_x, y, "12:34 98%", COLOR_BLACK, 32, sample_w);
+    }
+
+    display_policy_begin_manual_display();
+    esp_err_t err = epd_display_fb_free(fb);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "font test failed");
+        return ESP_OK;
+    }
+    display_policy_set_manual_screen_active(true);
+
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"ok\":true,\"font16\":%s,\"font24\":%s,\"font32\":%s}",
+             fonts[0].present ? "true" : "false",
+             fonts[1].present ? "true" : "false",
+             fonts[2].present ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static void epd_repair_task(void *arg)
+{
+    int packed = (int)(intptr_t)arg;
+    int cycles = packed & 0xFF;
+    int pattern = (packed >> 8) & 0xFF;
+    esp_err_t err = epd_repair_ghosting(cycles, pattern);
+    if (err == ESP_OK)
+        display_policy_set_manual_screen_active(true);
+    else
+        ESP_LOGW(TAG, "EPD ghost repair failed: %s", esp_err_to_name(err));
+    s_epd_repair_task = NULL;
+    vTaskDelete(NULL);
+}
+
+static esp_err_t epd_repair_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    if (!http_require_epd_ready(req))
+        return ESP_OK;
+
+    int cycles = 1;
+    int pattern = 0;
+    if (req->content_len > 0) {
+        char buf[128] = {0};
+        if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
+            return ESP_OK;
+        cJSON *root = cJSON_Parse(buf);
+        if (root) {
+            cJSON *jc = cJSON_GetObjectItem(root, "cycles");
+            if (jc && cJSON_IsNumber(jc))
+                cycles = jc->valueint;
+            cJSON *jp = cJSON_GetObjectItem(root, "pattern");
+            if (jp && cJSON_IsNumber(jp))
+                pattern = jp->valueint;
+            cJSON_Delete(root);
+        }
+    }
+    if (cycles < 1) cycles = 1;
+    if (cycles > 8) cycles = 8;
+    if (pattern < 0 || pattern > 2) pattern = 0;
+
+    if (s_epd_repair_task) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"busy\":true,\"msg\":\"repair already running\"}");
+        return ESP_OK;
+    }
+
+    display_policy_begin_manual_display();
+    int packed = (cycles & 0xFF) | ((pattern & 0xFF) << 8);
+    BaseType_t ok = xTaskCreate(epd_repair_task, "epd_repair", EPD_REPAIR_TASK_STACK,
+                                (void *)(intptr_t)packed, 4, &s_epd_repair_task);
+    if (ok != pdPASS) {
+        s_epd_repair_task = NULL;
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"busy\":false,\"msg\":\"task create failed\"}");
+        return ESP_OK;
+    }
+
+    char json[96];
+    snprintf(json, sizeof(json), "{\"ok\":true,\"busy\":true,\"cycles\":%d,\"pattern\":%d}",
+             cycles, pattern);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -1413,11 +1713,12 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn      = httpd_uri_match_wildcard;
-    config.recv_wait_timeout  = 5;
-    config.send_wait_timeout  = 5;
-    config.max_uri_handlers   = 64;
+    config.recv_wait_timeout  = 8;
+    config.send_wait_timeout  = 15;
+    config.max_uri_handlers   = 80;
     config.stack_size         = 16384;
     config.lru_purge_enable   = true;
+    config.max_open_sockets   = 7;
     config.open_fn            = http_session_open_hook;
 
     http_auth_load_from_nvs();
@@ -1429,7 +1730,14 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         /* core pages */
         { "/",              HTTP_GET,  index_get_handler,          NULL },
         { "/config",        HTTP_GET,  config_get_handler,         NULL },
+        { "/gallery",       HTTP_GET,  gallery_page_get_handler,   NULL },
+        { "/weather",       HTTP_GET,  weather_page_get_handler,   NULL },
+        { "/clock",         HTTP_GET,  clock_page_get_handler,     NULL },
+        { "/calendar",      HTTP_GET,  calendar_page_get_handler,  NULL },
+        { "/message",       HTTP_GET,  message_page_get_handler,   NULL },
+        { "/codex",         HTTP_GET,  codex_page_get_handler,     NULL },
         { "/favicon.ico",   HTTP_GET,  favicon_get_handler,        NULL },
+        { "/miaooaim-mark.png", HTTP_GET, miaooaim_mark_png_get_handler, NULL },
         { "/status",        HTTP_GET,  status_get_handler,         NULL },
         /* gallery (http_gallery.c) */
         { "/upload",        HTTP_POST, gallery_upload_post_handler,       NULL },
@@ -1460,6 +1768,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/msg_config",     HTTP_GET,  msg_config_get_handler,     NULL },
         { "/msg_config",     HTTP_POST, msg_config_post_handler,    NULL },
         { "/msg_show",       HTTP_POST, msg_show_post_handler,      NULL },
+        { "/msg_image_show", HTTP_POST, msg_image_show_post_handler,NULL },
         /* canvas board (http_canvas.c) */
         { "/board",              HTTP_GET,  canvas_board_ui_get,      NULL },
         { "/canvas_layout",      HTTP_GET,  canvas_layout_get,        NULL },
@@ -1489,6 +1798,8 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         /* system */
         { "/version",       HTTP_GET,  version_get_handler,        NULL },
         { "/epd_test",      HTTP_POST, epd_test_post_handler,      NULL },
+        { "/font_test",     HTTP_POST, font_test_post_handler,     NULL },
+        { "/epd_repair",    HTTP_POST, epd_repair_post_handler,    NULL },
         { "/spiffs_remount", HTTP_POST, spiffs_remount_post_handler, NULL },
         { "/spiffs_format", HTTP_POST, spiffs_format_post_handler, NULL },
         { "/ota",           HTTP_POST, ota_post_handler,           NULL },

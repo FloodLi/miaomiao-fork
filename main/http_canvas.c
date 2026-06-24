@@ -78,11 +78,7 @@ static bool canvas_validate_name(httpd_req_t *req, const char *name)
 
 esp_err_t canvas_board_ui_get(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_send(req, (const char *)board_html_start,
-                    (ssize_t)(board_html_end - board_html_start));
-    return ESP_OK;
+    return http_send_embedded_html(req, board_html_start, board_html_end);
 }
 
 /* ── GET /canvas_layout ─────────────────────────────────────────────── */

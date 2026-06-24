@@ -23,11 +23,7 @@ __attribute__((unused)) static const char *TAG = "http_feat";
 
 esp_err_t feat_timetable_ui_get(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_send(req, (const char *)timetable_html_start,
-                    (ssize_t)(timetable_html_end - timetable_html_start));
-    return ESP_OK;
+    return http_send_embedded_html(req, timetable_html_start, timetable_html_end);
 }
 
 /* ── GET /timetable.json / POST /timetable / POST /timetable_show ─────
@@ -53,11 +49,7 @@ esp_err_t feat_timetable_show_post(httpd_req_t *req)
 
 esp_err_t feat_todo_ui_get(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_send(req, (const char *)todo_html_start,
-                    (ssize_t)(todo_html_end - todo_html_start));
-    return ESP_OK;
+    return http_send_embedded_html(req, todo_html_start, todo_html_end);
 }
 
 /* ── GET /todo.json / POST /todo / POST /todo_show ────────────────────
@@ -129,11 +121,7 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
 
 esp_err_t feat_countdown_ui_get(httpd_req_t *req)
 {
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    httpd_resp_send(req, (const char *)countdown_html_start,
-                    countdown_html_end - countdown_html_start);
-    return ESP_OK;
+    return http_send_embedded_html(req, countdown_html_start, countdown_html_end);
 }
 
 esp_err_t feat_countdown_config_get(httpd_req_t *req)

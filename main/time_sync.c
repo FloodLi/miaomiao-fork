@@ -96,6 +96,34 @@ bool time_sync_get_local(struct tm *out)
     return true;
 }
 
+bool time_sync_system_time_valid(void)
+{
+    setenv("TZ", "CST-8", 1);
+    tzset();
+
+    time_t now = time(NULL);
+    if (now < 1704067200) /* 2024-01-01 00:00:00 UTC */
+        return false;
+
+    struct tm t;
+    localtime_r(&now, &t);
+    int year = t.tm_year + 1900;
+    return year >= 2024 && year <= 2100;
+}
+
+bool time_sync_get_local_relaxed(struct tm *out)
+{
+    if (!out)
+        return false;
+    if (time_sync_get_local(out))
+        return true;
+    if (!time_sync_system_time_valid())
+        return false;
+    time_t now = time(NULL);
+    localtime_r(&now, out);
+    return true;
+}
+
 bool time_sync_get_str(char *buf, size_t len)
 {
     if (!s_synced || !buf || len == 0) return false;

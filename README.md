@@ -6,7 +6,7 @@
 [![JLC Hardware](https://img.shields.io/badge/JLCEDA-%E5%98%89%E7%AB%8B%E5%88%9B%E5%BC%80%E6%BA%90%E7%A1%AC%E4%BB%B6-red)](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)
 
 > 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。  
-> **发布版本：v2.3.1**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
+> **发布版本：v2.3.3**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 > **构建环境**：**ESP-IDF 最低要求 v5.5.1**；同大版本内更高发行版（如 5.5.4）一般可直接使用，若遇兼容问题以 5.5.1 为对照。
 
 ## 🔗 项目入口
@@ -17,13 +17,15 @@
 | [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa) | 配套 4.2" SSD1619 PCB、外壳附件与硬件结构 |
 | [下载固件烧录包](https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip) | 直接获取整合烧录 bin，适合不编译直接刷机 |
 
-## 项目状态（v2.3.1 / 2026-06-04）
+## 项目状态（v2.3.3 / 2026-06-25）
 
-本项目是一个面向复刻和二次开发的源码公开、非商业许可 ESP32-S3 墨水屏终端固件。当前版本已完成公开发布整理：主测 4.2"/5.83" BWR 屏幕配置，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板入口；完成 PSRAM 友好的图片转换与画板渲染优化，增强画板素材、模板、图层和二维码名片能力，并清理了外部参考包与重复原始素材目录。
+本项目是一个面向复刻和二次开发的源码公开、非商业许可 ESP32-S3 墨水屏终端固件。当前版本已完成公开发布整理：主测 4.2"/5.83" BWR 屏幕配置，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板入口；完成 PSRAM 友好的图片转换、Web 画板字体渲染、外置 fontfs 字库、低功耗按模式唤醒、日历跨日刷新、5.83" 页面适配和上线前目录清理/静态检查。
 
-2026-06-04 增补 Codex/中转站额度看板：配置页可填写额度 API URL、API Key、显示单位和自动刷新间隔，设备可在墨水屏上显示余额、已用额度、今日用量、请求数和令牌数。启动路径同步显示时已提高 ESP-IDF main task 栈，避免欢迎页切到时钟页时因栈不足重启；当前构建和 release 整包已重新生成并通过 `idf.py build` 验证。
+2026-06-24 上线前整理：清理本地 build/缓存/临时输出，保留 release、开源字库源文件和参考素材；检查 73 条 HTTP 路由、12 个嵌入 HTML 页面 + 1 个 PNG 资源、分区表和文档一致性。当前 PowerShell 可用历史编译数据库完成 `main/*.c` 语法级检查；完整 `idf.py build` 需在 ESP-IDF 环境重新生成 build 目录后执行。
 
-2026-05-09 这一轮按实机反馈补齐了稳定性和小屏显示问题：时钟模式在 SNTP 同步后会自动重绘，SPIFFS 格式化有网页提示并自动重启，4.2" 待办页不再挤压页脚，日历今日圈不遮挡节日/农历文字，英文与全角英文数字显示更完整，SETUP 页 WiFi 热点、密码、网页地址和 mDNS 信息在 400×300 屏上更容易读全。核心固件本地已通过 `idf.py build` 验证。
+2026-06-25 文档同步：补齐低功耗 WiFi 策略、5.83" 微雪 B V2 选择建议、Web 多页面入口、fontfs/SPIFFS 分区职责、release 重新构建状态和仍需实机验证项。当前 `release/` 已按 v2.3.3 当前源码重新构建并更新校验；如果后续源码、分区表或 fontfs 字库继续变化，发布前需重新构建。
+
+2026-06-04 版本补充 Codex/中转站额度看板和启动栈稳定性修复；2026-05-09 版本整理了时钟刷新、天气后台联动、SPIFFS 恢复、4.2" 待办页、日历今日圈、SETUP 页 WiFi 信息等实机反馈。
 
 不同批次的屏幕、驱动 IC、BUSY 电平、供电方案和外壳结构可能存在差异。首次复刻建议先按本文档完成基础烧录与网页配置，再根据实际硬件在配置页选择屏幕型号、确认 BUSY 电平和刷屏效果。欢迎提交 Issue、改进建议或适配更多屏幕型号。
 
@@ -107,13 +109,14 @@
 
 | 状态 | 面板 | 分辨率 | 颜色 | 说明 |
 |------|------|--------|------|------|
-| 主测 | 4.2" SSD1619 BWR | 400×300 | 黑白红 | 默认小屏路径，支持稳定全刷；局刷/快刷代码保留但默认以稳定显示优先 |
+| 主测 | 4.2" SSD1619 BWR | 400×300 | 黑白红 | 默认小屏路径，稳定全刷；局刷/快刷入口已移除 |
 | 主测 | 5.83" UC8179 BWR | 648×480 | 黑白红 | 默认大屏路径；实测局刷不稳定，默认稳定全刷 |
 | 已验证 | 微雪 5.83" BWR B V2 | 648×480 | 黑白红 | 配置页可选，真机日志已验证初始化和图片显示 |
 | 实验移植 | ATC/Solum SSD1619 / UC8151 / UC 4.3 / dual SSD / UC8159 / UC8179 价签面板 | 144×200 ~ 960×672 | 黑白 / 黑白红 | 参考 atc1441/Tag_FW_nRF52811 控制器序列接入配置页；未实机验证，UC8159 使用默认 VCOM/PLL，缺少源项目外部 EEPROM 回读路径 |
-| 实验参考 | EPD-nRF5 SSD1619 / UC8176 / UC8179 / UC8159 / SSD1677 / JD79668 / JD79665 | 400×300 ~ 880×528 | 黑白 / 黑白红 / 黑白红黄 | 参考 `C:\Users\43060\Downloads\EPD\EPD` 的控制器命令模型重写接入；JD79668/JD79665 图片转换会生成独立黄色平面并按 2bpp 输出，未实机验证 |
+| 实验参考 | EPD-nRF5 SSD1619 / UC8176 / UC8179 / UC8159 / SSD1677 / JD79668 / JD79665 | 400×300 ~ 880×528 | 黑白 / 黑白红 / 黑白红黄 | 参考 EPD-nRF5 控制器命令模型重写接入；JD79668/JD79665 图片转换会生成独立黄色平面并按 2bpp 输出，未实机验证 |
 
 > 除已验证的微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已按当前维护范围移除；7.5" / 4.2" UC8176 等改为 EPD-nRF5 参考实验入口，编号从 26 开始，若 NVS 中仍保存旧面板编号，固件会回退到默认 4.2" 面板。
+> 若购买页面标注“兼容微雪 5.83b V2 / 648×480 / BWR / 24Pin”，配置页优先选择 **微雪 5.83 寸 黑白红 B V2 (648×480)**。若画面尺寸正确、无镜像偏移且黑红颜色正常，边缘发虚通常优先排查屏体状态、FPC 接触、供电和温度，而不是继续切换驱动。
 > ATC/Solum 实验入口只移植屏控初始化与刷屏数据路径，不包含 nRF52811 项目的 UICR 自动识别、EPD 电源脚、BS 脚、3 线回读与外挂 EPD EEPROM 支持；请按配置页面板名手动选择。
 > JD79668/JD79665 四色屏的黄色目前作用于图片上传、画廊转换和测试图案；时钟、天气、课程表等内置页面仍使用黑/红两平面 framebuffer。
 
@@ -293,7 +296,7 @@ msp/
 │   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
 │   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179 / ATC-Solum / EPD-nRF5 参考面板，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
-│   ├── http_app.c/h             # HTTP 服务（约 63 条 URI + Basic Auth + OTA）
+│   ├── http_app.c/h             # HTTP 服务（73 条 URI + Basic Auth + OTA）
 │   ├── http_gallery.c           # 画廊相关路由
 │   ├── http_features.c          # 功能模块路由
 │   ├── http_internal.h          # HTTP 子模块共享声明
@@ -328,10 +331,17 @@ msp/
 ├── web/                         # Web UI（构建时嵌入固件）
 │   ├── index.html               # 主页：上传 / 画廊 / 状态
 │   ├── config.html              # 配置：WiFi / 轮播 / 天气 / OTA / 低功耗
+│   ├── gallery.html             # 画廊与图片上传
+│   ├── weather.html             # 天气配置与手动显示
+│   ├── clock.html               # 时钟配置
+│   ├── calendar.html            # 日历手动显示
+│   ├── message.html             # 留言板
+│   ├── codex.html               # Codex / 中转站额度看板配置
 │   ├── timetable.html           # 课程表编辑
 │   ├── todo.html                # 待办事项管理
 │   ├── countdown.html           # 倒计时配置
-│   └── board.html               # 画布留言板可视化编辑器
+│   ├── board.html               # 画布留言板可视化编辑器
+│   └── miaooaim-mark.png        # Web 品牌图标资源
 ├── tools/                       # 辅助脚本
 │   ├── gen_font.py              # 点阵字库生成工具
 │   ├── gen_city_excel.py        # 和风天气城市码导出
@@ -342,14 +352,15 @@ msp/
 │   ├── 开发板接线图.png           # 开发板 / 屏 / 按键 / 电源接线示意
 │   ├── BOM_ACTUAL.md            # 与固件兼容性提要
 │   └── BOM.md                   # 与固件兼容性提要
-├── docs/                        # Gitee 简介与 README 使用的硬件、实物、Web 截图
+├── docs/                        # Gitee 简介、字库说明与 README 使用的硬件、实物、Web 截图
 │   ├── gitee-about.md           # Gitee 仓库简介建议
+│   ├── fonts.md                 # 字库来源、授权和生成说明
 │   └── images/                  # README 使用图片
 ├── release/                     # 免编译烧录包与小白烧录说明
 │   ├── README.md
 │   ├── epaper_uploader_full_16MB.bin
 │   └── epaper_uploader_full_16MB.zip
-├── partitions.csv               # 分区表（factory + 双 OTA + ~10MB SPIFFS）
+├── partitions.csv               # 分区表（3MB app 三槽 + coredump + fontfs + 用户 SPIFFS）
 ├── sdkconfig.defaults           # 项目默认配置
 └── CMakeLists.txt               # 顶层构建脚本
 ```
@@ -361,17 +372,21 @@ msp/
 | nvs | data | 48 KB | 非易失性配置存储（PHY 校准 + 各模块 blob） |
 | otadata | data | 8 KB | OTA 状态 |
 | phy_init | data | 4 KB | PHY 初始化基线数据 |
-| factory | app | 2 MB | 出厂固件（回滚保护） |
-| ota_0 / ota_1 | app | 各 2 MB | OTA 双分区 |
-| spiffs | data | ~10 MB | 图片/文件存储 |
+| factory | app | 3 MB | 出厂固件槽，保留回滚/救援入口 |
+| ota_0 / ota_1 | app | 各 3 MB | OTA 双分区，当前固件仍有约 37% app 余量 |
+| coredump | data | 128 KB | panic / watchdog 崩溃转储，便于售后排障 |
+| fontfs | data | 2.875 MB | 内置 16/24/32px 字库资源分区 |
+| spiffs | data | 3.875 MB | 用户图片、画布素材和运行时文件 |
+
+> 当前分区表面向 16MB Flash。`spiffs` 用户文件区固定在 `0xC20000`，用于尽量保护已有图库/配置；`fontfs` 位于 `0x940000`。分区表或字库分区变更后，不能只 OTA app，需要同时更新 `partition_table` 和 `fontfs.bin`，出厂包建议使用完整 16MB 固件。
 
 ## 🌐 Web API 概览
 
-设备提供 **约 63 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
+设备提供 **73 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
 
 | 分类 | 路径 | 说明 |
 |------|------|------|
-| 页面 | `/`, `/config`, `/timetable`, `/todo`, `/countdown` | Web UI 页面 |
+| 页面 | `/`, `/config`, `/gallery`, `/weather`, `/clock`, `/calendar`, `/message`, `/codex`, `/timetable`, `/todo`, `/countdown`, `/board` | Web UI 页面 |
 | 图片 | `/upload`, `/images`, `/image`, `/show`, `/delete` | 画廊管理 |
 | WiFi | `/wifi_status`, `/scan`, `/wifi_connect`, `/wifi_forget` | 网络配置 |
 | 屏幕 | `/panel_config` | 屏幕型号切换 |
@@ -393,8 +408,8 @@ msp/
 | 深度睡眠 | <10μA | RTC 定时器 / GPIO | 电池续航 80+ 天 |
 
 **双启动路径设计**（深度睡眠开启且本次为 **RTC 定时器** 唤醒时）：
-- **完整启动**（上电 / 复位 / **按键 GPIO3·9 唤醒** 等）：AP+STA、mDNS、`http_app`、按键任务、欢迎屏流程；**可通过网页访问**。
-- **定时器唤醒**：仅 STA、刷新 `NVS` 中记忆的模式画面后回睡；**不启动 HTTP / 不配 SoftAP**，无法在此阶段打开网页。
+- **完整启动**（上电 / 复位 / **按键 GPIO3·9 唤醒** 等）：AP+STA、mDNS、`http_app`、按键任务、欢迎屏流程；**可通过网页访问**。低功耗开关打开时，正常后台仍在线，只把 WiFi 省电策略切到 `MIN_MODEM`；关闭低功耗时使用 `WIFI_PS_NONE`，优先保证网页和网络速度。
+- **定时器唤醒**：进入 quick-refresh，只刷新 `NVS` 中记忆的模式画面后回睡；图片/轮播/本地待办/本地倒计时/课程表等默认跳过 WiFi，天气、Codex、带天气摘要或时间无效需要校时的页面才启动 STA-only WiFi；**不启动 HTTP / 不配 SoftAP**，无法在此阶段打开网页。
 
 **HTTP Basic Auth**：可在配置页启用。启用后敏感操作需带 `Authorization`；各 `web/*.html` 在配置页保存认证后使用 `localStorage`（`epd_auth_u` / `epd_auth_p`）自动附带请求头。配置导出/导入不会包含认证密码，恢复备份后请在配置页单独设置管理账号。详见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) §4.5。
 
@@ -407,6 +422,8 @@ msp/
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
 | [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新记录 | 用户 / 维护者 |
+| [docs/fonts.md](docs/fonts.md) | 字库来源、授权、生成和应用范围 | 二次开发者 |
+| [上线前检查报告.md](上线前检查报告.md) | 本地清理、上线检查和剩余风险记录 | 维护者 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
 | [hardware/BOM.md](hardware/BOM.md) | 硬件与固件对齐提要（无采购表） | 复刻者 |
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |

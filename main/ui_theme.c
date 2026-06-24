@@ -6,9 +6,39 @@
 
 #include "battery_mon.h"
 
+ui_layout_class_t ui_layout_for(const fb_t *fb)
+{
+    if (!fb)
+        return UI_LAYOUT_COMPACT;
+    if (fb->width >= 760 && fb->height >= 430)
+        return UI_LAYOUT_LARGE;
+    if (fb->width >= 600 && fb->height >= 430)
+        return UI_LAYOUT_583;
+    if (fb->width == 400 && fb->height == 300)
+        return UI_LAYOUT_42;
+    return UI_LAYOUT_COMPACT;
+}
+
+bool ui_layout_is_42(const fb_t *fb)
+{
+    return ui_layout_for(fb) == UI_LAYOUT_42;
+}
+
+bool ui_layout_is_583(const fb_t *fb)
+{
+    return ui_layout_for(fb) == UI_LAYOUT_583;
+}
+
+bool ui_layout_is_wide(const fb_t *fb)
+{
+    ui_layout_class_t cls = ui_layout_for(fb);
+    return cls == UI_LAYOUT_583 || cls == UI_LAYOUT_LARGE;
+}
+
 int ui_scale_for(const fb_t *fb)
 {
-    return (fb && fb->width >= 600) ? 2 : 1;
+    ui_layout_class_t cls = ui_layout_for(fb);
+    return (cls == UI_LAYOUT_583 || cls == UI_LAYOUT_LARGE) ? 2 : 1;
 }
 
 int ui_text_width(const char *s, int scale)
@@ -54,6 +84,54 @@ int ui_text_width(const char *s, int scale)
             w += 16 * scale;
     }
     return w;
+}
+
+int ui_role_scale(const fb_t *fb, ui_text_role_t role)
+{
+    switch (role) {
+    case UI_TEXT_VALUE:
+    case UI_TEXT_TITLE:
+        return 2;
+    case UI_TEXT_LABEL:
+    case UI_TEXT_SMALL:
+    case UI_TEXT_BODY:
+    default:
+        return 1;
+    }
+}
+
+static bool ui_role_prefers_ext(const fb_t *fb, ui_text_role_t role, int scale)
+{
+    (void)fb;
+    (void)role;
+    (void)scale;
+    return false;
+}
+
+int ui_role_text_width(const fb_t *fb, const char *s, ui_text_role_t role)
+{
+    int scale = ui_role_scale(fb, role);
+    if (ui_role_prefers_ext(fb, role, scale))
+        return fb_utf8_scaled_styled_width(s, scale);
+    return fb_utf8_scaled_width(s, scale);
+}
+
+int ui_draw_text_role(fb_t *fb, int x, int y, const char *s,
+                      fb_color_t color, ui_text_role_t role)
+{
+    int scale = ui_role_scale(fb, role);
+    if (ui_role_prefers_ext(fb, role, scale))
+        return fb_utf8_scaled_styled(fb, x, y, s, color, scale);
+    return fb_utf8_scaled(fb, x, y, s, color, scale);
+}
+
+int ui_draw_text_role_maxw(fb_t *fb, int x, int y, const char *s,
+                           fb_color_t color, ui_text_role_t role, int max_w)
+{
+    int scale = ui_role_scale(fb, role);
+    if (ui_role_prefers_ext(fb, role, scale))
+        return fb_utf8_scaled_styled_maxw(fb, x, y, s, color, scale, max_w);
+    return fb_utf8_scaled_maxw(fb, x, y, s, color, scale, max_w);
 }
 
 void ui_draw_dotted_hline(fb_t *fb, int x, int y, int w, fb_color_t color, int step)

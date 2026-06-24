@@ -1,4 +1,5 @@
 #include "fb_render.h"
+#include "font_ext.h"
 #include "font_data.h"
 #include "epd.h"
 
@@ -362,6 +363,192 @@ void fb_bitmap(fb_t *fb, int x, int y, int w, int h,
     }
 }
 
+/* Large numeric rendering.
+ * Scaling the 8x16 bitmap font to 4x+ makes counters look blocky on e-paper.
+ * These helpers draw numbers from filled geometry without adding a big font. */
+enum {
+    NUM7_A = 1 << 0,
+    NUM7_B = 1 << 1,
+    NUM7_C = 1 << 2,
+    NUM7_D = 1 << 3,
+    NUM7_E = 1 << 4,
+    NUM7_F = 1 << 5,
+    NUM7_G = 1 << 6,
+};
+
+static const uint8_t s_num7_map[10] = {
+    NUM7_A | NUM7_B | NUM7_C | NUM7_D | NUM7_E | NUM7_F,
+    NUM7_B | NUM7_C,
+    NUM7_A | NUM7_B | NUM7_D | NUM7_E | NUM7_G,
+    NUM7_A | NUM7_B | NUM7_C | NUM7_D | NUM7_G,
+    NUM7_B | NUM7_C | NUM7_F | NUM7_G,
+    NUM7_A | NUM7_C | NUM7_D | NUM7_F | NUM7_G,
+    NUM7_A | NUM7_C | NUM7_D | NUM7_E | NUM7_F | NUM7_G,
+    NUM7_A | NUM7_B | NUM7_C,
+    NUM7_A | NUM7_B | NUM7_C | NUM7_D | NUM7_E | NUM7_F | NUM7_G,
+    NUM7_A | NUM7_B | NUM7_C | NUM7_D | NUM7_F | NUM7_G,
+};
+
+static int num7_scale(int scale)
+{
+    return scale < 1 ? 1 : scale;
+}
+
+int fb_digit7_width(int scale)
+{
+    scale = num7_scale(scale);
+    return 10 * scale;
+}
+
+int fb_number7_height(int scale)
+{
+    scale = num7_scale(scale);
+    return 18 * scale;
+}
+
+static int num7_char_width(char ch, int scale)
+{
+    scale = num7_scale(scale);
+    if (ch >= '0' && ch <= '9')
+        return fb_digit7_width(scale);
+    switch (ch) {
+    case '-': return 7 * scale;
+    case '.': return 3 * scale;
+    case ':': return 4 * scale;
+    case '/': return 8 * scale;
+    case '%': return 14 * scale;
+    case ' ': return 5 * scale;
+    default:  return 8 * scale;
+    }
+}
+
+int fb_number7_width(const char *s, int scale)
+{
+    if (!s)
+        return 0;
+    scale = num7_scale(scale);
+    int w = 0;
+    for (const char *p = s; *p; p++) {
+        if (p != s)
+            w += scale;
+        w += num7_char_width(*p, scale);
+    }
+    return w;
+}
+
+static void num7_hseg(fb_t *fb, int x, int y, int w, int t, fb_color_t c)
+{
+    fb_fill_rect(fb, x, y, w, t, c);
+    if (t > 2) {
+        fb_pixel(fb, x - 1, y + t / 2, c);
+        fb_pixel(fb, x + w, y + t / 2, c);
+    }
+}
+
+static void num7_vseg(fb_t *fb, int x, int y, int t, int h, fb_color_t c)
+{
+    fb_fill_rect(fb, x, y, t, h, c);
+    if (t > 2) {
+        fb_pixel(fb, x + t / 2, y - 1, c);
+        fb_pixel(fb, x + t / 2, y + h, c);
+    }
+}
+
+static void draw_num7_digit(fb_t *fb, int x, int y, int digit,
+                            fb_color_t c, int scale)
+{
+    if (!fb || digit < 0 || digit > 9)
+        return;
+    scale = num7_scale(scale);
+    int t = scale;
+    if (scale >= 5)
+        t = scale + 1;
+
+    int sx = scale;
+    int sy = scale;
+    int w = fb_digit7_width(scale);
+    int h = fb_number7_height(scale);
+    int right = x + w - t;
+    int mid_y = y + h / 2 - t / 2;
+    int bot_y = y + h - t;
+    int v_top_y = y + 2 * sy;
+    int v_bot_y = mid_y + 2 * sy;
+    int v_h = mid_y - v_top_y - sy;
+    int v_h2 = bot_y - v_bot_y - sy;
+    if (v_h < t)
+        v_h = t;
+    if (v_h2 < t)
+        v_h2 = t;
+
+    uint8_t segs = s_num7_map[digit];
+    if (segs & NUM7_A) num7_hseg(fb, x + 2 * sx, y,     w - 4 * sx, t, c);
+    if (segs & NUM7_G) num7_hseg(fb, x + 2 * sx, mid_y, w - 4 * sx, t, c);
+    if (segs & NUM7_D) num7_hseg(fb, x + 2 * sx, bot_y, w - 4 * sx, t, c);
+    if (segs & NUM7_F) num7_vseg(fb, x,     v_top_y, t, v_h,  c);
+    if (segs & NUM7_B) num7_vseg(fb, right, v_top_y, t, v_h,  c);
+    if (segs & NUM7_E) num7_vseg(fb, x,     v_bot_y, t, v_h2, c);
+    if (segs & NUM7_C) num7_vseg(fb, right, v_bot_y, t, v_h2, c);
+}
+
+static void draw_num7_symbol(fb_t *fb, int x, int y, char ch,
+                             fb_color_t c, int scale)
+{
+    scale = num7_scale(scale);
+    int h = fb_number7_height(scale);
+    int t = scale;
+    if (scale >= 5)
+        t = scale + 1;
+
+    switch (ch) {
+    case '-':
+        num7_hseg(fb, x + scale, y + h / 2 - t / 2, 5 * scale, t, c);
+        break;
+    case '.':
+        fb_fill_rect(fb, x + scale, y + h - 2 * scale, 2 * scale, 2 * scale, c);
+        break;
+    case ':':
+        fb_fill_rect(fb, x + scale, y + 5 * scale, 2 * scale, 2 * scale, c);
+        fb_fill_rect(fb, x + scale, y + 12 * scale, 2 * scale, 2 * scale, c);
+        break;
+    case '/':
+        for (int yy = 0; yy < h; yy++) {
+            int px = x + 7 * scale - (yy * 7 * scale) / h;
+            fb_fill_rect(fb, px, y + yy, t, 1, c);
+        }
+        break;
+    case '%':
+        fb_rect(fb, x, y + 2 * scale, 4 * scale, 4 * scale, c);
+        fb_rect(fb, x + 9 * scale, y + 12 * scale, 4 * scale, 4 * scale, c);
+        for (int yy = scale; yy < h - scale; yy++) {
+            int px = x + 11 * scale - (yy * 9 * scale) / h;
+            fb_fill_rect(fb, px, y + yy, t, 1, c);
+        }
+        break;
+    default:
+        fb_rect(fb, x, y + 2 * scale, 6 * scale, 12 * scale, c);
+        break;
+    }
+}
+
+int fb_number7(fb_t *fb, int x, int y, const char *s,
+               fb_color_t c, int scale)
+{
+    if (!fb || !s)
+        return 0;
+    scale = num7_scale(scale);
+    int cx = x;
+    for (const char *p = s; *p; p++) {
+        if (p != s)
+            cx += scale;
+        if (*p >= '0' && *p <= '9')
+            draw_num7_digit(fb, cx, y, *p - '0', c, scale);
+        else if (*p != ' ')
+            draw_num7_symbol(fb, cx, y, *p, c, scale);
+        cx += num7_char_width(*p, scale);
+    }
+    return cx - x;
+}
+
 /* ── text ─────────────────────────────────────────────────────────── */
 
 int fb_char(fb_t *fb, int x, int y, char ch, fb_color_t c)
@@ -501,9 +688,24 @@ static void fb_bitmap_sc(fb_t *fb, int x, int y, int w, int h,
                           const uint8_t *data, fb_color_t c, int sc)
 {
     int stride = (w + 7) / 8;
-    /* bold 扩展（每像素额外扩 1px）仅在 sc≥3 时启用。
-     * sc=2 时保持严格的 2×2 块（32px 字高），避免日历等布局因多出的 1px 越界覆盖格线。
-     * 4.2" 小屏 sc=1 时 bold=0（不变）；5.83" 大屏 sc=2 时 bold=0（新）。*/
+    for (int j = 0; j < h; j++) {
+        for (int i = 0; i < w; i++) {
+            if (data[j * stride + i / 8] & (0x80 >> (i % 8))) {
+                int px = x + i * sc;
+                int py = y + j * sc;
+                for (int dy = 0; dy < sc; dy++)
+                    for (int dx = 0; dx < sc; dx++)
+                        fb_pixel(fb, px + dx, py + dy, c);
+            }
+        }
+    }
+}
+
+static void fb_bitmap_sc_builtin_style(fb_t *fb, int x, int y, int w, int h,
+                                       const uint8_t *data, fb_color_t c,
+                                       int sc)
+{
+    int stride = (w + 7) / 8;
     int bold = (sc >= 3) ? 1 : 0;
     for (int j = 0; j < h; j++) {
         for (int i = 0; i < w; i++) {
@@ -516,6 +718,136 @@ static void fb_bitmap_sc(fb_t *fb, int x, int y, int w, int h,
             }
         }
     }
+}
+
+static bool fb_draw_text_glyph(fb_t *fb, int x, int y, int cp,
+                               fb_color_t c, int scale, bool prefer_ext,
+                               bool allow_ext, int *adv)
+{
+    bool use_ext = allow_ext && scale >= 2 && (prefer_ext || cp >= 0x80);
+    if (use_ext &&
+        font_ext_draw_glyph(fb, x, y, (uint32_t)cp, c, scale, adv)) {
+        return true;
+    }
+
+    if (cp < 0x80) {
+        int idx = cp - 32;
+        if (idx < 0 || idx >= 95) idx = 0;
+        fb_bitmap_sc_builtin_style(fb, x, y, 8, 16, font_ascii[idx], c, scale);
+        if (adv) *adv = 8 * scale;
+        return true;
+    }
+
+    const uint8_t *glyph = find_zh_glyph((uint32_t)cp);
+    if (!glyph16_is_empty(glyph))
+        fb_bitmap_sc_builtin_style(fb, x, y, 16, 16, glyph, c, scale);
+    else
+        fb_missing_glyph(fb, x, y, c, scale);
+    if (adv) *adv = 16 * scale;
+    return true;
+}
+
+static int fb_text_glyph_advance_internal(int cp, int scale, bool prefer_ext,
+                                          bool allow_ext)
+{
+    int adv = 0;
+    bool use_ext = allow_ext && scale >= 2 && (prefer_ext || cp >= 0x80);
+    if (use_ext)
+        (void)font_ext_probe_glyph((uint32_t)cp, scale, &adv);
+    if (adv <= 0)
+        adv = (cp < 0x80) ? (8 * scale) : (16 * scale);
+    return adv;
+}
+
+static int fb_text_glyph_advance(int cp, int scale, bool prefer_ext)
+{
+    return fb_text_glyph_advance_internal(cp, scale, prefer_ext, true);
+}
+
+static int fb_utf8_scaled_width_internal(const char *s, int scale,
+                                         bool prefer_ext)
+{
+    if (!s)
+        return 0;
+    if (scale < 1)
+        scale = 1;
+    int w = 0;
+    while (*s) {
+        int cp = normalize_compat_ascii(decode_utf8(&s));
+        w += fb_text_glyph_advance(cp, scale, prefer_ext);
+    }
+    return w;
+}
+
+static int fb_utf8_scaled_draw_internal_ex(fb_t *fb, int x, int y,
+                                           const char *s, fb_color_t c,
+                                           int scale, bool prefer_ext,
+                                           bool allow_ext);
+
+static int fb_utf8_scaled_maxw_internal_ex(fb_t *fb, int x, int y,
+                                           const char *s, fb_color_t c,
+                                           int scale, int max_w,
+                                           bool prefer_ext, bool allow_ext);
+
+static int fb_utf8_scaled_draw_internal(fb_t *fb, int x, int y, const char *s,
+                                        fb_color_t c, int scale,
+                                        bool prefer_ext)
+{
+    return fb_utf8_scaled_draw_internal_ex(fb, x, y, s, c, scale,
+                                           prefer_ext, true);
+}
+
+static int fb_utf8_scaled_draw_internal_ex(fb_t *fb, int x, int y,
+                                           const char *s, fb_color_t c,
+                                           int scale, bool prefer_ext,
+                                           bool allow_ext)
+{
+    if (scale < 1)
+        scale = 1;
+    int cx = x;
+    while (*s) {
+        int cp = normalize_compat_ascii(decode_utf8(&s));
+        int adv = 0;
+        fb_draw_text_glyph(fb, cx, y, cp, c, scale, prefer_ext,
+                           allow_ext, &adv);
+        cx += adv;
+    }
+    return cx - x;
+}
+
+static int fb_utf8_scaled_maxw_internal(fb_t *fb, int x, int y, const char *s,
+                                        fb_color_t c, int scale, int max_w,
+                                        bool prefer_ext)
+{
+    return fb_utf8_scaled_maxw_internal_ex(fb, x, y, s, c, scale, max_w,
+                                           prefer_ext, true);
+}
+
+static int fb_utf8_scaled_maxw_internal_ex(fb_t *fb, int x, int y,
+                                           const char *s, fb_color_t c,
+                                           int scale, int max_w,
+                                           bool prefer_ext, bool allow_ext)
+{
+    if (scale < 1)
+        scale = 1;
+    if (max_w <= 0)
+        return 0;
+    int cx = x;
+    const int lim = x + max_w;
+    while (*s && cx < lim) {
+        const char *before = s;
+        int cp = normalize_compat_ascii(decode_utf8(&s));
+        int adv = fb_text_glyph_advance_internal(cp, scale, prefer_ext,
+                                                 allow_ext);
+        if (cx + adv > lim) {
+            s = before;
+            break;
+        }
+        fb_draw_text_glyph(fb, cx, y, cp, c, scale, prefer_ext,
+                           allow_ext, &adv);
+        cx += adv;
+    }
+    return cx - x;
 }
 
 int fb_char_2x(fb_t *fb, int x, int y, char ch, fb_color_t c)
@@ -534,53 +866,135 @@ int fb_utf8_2x(fb_t *fb, int x, int y, const char *s, fb_color_t c)
 int fb_utf8_scaled(fb_t *fb, int x, int y, const char *s,
                    fb_color_t c, int scale)
 {
-    if (scale < 1) scale = 1;
-    int cx = x;
-    while (*s) {
-        int cp = normalize_compat_ascii(decode_utf8(&s));
-        if (cp < 0x80) {
-            int idx = cp - 32;
-            if (idx < 0 || idx >= 95) idx = 0;
-            fb_bitmap_sc(fb, cx, y, 8, 16, font_ascii[idx], c, scale);
-            cx += 8 * scale;
-        } else {
-            const uint8_t *glyph = find_zh_glyph((uint32_t)cp);
-            if (!glyph16_is_empty(glyph))
-                fb_bitmap_sc(fb, cx, y, 16, 16, glyph, c, scale);
-            else
-                fb_missing_glyph(fb, cx, y, c, scale);
-            cx += 16 * scale;
-        }
-    }
-    return cx - x;
+    return fb_utf8_scaled_draw_internal(fb, x, y, s, c, scale, false);
+}
+
+int fb_utf8_scaled_builtin(fb_t *fb, int x, int y, const char *s,
+                           fb_color_t c, int scale)
+{
+    return fb_utf8_scaled_draw_internal_ex(fb, x, y, s, c, scale, false, false);
+}
+
+int fb_utf8_scaled_builtin_maxw(fb_t *fb, int x, int y, const char *s,
+                                fb_color_t c, int scale, int max_w)
+{
+    return fb_utf8_scaled_maxw_internal_ex(fb, x, y, s, c, scale, max_w,
+                                           false, false);
+}
+
+int fb_utf8_scaled_width(const char *s, int scale)
+{
+    return fb_utf8_scaled_width_internal(s, scale, false);
+}
+
+int fb_codepoint_scaled_width(int cp, int scale, bool styled)
+{
+    if (scale < 1)
+        scale = 1;
+    cp = normalize_compat_ascii(cp);
+    return fb_text_glyph_advance(cp, scale, styled);
+}
+
+int fb_utf8_scaled_styled(fb_t *fb, int x, int y, const char *s,
+                          fb_color_t c, int scale)
+{
+    return fb_utf8_scaled_draw_internal(fb, x, y, s, c, scale, true);
+}
+
+int fb_utf8_scaled_styled_width(const char *s, int scale)
+{
+    return fb_utf8_scaled_width_internal(s, scale, true);
 }
 
 int fb_utf8_scaled_maxw(fb_t *fb, int x, int y, const char *s,
                         fb_color_t c, int scale, int max_w)
 {
-    if (scale < 1) scale = 1;
-    if (max_w <= 0) return 0;
+    return fb_utf8_scaled_maxw_internal(fb, x, y, s, c, scale, max_w, false);
+}
+
+int fb_utf8_scaled_styled_maxw(fb_t *fb, int x, int y, const char *s,
+                               fb_color_t c, int scale, int max_w)
+{
+    return fb_utf8_scaled_maxw_internal(fb, x, y, s, c, scale, max_w, true);
+}
+
+static int fb_text_glyph_advance_px(int cp, int target_px)
+{
+    int adv = 0;
+    if (target_px >= 16)
+        (void)font_ext_probe_glyph_px((uint32_t)cp, target_px, &adv);
+    if (adv <= 0) {
+        int scale = (target_px + 15) / 16;
+        if (scale < 1)
+            scale = 1;
+        adv = (cp < 0x80) ? (8 * scale) : (16 * scale);
+    }
+    return adv;
+}
+
+static bool fb_draw_text_glyph_px(fb_t *fb, int x, int y, int cp,
+                                  fb_color_t c, int target_px, int *adv)
+{
+    if (target_px >= 16 &&
+        font_ext_draw_glyph_px(fb, x, y, (uint32_t)cp, c, target_px, adv)) {
+        return true;
+    }
+
+    int scale = (target_px + 15) / 16;
+    if (scale < 1)
+        scale = 1;
+    return fb_draw_text_glyph(fb, x, y, cp, c, scale, true, true, adv);
+}
+
+int fb_utf8_px_width(const char *s, int target_px)
+{
+    if (!s)
+        return 0;
+    if (target_px < 8)
+        target_px = 8;
+    int w = 0;
+    while (*s) {
+        int cp = normalize_compat_ascii(decode_utf8(&s));
+        w += fb_text_glyph_advance_px(cp, target_px);
+    }
+    return w;
+}
+
+int fb_utf8_px(fb_t *fb, int x, int y, const char *s,
+               fb_color_t c, int target_px)
+{
+    if (!s)
+        return 0;
+    if (target_px < 8)
+        target_px = 8;
+    int cx = x;
+    while (*s) {
+        int cp = normalize_compat_ascii(decode_utf8(&s));
+        int adv = 0;
+        fb_draw_text_glyph_px(fb, cx, y, cp, c, target_px, &adv);
+        cx += adv;
+    }
+    return cx - x;
+}
+
+int fb_utf8_px_maxw(fb_t *fb, int x, int y, const char *s,
+                    fb_color_t c, int target_px, int max_w)
+{
+    if (!s || max_w <= 0)
+        return 0;
+    if (target_px < 8)
+        target_px = 8;
     int cx = x;
     const int lim = x + max_w;
     while (*s && cx < lim) {
         const char *before = s;
         int cp = normalize_compat_ascii(decode_utf8(&s));
-        int adv = (cp < 0x80) ? (8 * scale) : (16 * scale);
+        int adv = fb_text_glyph_advance_px(cp, target_px);
         if (cx + adv > lim) {
             s = before;
             break;
         }
-        if (cp < 0x80) {
-            int idx = cp - 32;
-            if (idx < 0 || idx >= 95) idx = 0;
-            fb_bitmap_sc(fb, cx, y, 8, 16, font_ascii[idx], c, scale);
-        } else {
-            const uint8_t *glyph = find_zh_glyph((uint32_t)cp);
-            if (!glyph16_is_empty(glyph))
-                fb_bitmap_sc(fb, cx, y, 16, 16, glyph, c, scale);
-            else
-                fb_missing_glyph(fb, cx, y, c, scale);
-        }
+        fb_draw_text_glyph_px(fb, cx, y, cp, c, target_px, &adv);
         cx += adv;
     }
     return cx - x;

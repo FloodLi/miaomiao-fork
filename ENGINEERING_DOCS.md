@@ -1,16 +1,18 @@
 # ESP32 墨水屏项目工程技术文档
 
-## 工程状态（2026-05-09）
+## 工程状态（2026-06-25）
 
-本文档反映当前 ESP32-S3 三色墨水屏固件的工程实现状态。已完成显示 epoch 仲裁、日历/画布/留言异步显示返回语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 用户数据保护与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、手动画面期间天气后台收敛、EPD 初始化失败降级诊断和 AP 密码日志脱敏。2026-05-02 公开发布整理补充了 PSRAM 图片转换路径、画板渲染/素材/模板优化、可靠 Gitee 二维码模板和仓库结构清理。
+本文档反映当前 ESP32-S3 三色墨水屏固件的工程实现状态。已完成显示 epoch 仲裁、日历/画布/留言异步显示返回语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 用户数据保护与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、手动画面期间天气后台收敛、EPD 初始化失败降级诊断、AP 密码日志脱敏、外置 fontfs 字库、低功耗按模式快速刷新、日历跨日刷新、Web 画板字体渲染和 5.83" 页面/驱动说明同步。
 
-2026-05-09 实机修复重点覆盖时钟模式刷新、天气后台与时钟摘要联动、SPIFFS 格式化/图库异常反馈、4.2" 待办小屏排版、日历今日圈遮挡、全角英文数字与缺字反馈、SETUP 页 WiFi 信息压缩显示。本地构建通过，应用分区仍有约 12% 余量。
+2026-06-24 完成上线前目录整理与静态检查：删除本地 build/缓存/临时输出，保留 release、开源字库源文件和参考素材；`main/*.c` 基于历史编译数据库完成语法级检查；`release/README.md` 已修正 fontfs 烧录地址为 `0x940000`。
 
-建议复刻和二次开发时重点验证 OTA 成功/失败/回滚流程、低功耗唤醒、轮播与天气长时间运行、连续上传抢占场景，以及实际屏幕驱动 IC 和 BUSY 电平。
+2026-06-25 完成文档一致性补充：低功耗开关不关闭正常启动后台，只有 RTC 定时器唤醒才进入 quick-refresh；5.83" BWR 卖家标注兼容微雪 5.83b V2 时优先选择 `Waveshare 5.83" BWR B V2`；Web 嵌入资源为 12 个 HTML 页面 + 1 个 PNG；用户 SPIFFS 与 fontfs 分区职责分离。
 
-> **项目版本**: v2.3.1（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）
-> **文档版本**: 2.3.5（实机问题修复整理）
-> **最后更新**: 2026-05-09
+建议复刻和二次开发时重点验证 OTA 成功/失败/回滚流程、低功耗唤醒、轮播与天气长时间运行、连续上传抢占场景，以及实际屏幕驱动 IC 和 BUSY 电平。发布新固件前必须在 ESP-IDF 终端重新执行完整 `idf.py build`。
+
+> **项目版本**: v2.3.3（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）
+> **文档版本**: 2.3.8（文档同步与低功耗策略补充）
+> **最后更新**: 2026-06-25
 > **硬件平台**: ESP32-S3 + SSD1619(4.2") / UC8179(5.83")，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板配置入口
 > **软件框架**: ESP-IDF（**最低要求 v5.5.1**；5.5.x 更高发行版通常兼容）
 > **文档状态**: ✅ 完整
@@ -52,10 +54,10 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
 
 | 层级 | 技术 | 版本 |
 |------|------|------|
-| 硬件 | ESP32-S3（常见 N16 无 PSRAM；可选 N16R8） | 16MB Flash；**固件内存策略按无 PSRAM** |
+| 硬件 | ESP32-S3 **N16R8（8MB PSRAM）为主力**；N16 无 PSRAM 为降级兼容 | 16MB Flash；`sdkconfig` 已开 `CONFIG_SPIRAM`，真机确认 8MB PSRAM |
 | 框架 | ESP-IDF | **最低 v5.5.1**（推荐同系列 5.5.x） |
 | 驱动 | SSD1619 / UC8179 | 原厂驱动 |
-| 文件系统 | SPIFFS | 10MB |
+| 文件系统 | SPIFFS | `fontfs` 2.875MB + 用户 `spiffs` 3.875MB |
 | 网络 | WiFi 802.11 b/g/n | SoftAP + STA |
 | 协议 | HTTP/1.1, SPI, I2C | - |
 | 前端 | HTML5/CSS3/JavaScript | 原生实现 |
@@ -70,7 +72,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
 | 待机功耗 | <10μA | 深度睡眠 |
 | 工作电流 | 150-300mA | WiFi+ 刷新 |
 | 续航时间 | 80+ 天 | 60 分钟刷新间隔 |
-| 堆内存空闲 | 因场景波动 | 无 PSRAM 下需控制 JPEG/PNG 峰值；见 `IMPLEMENTATION.md` |
+| 堆内存空闲 | 因场景波动 | N16R8 有 8MB PSRAM 兜底大分配；N16 无 PSRAM 才需控制 JPEG/PNG 峰值，见 `IMPLEMENTATION.md` |
 
 ---
 
@@ -83,7 +85,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
 │                  ESP32-S3-WROOM-1U                   │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
 │  │   CPU Dual  │  │  WiFi/BT    │  │ Flash 16MB  │  │
-│  │   Core 240M │  │  802.11n    │  │ PSRAM 可选  │  │
+│  │   Core 240M │  │  802.11n    │  │ PSRAM 8MB   │  │
 │  └─────────────┘  └─────────────┘  └─────────────┘  │
 │         │                │                 │         │
 │  ┌──────▼────────────────▼─────────────────▼──────┐  │
@@ -116,7 +118,7 @@ ESP32 墨水屏项目是一款基于 ESP32-S3 的低功耗智能显示终端，�
        │          │          │            │
 ┌──────▼──────────▼──────────▼────────────▼───────────┐
 │              HTTP Server (http_app.c)                │
-│         ~60 Routes + Basic Auth + OTA                │
+│          73 Routes + Basic Auth + OTA                │
 └────┬──────────┬──────────┬──────────┬──────────────┘
      │          │          │          │
 ┌────▼───┐ ┌───▼────┐ ┌───▼─────┐ ┌─▼────────────┐
@@ -170,9 +172,9 @@ EPD 驱动刷新
 
 #### ESP32-S3 模组（与 `partitions.csv` 匹配）
 
-**Flash 容量：** 本仓库分区表约需 **16MB** 级 Flash（factory + 双 OTA 各 2MB + 约 10MB SPIFFS）。**仅 8MB Flash（如部分 N8 模组）无法直接用于当前默认分区布局**，需改分区表后再谈兼容。
+**Flash 容量：** 本仓库分区表约需 **16MB** 级 Flash（factory + 双 OTA 各 3MB、128KB coredump、2.875MB fontfs、3.875MB 用户 SPIFFS）。**仅 8MB Flash（如部分 N8 模组）无法直接用于当前默认分区布局**，需改分区表后再谈兼容。
 
-**PSRAM：** 常见硬件为 **N16（无 PSRAM）**；亦可选 **N16R8**。**固件逻辑按无 PSRAM 做内存峰值控制**，带 PSRAM 机型可直接烧录同一固件。
+**PSRAM：** 主力硬件为 **N16R8（8MB PSRAM）**，`sdkconfig.defaults` 已开启 `CONFIG_SPIRAM`，真机启动日志确认 `Found 8MB PSRAM device`，大分配（PNG/JPEG 解码、双平面帧缓冲）可走 PSRAM。固件同时保留**无 PSRAM（N16）下的保守内存峰值控制**作为降级兼容，同一固件可直接烧录两种机型。
 
 **示例模组名：** `ESP32-S3-WROOM-1U-N16`、`ESP32-S3-WROOM-1U-N16R8`（具体以采购料号为准）。
 
@@ -311,7 +313,7 @@ USB (CH340):
 
 ### 4.3 内存管理
 
-**内部 SRAM**（无 PSRAM 机型）：动态堆约数百 KB 量级，JPEG 解码 + 帧缓冲不能长时间叠加大分配；详见 `IMPLEMENTATION.md` 峰值表与优化手段。
+**内部 SRAM**：动态堆约数百 KB 量级。N16R8 上 JPEG 解码 + 帧缓冲等大分配可由 8MB PSRAM 承接；仅在 N16（无 PSRAM）机型上需避免长时间叠加大分配，详见 `IMPLEMENTATION.md` 峰值表与优化手段。
 
 **要点：** 双平面帧缓冲合并一次 `malloc`、`epd_display_fb_free` 早释放、PNG 路径内存高于 JPEG、画廊/转换时注意 SPIFFS 与堆竞争。
 
@@ -319,9 +321,11 @@ USB (CH340):
 
 | 场景 | HTTP | 轮播定时切图 | 天气后台刷新 | 备注 |
 |------|------|--------------|--------------|------|
-| `full_boot` 运行中 | ✅ | ✅ | ✅ | `power_mgr_arm()` 后闲置超时可深睡 |
-| 定时器唤醒 quick 路径 | ❌ | ❌ | ❌ | 仅刷当前模式一帧；依赖上次完整运行缓存的数据 |
+| `full_boot` 运行中 | ✅ | ✅ | ✅ | 正常上电/复位/按键唤醒均保持 AP+STA、mDNS 和 HTTP；低功耗开关只影响睡眠与 WiFi PS 策略 |
+| 定时器唤醒 quick 路径 | ❌ | ❌ | 按模式 | 仅刷当前模式一帧；本地页面跳过 WiFi，天气/额度/需要校时的页面启 STA-only |
 | 按键唤醒 | ✅（完整启动） | ✅ | ✅ | EXT1，非 timer wake |
+
+**WiFi 策略边界**：低功耗按钮关闭时，运行期 WiFi 使用 `WIFI_PS_NONE`；低功耗按钮开启时，正常后台仍在线，运行期 WiFi 使用 `WIFI_PS_MIN_MODEM`。只有 `power_mgr_is_timer_wake()` 为真时才走 quick-refresh 并按模式决定是否启动 STA-only WiFi。
 
 **OTA / 大文件上传**：闲置计时在 **新 TCP 会话建立** 时重置；极慢的传输若超过 `idle_timeout_s`，理论上可能触发深睡，刷机时可暂时关闭深睡或拉大闲置时间。
 
@@ -365,7 +369,7 @@ EPD 初始化失败时，完整启动路径不再直接 `ESP_ERROR_CHECK()` 重�
 - 除已验证微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已移除，旧 NVS 面板编号会回退默认 4.2"
 - SPI DMA 批量传输
 - BUSY 信号处理
-- 全刷 / 快速刷新 / 局部刷新（当前 SSD1619 4.2" 路径启用）
+- 全刷为当前稳定路径；快刷 / 局部刷新入口已从当前固件移除，优先保证三色屏显示稳定性
 
 **关键函数:**
 ```c
@@ -373,10 +377,7 @@ esp_err_t epd_init(void);
 esp_err_t epd_display_from_buffer(const fb_t *fb);          /* 全刷，BWR */
 esp_err_t epd_display_fb_free(fb_t *fb);                    /* 同上，SPI 完成立即释放 fb */
 esp_err_t epd_display_from_file(const char *path);
-esp_err_t epd_display_from_buffer_fast(const fb_t *fb);     /* 全屏快速 BW（4.2"），其它屏回退全刷 */
-esp_err_t epd_display_partial_region(const fb_t *fb,
-                                     int x0, int y0,
-                                     int x1, int y1);        /* 局部刷新（当前仅 4.2"） */
+esp_err_t epd_repair_ghosting(int cycles, int pattern);     /* 残影修复：普通翻转 / 图案 / 强力组合 */
 esp_err_t epd_set_panel(epd_panel_t panel);
 epd_panel_t epd_get_panel(void);
 ```
@@ -385,21 +386,16 @@ epd_panel_t epd_get_panel(void);
 1. DMA 4KB 分块传输（`EPD_FILL_CHUNK`），非 DMA-capable 源用 bounce buffer
 2. BUSY 极性自动检测 + NVS `epd/busy_idle` 覆盖（4.2" 默认 0、5.83" 默认 1）
 3. 多面板参数自动适配（`s_specs[]` 表）；`/panel_config` 当前只保存 NVS 并提示重启生效，避免热切换期间旧 framebuffer/raw 文件按新尺寸读取
-4. ATC/Solum 移植参考 atc1441/Tag_FW_nRF52811 的控制器序列；EPD-nRF5 参考入口按本地 `C:\Users\43060\Downloads\EPD\EPD` 的命令模型重写接入；两类实验入口只保留 ESP32 当前硬件可表达的 SPI/BUSY/帧缓冲路径，UC8159 缺少源项目外部 EPD EEPROM/3 线回读脚位，使用默认 VCOM/PLL，需实机验证
-5. 三档刷新：全刷 BWR ~18.8s / 全屏快速 BW（4.2"）~1-2s / 区域局部
+4. ATC/Solum 移植参考 atc1441/Tag_FW_nRF52811 的控制器序列；EPD-nRF5 参考入口按参考工程的控制器命令模型重写接入；两类实验入口只保留 ESP32 当前硬件可表达的 SPI/BUSY/帧缓冲路径，UC8159 缺少源项目外部 EPD EEPROM/3 线回读脚位，使用默认 VCOM/PLL，需实机验证
+5. 刷新策略：当前固件只暴露稳定全刷路径。4.2" SSD1619/SSD1683 与 5.83" UC8179 的局刷/快刷实验路径均不作为上线功能开放。
 6. **局部刷新策略**：
-   - 4.2" SSD1619：RAM 窗口（0x44/0x45 字节列范围、0x4E/0x4F 光标）+ 快速 LUT
-     （BW only），区域内红色平面同步清零；耗时 ~1.0-1.5s。
-   - 5.83" UC8179：PTL_IN/PTL_OUT 实机验证仍接近全刷（~19s）且会导致后续页面异常，
-     因此当前禁用局刷，`epd_display_partial_region()` 返回 `ESP_ERR_NOT_SUPPORTED`。
-7. **残影管理**：`EPD_PARTIAL_MAX_STREAK = 10`，调用方累计 10 次局部后应主动安排一次
-   全刷消残影；时钟模块已自动处理。整点 / 日期跳变也强制全刷以更新下半屏内容。
-8. **坐标对齐**：`epd_display_partial_region()` 自动把 X 向 8 像素边界外扩（屏控字节寻址
-   要求），fb 尺寸不匹配返回 `ESP_ERR_INVALID_ARG`。
+   - 4.2" SSD1619/SSD1683 与 5.83" UC8179 都验证过局刷或快刷实验路径，但三色屏画面稳定性不达上线要求。
+   - 当前固件不暴露快刷 / 局刷 HTTP 入口，也不提供局部刷新 API；时钟等自动页面统一走稳定全刷。
+7. **残影管理**：配置页提供手动“刷屏修复”，支持普通全屏翻转、棋盘格/条纹图案和强力组合，轮数 1/2/3/5/8。
 
 #### 5.1.1 时钟任务事件循环（`clock_task` in `clock_display.c`）
 
-时钟模块是局部刷新主消费者，循环逻辑直接决定每分钟刷屏耗时与是否出现重复全刷。
+时钟模块当前统一走稳定全刷，事件循环主要决定何时需要刷新以及如何避免重复全刷。
 
 **核心数据**：
 - `s_state` 渲染状态镜像（`s_state_mux` 自旋锁保护），记录上次成功渲染时的
@@ -423,10 +419,10 @@ epd_panel_t epd_get_panel(void);
    │
    ▼
 任意"涉及下半屏"信号 → force_full = true
-仅 minute_changed → force_full 维持原值（默认 false → 4.2" partial；5.83" full）
+仅 minute_changed → 按 `CLOCK_FULL_REFRESH_STEP_MIN` 判断是否到达全刷间隔
    │
    ▼
-render_clock(!force_full)（成功后内部更新 s_state）
+render_clock()（成功后内部更新 s_state）
 ```
 
 **关键去重点**：
@@ -438,8 +434,8 @@ render_clock(!force_full)（成功后内部更新 s_state）
    任务唤醒后通过 `s_state` 已是最新而跳过冗余刷屏。
 
 **渲染日志**：每次决定渲染前打印
-`tick HH:MM -> render(partial=N) min=X hr=X day=X cfg=X sw_vis=X wx=X ff=X`，
-便于定位"为什么是 partial / 为什么强制 full"。
+`tick HH:MM -> render clock refresh=full min=X full_step=X hr=X day=X cfg=X sw_vis=X wx=X ff=X`，
+便于定位"为什么本分钟触发刷新"。
 
 ### 5.2 图片转换模块 (`image_convert.c`)
 
@@ -502,15 +498,15 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 
 ### 5.4 HTTP 服务器模块 (`http_app.c` + `http_gallery.c` + `http_features.c` + `http_canvas.c`)
 
-**路由数量:** 63 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
+**路由数量:** 73 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
 **认证方式:** HTTP Basic Auth
 **最大连接:** 5 个并发
 
-**路由分组（共 63 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
+**路由分组（共 73 条；以下仅作检索，**勿将旧版文档中的分组条数相加验算**）：**
 
 | 分组 | 路径示例 |
 |------|-----------|
-| 页面与状态 | `GET /` `/config` `/favicon.ico` `/status` |
+| 页面与状态 | `GET /` `/config` `/gallery` `/weather` `/clock` `/calendar` `/message` `/codex` `/favicon.ico` `/miaooaim-mark.png` `/status` |
 | 画廊 | `POST /upload` · `GET /images` `/image` · `POST /show` `/delete_image` `/delete` |
 | 网络与面板 | `GET /wifi_status` `/scan` · `POST /wifi_connect` `/wifi_forget` · `GET|POST /panel_config` |
 | 轮播 / 认证 / 电源 | `GET|POST /slideshow` · `GET|POST /auth_config` · `GET|POST /power_config` |
@@ -528,8 +524,8 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 - 位图绘制
 
 **字库:**
-- ASCII: 95 字符 (8×16)
-- 中文：81 字符 (16×16, Unifont)
+- 紧凑内置字库：ASCII 95 字符 (8×16) + 中文 6814 字符 (16×16)，由 `tools/gen_font.py` 从 `tools/fonts/noto/LXGW975YuanSC-400W.ttf` 生成。
+- 外置 `fontfs` 字库：16/24/32px MEF，存放在独立 `fontfs` 分区，来源同为 OFL 开源字体。
 - 扩展：常用汉字 3000+
 
 **渲染原语:**
@@ -969,11 +965,20 @@ idf.py -p COM3 monitor
 nvs,         data, nvs,      0x9000,    0xC000      # 48KB（容纳 PHY 校准 + 多个模块的配置 blob）
 otadata,     data, ota,      0x15000,   0x2000      # 8KB
 phy_init,    data, phy,      0x17000,   0x1000      # 4KB
-factory,     app,  factory,  0x20000,   0x200000    # 2MB
-ota_0,       app,  ota_0,    0x220000,  0x200000    # 2MB
-ota_1,       app,  ota_1,    0x420000,  0x200000    # 2MB
-spiffs,      data, spiffs,   0x620000,  0x9E0000    # ~10MB
+factory,     app,  factory,  0x20000,   0x300000    # 3MB
+ota_0,       app,  ota_0,    0x320000,  0x300000    # 3MB
+ota_1,       app,  ota_1,    0x620000,  0x300000    # 3MB
+coredump,    data, coredump, 0x920000,  0x20000     # 128KB
+fontfs,      data, spiffs,   0x940000,  0x2E0000    # 2.875MB
+spiffs,      data, spiffs,   0xC20000,  0x3E0000    # 3.875MB
 ```
+
+设计原则：
+- app 三槽均为 3MB。当前清理后未保留 build 目录，具体 app 体积以发布前重新 `idf.py build` 的 `size` 输出为准。
+- `coredump` 保存 panic / watchdog 崩溃转储，便于现场设备复盘；配置在 `sdkconfig.defaults` 中启用 `CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH`。
+- `fontfs` 独立保存内置 MEF 字库，和用户图片/画布文件分离，避免字体资源挤占用户文件区。
+- 用户 `spiffs` 保持在 `0xC20000`，减少分区调整时对已有用户数据的影响。
+- 分区表或 `fontfs` 偏移变化后，普通 app OTA 不能完整迁移资源；发布/出厂应同时烧录 `partition_table.bin` 与 `fontfs.bin`，或使用完整 16MB 合并固件。
 
 ### 8.4 OTA 升级
 
@@ -1133,8 +1138,8 @@ idf.py -p COM3 monitor
 
 ---
 
-**文档版本:** 2.1
-**最后更新:** 2026-04-10
+**文档版本:** 2.3.8
+**最后更新:** 2026-06-25
 **维护者:** 项目维护者
 
 ---

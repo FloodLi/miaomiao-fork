@@ -32,8 +32,16 @@ __pycache__/
 *.log
 .tmp/
 
+# Generated assets / scratch outputs (logo previews, cutouts, PPT material,
+# bundled python deps, etc.) - not part of the firmware source.
+output/
+outputs/
+.playwright-cli/
+$dst/
+
 # Local font cache used only when regenerating font_data.h
 tools/fonts/
+spiffs_image/
 
 # Local reference clones (not part of firmware)
 otto-robot/

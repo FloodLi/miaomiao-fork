@@ -15,7 +15,7 @@ static esp_vfs_spiffs_conf_t spiffs_conf(void)
 {
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
-        .partition_label = NULL,
+        .partition_label = "spiffs",
         .max_files = 16,
         .format_if_mount_failed = false,
     };
@@ -45,38 +45,15 @@ esp_err_t spiffs_mount_init(void)
 
     size_t total = 0;
     size_t used = 0;
-    ret = esp_spiffs_info(NULL, &total, &used);
+    ret = esp_spiffs_info(conf.partition_label, &total, &used);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "SPIFFS mounted: total=%u, used=%u", (unsigned)total, (unsigned)used);
     }
-
-    /* Never format here: a full filesystem can fail this probe too. */
-    bool fs_ok = false;
-    FILE *tf = fopen("/spiffs/_test.tmp", "wb");
-    if (tf) {
-        const char probe[] = "SPIFFS_OK";
-        bool wrote = (fwrite(probe, 1, sizeof(probe), tf) == sizeof(probe));
-        fclose(tf);
-        tf = wrote ? fopen("/spiffs/_test.tmp", "rb") : NULL;
-        if (tf) {
-            char rb[16] = {0};
-            fread(rb, 1, sizeof(probe), tf);
-            fclose(tf);
-            fs_ok = (memcmp(rb, probe, sizeof(probe)) == 0);
-        }
-        remove("/spiffs/_test.tmp");
-    }
-
-    if (fs_ok)
-        ESP_LOGI(TAG, "SPIFFS write/read test passed");
-    else
-        ESP_LOGW(TAG, "SPIFFS write/read test failed; keeping existing filesystem");
 
     struct stat st;
     if (stat("/spiffs/images", &st) != 0) {
         mkdir("/spiffs/images", 0755);
     }
-
     return ESP_OK;
 }
 
@@ -85,7 +62,7 @@ esp_err_t spiffs_mount_retry(void)
     if (s_spiffs_mounted)
         return ESP_OK;
 
-    esp_vfs_spiffs_unregister(NULL);
+    esp_vfs_spiffs_unregister(spiffs_conf().partition_label);
     return spiffs_mount_init();
 }
 

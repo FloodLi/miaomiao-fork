@@ -17,6 +17,12 @@ typedef struct {
     uint8_t authmode;   /* wifi_auth_mode_t */
 } wifi_mgr_ap_record_t;
 
+#define WIFI_MGR_MAX_CREDENTIALS 5
+
+typedef struct {
+    char ssid[33];
+} wifi_mgr_saved_cred_t;
+
 /**
  * Initialize WiFi subsystem.
  * Reads stored credentials from NVS; if found, attempts STA connection.
@@ -24,6 +30,19 @@ typedef struct {
  * AP SSID/password used for the fallback/provisioning hotspot.
  */
 esp_err_t wifi_manager_init(const char *ap_ssid, const char *ap_pass);
+
+/**
+ * Initialize WiFi in STA-only mode using stored credentials.
+ * Intended for low-power timer wake paths: no provisioning AP is started.
+ */
+esp_err_t wifi_manager_init_sta_only(void);
+
+/**
+ * Set WiFi power-save policy without stopping AP/STA.
+ * enabled=false uses WIFI_PS_NONE for maximum stability and speed.
+ * enabled=true uses WIFI_PS_MIN_MODEM for lower power while WiFi stays online.
+ */
+esp_err_t wifi_manager_set_power_save_enabled(bool enabled);
 
 /** 当前 SoftAP 广播的 SSID（与 device_identity / 传入 init 一致） */
 const char *wifi_manager_get_ap_ssid(void);
@@ -42,6 +61,12 @@ const char *wifi_manager_get_sta_ip(void);
 
 /** Get the SSID we are connected to (or last attempted). */
 const char *wifi_manager_get_sta_ssid(void);
+
+/**
+ * Return saved WiFi SSIDs without passwords. The device tries these credentials
+ * in order on boot, STA-only wake, and background reconnect.
+ */
+int wifi_manager_get_saved_credentials(wifi_mgr_saved_cred_t *out, int max_records);
 
 /**
  * Scan nearby APs. Caller provides array + capacity.
