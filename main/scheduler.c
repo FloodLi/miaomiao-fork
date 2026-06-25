@@ -22,6 +22,7 @@
 #include "weather.h"
 #include "fb_render.h"
 #include "time_sync.h"
+#include "ui_theme.h"
 
 static const char *TAG        = "scheduler";
 static const char *IMAGES_DIR = "/spiffs/images";
@@ -196,7 +197,7 @@ static void show_next_image(void)
                 int W = epd_width();
                 int tx = W - 8 * 2 * 5 - 8;
                 fb_fill_rect(fb, tx - 4, 2, 8 * 2 * 5 + 12, 22, COLOR_WHITE);
-                fb_utf8_scaled(fb, tx, 4, ts, COLOR_BLACK, 2);
+                ui_draw_fixed_text(fb, tx, 4, ts, COLOR_BLACK, 2);
             }
             fb_export(fb, raw_path);
             fb_destroy(fb);

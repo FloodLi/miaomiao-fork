@@ -2467,16 +2467,16 @@ async function testEpdRed(){
 }
 
 async function testFont(){
-  if(!confirm('将刷出一张字库预览页，用来判断外置 16/24/32px 常用字库是否生效。继续？')) return;
+  if(!confirm('将刷出一张字库预览页，用来判断内置 16px 清晰小字和外置 24/32px 常用字库是否生效。继续？')) return;
   pnLog('正在显示字库预览页…请等待屏幕刷新完成。');
   try{
     const r=await fetch('/font_test',epdFetchOpts({method:'POST'}));
     const j=await r.json();
     if(j.ok){
-      const f16=j.font16?'16px OK':'16px 缺失';
+      const f16=j.font16Builtin?'16px 内置':'16px 缺失';
       const f24=j.font24?'24px OK':'24px 缺失';
       const f32=j.font32?'32px OK':'32px 缺失';
-      pnLog('字库预览页已显示：'+f16+'，'+f24+'，'+f32+'。屏幕上会分别显示小字和 24/32px 样张。','ok');
+      pnLog('字库预览页已显示：'+f16+'，'+f24+'，'+f32+'。屏幕上会显示内置小字和 24/32px 外置样张。','ok');
     }else{
       pnLog('字库预览失败','bad');
     }

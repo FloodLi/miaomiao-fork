@@ -2,6 +2,8 @@
 
 本仓库主体代码以 `LICENSE` 中的 PolyForm Noncommercial License 1.0.0 发布。仓库中同时包含或使用若干第三方组件、字体和工具链资源，其授权条款以各自原始许可证为准。本文件用于帮助复刻用户和二次开发者快速识别这些外部来源。
 
+再分发源码、修改版本或固件时，应保留 `LICENSE` 顶部的 `Required Notice`、Web 管理端页面底部的项目署名和 Gitee 源码仓库链接。若发布修改版，应清楚标注修改来源和修改内容，不得误导用户认为其为官方原版。
+
 ## ESP-IDF 与组件
 
 | 项目 | 用途 | 来源 / 说明 |
@@ -27,8 +29,10 @@
 |------|------|------|
 | `LXGW975YuanSC-400W.ttf` | 中文、英文、数字和常用符号主字形 | SIL Open Font License 1.1 |
 | `NotoSansMono-Regular.ttf` | 部分符号/等宽字符兜底 | SIL Open Font License 1.1 |
+| GNU Unifont 16.0.02 | 4.2 寸欢迎页和日历页专用 1bit 小字号位图 | GNU Unifont License / GPLv2+ with font embedding exception |
 
 仓库不直接提交大体积 TTF 缓存文件；构建脚本会按需下载到 ignored 目录 `tools/fonts/noto/`，再生成 `main/font_data.h` 和 `fontfs` 使用的 MEF 位图字库。
+`tools/unifont.hex.gz` 用于生成 `main/calendar_font_data.h` 的小范围字形表，避免 4.2 寸欢迎页、普通日历和带天气日历在小字号下出现 TTF 抗锯齿转 1bit 后发虚。
 
 ## Web 端字体渲染
 

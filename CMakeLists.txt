@@ -15,7 +15,6 @@ project(epaper_uploader)
 set(FONTFS_DIR "${PROJECT_DIR}/spiffs_image")
 set(OPEN_FONT_DIR "${PROJECT_DIR}/tools/fonts/noto")
 set(OPEN_FONT_READY "${OPEN_FONT_DIR}/.fonts-ready")
-set(FONTFS_FONT16 "${FONTFS_DIR}/fonts/cjk16.mef")
 set(FONTFS_FONT24 "${FONTFS_DIR}/fonts/cjk24.mef")
 set(FONTFS_FONT32 "${FONTFS_DIR}/fonts/cjk32.mef")
 idf_build_get_property(python PYTHON)
@@ -29,18 +28,10 @@ add_custom_command(
     COMMENT "Fetching OFL-licensed fonts for bitmap generation"
 )
 add_custom_command(
-    OUTPUT "${FONTFS_FONT16}" "${FONTFS_FONT24}" "${FONTFS_FONT32}"
+    OUTPUT "${FONTFS_FONT24}" "${FONTFS_FONT32}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${FONTFS_DIR}/fonts"
+    COMMAND ${CMAKE_COMMAND} -E rm -f "${FONTFS_DIR}/fonts/cjk16.mef"
     COMMAND ${CMAKE_COMMAND} -E rm -f "${FONTFS_DIR}/fonts/cjk48.mef"
-    COMMAND ${python} "${PROJECT_DIR}/tools/gen_ext_font.py"
-            --size 16
-            --out "${FONTFS_FONT16}"
-            --set gb2312
-            --require-open-fonts
-            --threshold 96
-            --cjk-stroke 0
-            --cjk-layout full
-            --quiet
     COMMAND ${python} "${PROJECT_DIR}/tools/gen_ext_font.py"
             --size 24
             --out "${FONTFS_FONT24}"
@@ -63,10 +54,9 @@ add_custom_command(
         "${PROJECT_DIR}/tools/gen_font.py"
         "${PROJECT_DIR}/tools/font_extra_chars.txt"
     WORKING_DIRECTORY "${PROJECT_DIR}"
-    COMMENT "Generating built-in 16/24/32px LXGW 975 Yuan CJK fonts for fontfs"
+    COMMENT "Generating 24/32px LXGW 975 Yuan CJK fonts for fontfs"
 )
 add_custom_target(fontfs_font DEPENDS
-    "${FONTFS_FONT16}"
     "${FONTFS_FONT24}"
     "${FONTFS_FONT32}"
 )

@@ -39,6 +39,30 @@
 
 static const char *TAG = "app";
 
+static int welcome_draw_text(fb_t *fb, int x, int y, const char *text,
+                             fb_color_t color, int scale)
+{
+    return ui_draw_fixed_text(fb, x, y, text, color, scale);
+}
+
+static int welcome_draw_text_maxw(fb_t *fb, int x, int y, const char *text,
+                                  fb_color_t color, int scale, int max_w)
+{
+    return ui_draw_fixed_text_maxw(fb, x, y, text, color, scale, max_w);
+}
+
+static void welcome_draw_section_label(fb_t *fb, int x, int y,
+                                       const char *label, fb_color_t color,
+                                       int scale)
+{
+    ui_draw_section_label(fb, x, y, label, color, scale);
+}
+
+static void welcome_draw_footer(fb_t *fb, const char *left, const char *right)
+{
+    ui_draw_footer(fb, left, right);
+}
+
 static int normalize_saved_mode(int saved_mode, int mode_count, bool *write_back)
 {
     if (write_back)
@@ -85,8 +109,8 @@ static void render_welcome_screen(void)
         const int title_max_w = battery_right - battery_w - 10 * sc - title_x;
         fb_fill_rect(fb, title_x - 6 * sc, title_y + 3, 2 * sc,
                      title_px - 8, COLOR_RED);
-        fb_utf8_px_maxw(fb, title_x, title_y, title, COLOR_BLACK,
-                        title_px, title_max_w);
+        ui_draw_text_px_maxw(fb, title_x, title_y, title, COLOR_BLACK,
+                             title_px, title_max_w);
         ui_draw_dotted_hline(fb, 12 * sc, title_y + title_px + 8 * sc,
                              W - 24 * sc, COLOR_BLACK, 6);
     }
@@ -104,9 +128,9 @@ static void render_welcome_screen(void)
     int right_x = pad + card_w + card_gap + 10 * sc;
     int text_w = card_w - 20 * sc;
 
-    ui_draw_section_label(fb, left_x, y,
-                          "\xe7\xbd\x91\xe7\xbb\x9c\xe4\xbf\xa1\xe6\x81\xaf",
-                          COLOR_RED, body_sc);
+    welcome_draw_section_label(fb, left_x, y,
+                               "\xe7\xbd\x91\xe7\xbb\x9c\xe4\xbf\xa1\xe6\x81\xaf",
+                               COLOR_RED, body_sc);
     y += ln + gap;
 
     bool sta = wifi_manager_sta_connected();
@@ -114,78 +138,78 @@ static void render_welcome_screen(void)
         char buf[80];
         snprintf(buf, sizeof(buf), "STA:%s",
                  wifi_manager_get_sta_ssid());
-        fb_utf8_scaled_maxw(fb, left_x, y, buf, COLOR_BLACK, body_sc, text_w);
+        welcome_draw_text_maxw(fb, left_x, y, buf, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
         snprintf(buf, sizeof(buf), "IP:%s",
                  wifi_manager_get_sta_ip());
-        fb_utf8_scaled_maxw(fb, left_x, y, buf, COLOR_BLACK, body_sc, text_w);
+        welcome_draw_text_maxw(fb, left_x, y, buf, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
     } else {
-        fb_utf8_scaled(fb, left_x, y,
-                       "STA:\xe7\xa6\xbb\xe7\xba\xbf",
-                       COLOR_BLACK, body_sc);
+        welcome_draw_text(fb, left_x, y,
+                          "STA:\xe7\xa6\xbb\xe7\xba\xbf",
+                          COLOR_BLACK, body_sc);
         y += ln + gap;
     }
     {
         char line[80];
         snprintf(line, sizeof(line), "AP:%s",
                  device_identity_get_ap_ssid());
-        fb_utf8_scaled_maxw(fb, left_x, y, line, COLOR_BLACK, body_sc, text_w);
+        welcome_draw_text_maxw(fb, left_x, y, line, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
     }
     {
         char line[80];
         snprintf(line, sizeof(line), "PW:%s",
                  device_identity_get_ap_password());
-        fb_utf8_scaled_maxw(fb, left_x, y, line, COLOR_BLACK, body_sc, text_w);
+        welcome_draw_text_maxw(fb, left_x, y, line, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
     }
-    fb_utf8_scaled(fb, left_x, y,
-                   "WEB:192.168.4.1",
-                   COLOR_BLACK, body_sc);
+    welcome_draw_text(fb, left_x, y,
+                      "WEB:192.168.4.1",
+                      COLOR_BLACK, body_sc);
     y += ln + gap;
 
     {
         char line[80];
         snprintf(line, sizeof(line), "MD:%s.local",
                  device_identity_get_mdns_hostname());
-        fb_utf8_scaled_maxw(fb, left_x, y, line, COLOR_BLACK, body_sc, text_w);
+        welcome_draw_text_maxw(fb, left_x, y, line, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
     }
 
     battery_mon_draw_on_fb(fb, left_x, y, COLOR_BLACK, body_sc);
 
     y = top_y + 12 * sc;
-    ui_draw_section_label(fb, right_x, y,
-                          "\xe4\xbd\xbf\xe7\x94\xa8\xe6\xad\xa5\xe9\xaa\xa4",
-                          COLOR_RED, body_sc);
+    welcome_draw_section_label(fb, right_x, y,
+                               "\xe4\xbd\xbf\xe7\x94\xa8\xe6\xad\xa5\xe9\xaa\xa4",
+                               COLOR_RED, body_sc);
     y += ln + gap;
 
     {
         char line[88];
         snprintf(line, sizeof(line),
                  "1.\xe8\xbf\x9e\xe6\x8e\xa5\xe5\xb7\xa6\xe4\xbe\xa7 AP");
-        fb_utf8_scaled_maxw(fb, right_x, y, line, COLOR_BLACK, body_sc, text_w);
+        welcome_draw_text_maxw(fb, right_x, y, line, COLOR_BLACK, body_sc, text_w);
     }
     y += ln + gap;
-    fb_utf8_scaled(fb, right_x, y,
-                   "2.\xe6\x89\x93\xe5\xbc\x80 WEB",
-                   COLOR_BLACK, body_sc);
+    welcome_draw_text(fb, right_x, y,
+                      "2.\xe6\x89\x93\xe5\xbc\x80 WEB",
+                      COLOR_BLACK, body_sc);
     y += ln + gap;
-    fb_utf8_scaled(fb, right_x, y,
-                   "3.\xe9\x85\x8d\xe7\xbd\xae\xe5\xae\xb6\xe5\xba\xad WiFi",
-                   COLOR_BLACK, body_sc);
+    welcome_draw_text(fb, right_x, y,
+                      "3.\xe9\x85\x8d\xe7\xbd\xae\xe5\xae\xb6\xe5\xba\xad WiFi",
+                      COLOR_BLACK, body_sc);
     y += ln + gap;
-    fb_utf8_scaled(fb, right_x, y,
-                   "4.\xe8\xbf\x94\xe5\x9b\x9e MD.local",
-                   COLOR_BLACK, body_sc);
+    welcome_draw_text(fb, right_x, y,
+                      "4.\xe8\xbf\x94\xe5\x9b\x9e MD.local",
+                      COLOR_BLACK, body_sc);
     y += ln + gap;
     y += gap;
     ui_draw_dotted_hline(fb, right_x, y, text_w, COLOR_BLACK, 6);
     y += gap * 2;
-    fb_utf8_scaled_maxw(fb, right_x, y,
-                        "\xe9\x94\xae: \xe6\xa8\xa1\xe5\xbc\x8f / \xe4\xb8\x8a / \xe4\xb8\x8b",
-                        COLOR_RED, body_sc, text_w);
+    welcome_draw_text_maxw(fb, right_x, y,
+                           "\xe9\x94\xae: \xe6\xa8\xa1\xe5\xbc\x8f / \xe4\xb8\x8a / \xe4\xb8\x8b",
+                           COLOR_RED, body_sc, text_w);
 
     {
         const esp_app_desc_t *app = esp_app_get_description();
@@ -193,7 +217,7 @@ static void render_welcome_screen(void)
         snprintf(info, sizeof(info), "v%s | %dx%d | %s",
                  app->version, W, H,
                  epd_has_red() ? "BW+Red" : "BW");
-        ui_draw_footer(fb, "SETUP", info);
+        welcome_draw_footer(fb, "SETUP", info);
     }
 
     epd_display_fb_free(fb);
@@ -222,16 +246,17 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     fb_fill_rect(fb, 12, header_y + 1, 2, 12, COLOR_RED);
-    fb_utf8_scaled_maxw(fb, 20, header_y, "文件系统恢复",
-                        COLOR_BLACK, 1, W / 2 - 28);
+    ui_draw_fixed_text_maxw(fb, 20, header_y, "文件系统恢复",
+                            COLOR_BLACK, 1, W / 2 - 28);
     {
         int battery_w = ui_draw_battery_badge(fb, W - 14, header_y);
         int tag_w = 6 * 8;
         int tag_x = W - 14 - battery_w - 8 - tag_w;
         if (tag_x < W / 2)
             tag_x = W / 2;
-        fb_utf8_scaled_maxw(fb, tag_x, header_y + 1, "SPIFFS",
-                            COLOR_BLACK, 1, W - 14 - battery_w - 8 - tag_x);
+        ui_draw_fixed_text_maxw(fb, tag_x, header_y + 1, "SPIFFS",
+                                COLOR_BLACK, 1,
+                                W - 14 - battery_w - 8 - tag_x);
     }
     ui_draw_dotted_hline(fb, 12, divider_y, W - 24, COLOR_BLACK, 6);
 
@@ -240,28 +265,31 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
     int text_w = W - tx - pad - 8;
     int y = card_y + 12;
 
-    fb_utf8_scaled(fb, tx, y, "文件系统挂载失败", COLOR_BLACK, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "文件系统挂载失败", COLOR_BLACK, body_sc);
     y += ln + gap;
-    fb_utf8_scaled(fb, tx, y, "用户数据未被格式化", COLOR_RED, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "用户数据未被格式化", COLOR_RED, body_sc);
     y += ln + gap;
 
     {
         char line[96];
         snprintf(line, sizeof(line), "热点: %s", device_identity_get_ap_ssid());
-        fb_utf8_scaled_maxw(fb, tx, y, line, COLOR_BLACK, body_sc, text_w);
+        ui_draw_fixed_text_maxw(fb, tx, y, line, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
         snprintf(line, sizeof(line), "密码: %s", device_identity_get_ap_password());
-        fb_utf8_scaled_maxw(fb, tx, y, line, COLOR_BLACK, body_sc, text_w);
+        ui_draw_fixed_text_maxw(fb, tx, y, line, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
     }
 
-    fb_utf8_scaled(fb, tx, y, "打开网页: 192.168.4.1/config", COLOR_BLACK, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "打开网页: 192.168.4.1/config",
+                       COLOR_BLACK, body_sc);
     y += ln + gap;
-    fb_utf8_scaled(fb, tx, y, "1.先点重试文件系统", COLOR_BLACK, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "1.先点重试文件系统",
+                       COLOR_BLACK, body_sc);
     y += ln + gap;
-    fb_utf8_scaled(fb, tx, y, "2.确认不要图片后再格式化", COLOR_BLACK, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "2.确认不要图片后再格式化",
+                       COLOR_BLACK, body_sc);
     y += ln + gap;
-    fb_utf8_scaled(fb, tx, y, "确认词: FORMAT_SPIFFS", COLOR_RED, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "确认词: FORMAT_SPIFFS", COLOR_RED, body_sc);
     y += ln + gap;
 
     {
@@ -270,9 +298,10 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
         y += gap * 2;
         snprintf(info, sizeof(info), "\xe9\x94\x99\xe8\xaf\xaf:%s",
                  esp_err_to_name(spiffs_err));
-        fb_utf8_scaled_maxw(fb, tx, y, info, COLOR_BLACK, body_sc, text_w);
+        ui_draw_fixed_text_maxw(fb, tx, y, info, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
-        fb_utf8_scaled_maxw(fb, tx, y, "状态: 等待网页恢复", COLOR_BLACK, body_sc, text_w);
+        ui_draw_fixed_text_maxw(fb, tx, y, "状态: 等待网页恢复",
+                                COLOR_BLACK, body_sc, text_w);
     }
 
     return epd_display_fb_free(fb);

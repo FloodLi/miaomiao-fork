@@ -43,6 +43,7 @@
 #include "codex_quota.h"
 #include "spiffs_mount.h"
 #include "battery_mon.h"
+#include "ui_theme.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
@@ -1496,6 +1497,14 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
     font_ext_refresh();
     font_ext_info_t fonts[FONT_EXT_COUNT] = {0};
     font_ext_get_info(fonts);
+    const font_ext_info_t *font24 = NULL;
+    const font_ext_info_t *font32 = NULL;
+    for (int i = 0; i < FONT_EXT_COUNT; i++) {
+        if (fonts[i].px == 24)
+            font24 = &fonts[i];
+        else if (fonts[i].px == 32)
+            font32 = &fonts[i];
+    }
 
     fb_t *fb = fb_create();
     if (!fb) {
@@ -1510,18 +1519,17 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
     int y = (H >= 300) ? 12 : 6;
 
     fb_rect(fb, 0, 0, W, H, COLOR_BLACK);
-    fb_utf8_px(fb, m, y, "字库预览", COLOR_BLACK, (W >= 360) ? 30 : 24);
+    ui_draw_text_px(fb, m, y, "字库预览", COLOR_BLACK,
+                    (W >= 360) ? 30 : 24);
     y += (W >= 360) ? 31 : 26;
 
     char line[128];
-    snprintf(line, sizeof(line), "16:%s %luK 24:%s %luK 32:%s %luK",
-             fonts[0].present ? "OK" : "--",
-             fonts[0].present ? (unsigned long)(fonts[0].file_size / 1024) : 0UL,
-             fonts[1].present ? "OK" : "--",
-             fonts[1].present ? (unsigned long)(fonts[1].file_size / 1024) : 0UL,
-             fonts[2].present ? "OK" : "--",
-             fonts[2].present ? (unsigned long)(fonts[2].file_size / 1024) : 0UL);
-    fb_utf8_px_maxw(fb, m, y, line, COLOR_BLACK, 16, W - 2 * m);
+    snprintf(line, sizeof(line), "16:BUILTIN 24:%s %luK 32:%s %luK",
+             (font24 && font24->present) ? "OK" : "--",
+             (font24 && font24->present) ? (unsigned long)(font24->file_size / 1024) : 0UL,
+             (font32 && font32->present) ? "OK" : "--",
+             (font32 && font32->present) ? (unsigned long)(font32->file_size / 1024) : 0UL);
+    ui_draw_text_px_maxw(fb, m, y, line, COLOR_BLACK, 16, W - 2 * m);
     y += 18;
 
     fb_hline(fb, m, y, W - 2 * m, COLOR_BLACK);
@@ -1531,27 +1539,27 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
     const int sample_x = m + label_w;
     const int sample_w = W - sample_x - m;
 
-    fb_utf8_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
+    ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
     fb_utf8_px_maxw(fb, sample_x, y, "日历 天气 待办", COLOR_BLACK, 24, sample_w);
     y += 28;
-    fb_utf8_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
+    ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
     fb_utf8_px_maxw(fb, sample_x, y, "0123456789 23:59", COLOR_BLACK, 24, sample_w);
     y += 28;
-    fb_utf8_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
+    ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
     fb_utf8_px_maxw(fb, sample_x, y, "℃ ￥ ± % / () !?", COLOR_BLACK, 24, sample_w);
     y += 32;
 
     fb_hline(fb, m, y - 5, W - 2 * m, COLOR_BLACK);
-    fb_utf8_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
+    ui_draw_text_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
     fb_utf8_px_maxw(fb, sample_x, y, "2026-06-21", COLOR_BLACK, 32, sample_w);
     y += 38;
-    fb_utf8_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
+    ui_draw_text_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
     fb_utf8_px_maxw(fb, sample_x, y, "25℃ 88% ￥9.9", COLOR_BLACK, 32, sample_w);
     y += 40;
 
     fb_hline(fb, m, y - 5, W - 2 * m, COLOR_BLACK);
     if (H - y > 34) {
-        fb_utf8_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
+        ui_draw_text_px(fb, m, y + 7, "32px", COLOR_BLACK, 16);
         fb_utf8_px_maxw(fb, sample_x, y, "12:34 98%", COLOR_BLACK, 32, sample_w);
     }
 
@@ -1565,10 +1573,9 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
 
     char json[192];
     snprintf(json, sizeof(json),
-             "{\"ok\":true,\"font16\":%s,\"font24\":%s,\"font32\":%s}",
-             fonts[0].present ? "true" : "false",
-             fonts[1].present ? "true" : "false",
-             fonts[2].present ? "true" : "false");
+             "{\"ok\":true,\"font16Builtin\":true,\"font24\":%s,\"font32\":%s}",
+             (font24 && font24->present) ? "true" : "false",
+             (font32 && font32->present) ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;

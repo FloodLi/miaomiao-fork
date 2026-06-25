@@ -882,6 +882,20 @@ int fb_utf8_scaled_builtin_maxw(fb_t *fb, int x, int y, const char *s,
                                            false, false);
 }
 
+int fb_utf8_scaled_builtin_width(const char *s, int scale)
+{
+    if (!s)
+        return 0;
+    if (scale < 1)
+        scale = 1;
+    int w = 0;
+    while (*s) {
+        int cp = normalize_compat_ascii(decode_utf8(&s));
+        w += (cp < 0x80) ? (8 * scale) : (16 * scale);
+    }
+    return w;
+}
+
 int fb_utf8_scaled_width(const char *s, int scale)
 {
     return fb_utf8_scaled_width_internal(s, scale, false);
@@ -921,10 +935,10 @@ int fb_utf8_scaled_styled_maxw(fb_t *fb, int x, int y, const char *s,
 static int fb_text_glyph_advance_px(int cp, int target_px)
 {
     int adv = 0;
-    if (target_px >= 16)
+    if (target_px >= 24)
         (void)font_ext_probe_glyph_px((uint32_t)cp, target_px, &adv);
     if (adv <= 0) {
-        int scale = (target_px + 15) / 16;
+        int scale = (target_px < 24) ? 1 : ((target_px + 15) / 16);
         if (scale < 1)
             scale = 1;
         adv = (cp < 0x80) ? (8 * scale) : (16 * scale);
@@ -935,12 +949,12 @@ static int fb_text_glyph_advance_px(int cp, int target_px)
 static bool fb_draw_text_glyph_px(fb_t *fb, int x, int y, int cp,
                                   fb_color_t c, int target_px, int *adv)
 {
-    if (target_px >= 16 &&
+    if (target_px >= 24 &&
         font_ext_draw_glyph_px(fb, x, y, (uint32_t)cp, c, target_px, adv)) {
         return true;
     }
 
-    int scale = (target_px + 15) / 16;
+    int scale = (target_px < 24) ? 1 : ((target_px + 15) / 16);
     if (scale < 1)
         scale = 1;
     return fb_draw_text_glyph(fb, x, y, cp, c, scale, true, true, adv);

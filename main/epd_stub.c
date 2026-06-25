@@ -26,6 +26,7 @@
 #include "freertos/semphr.h"
 #include "nvs.h"
 #include "power_mgr.h"
+#include "ui_theme.h"
 
 /* ── 硬件引脚 ─────────────────────────────────────────────────────── */
 
@@ -2316,7 +2317,6 @@ esp_err_t epd_display_test_pattern(void)
     }
 
     const char *label = "FPC-194 SSD1683 EDGE TEST";
-    int label_w = fb_utf8_scaled_width(label, 1);
     fb_t label_fb = {
         .black = buf,
         .red = red,
@@ -2325,10 +2325,13 @@ esp_err_t epd_display_test_pattern(void)
         .plane_bytes = pb,
         .row_bytes = rb,
     };
-    fb_utf8_scaled(&label_fb, (W - label_w) / 2, H - 30, label, COLOR_BLACK, 1);
-    fb_utf8_scaled(&label_fb, 18, mid_y - 66, "1-8px", COLOR_BLACK, 1);
+    int label_w = ui_fixed_text_width(&label_fb, label, 1);
+    ui_draw_fixed_text(&label_fb, (W - label_w) / 2, H - 30, label,
+                       COLOR_BLACK, 1);
+    ui_draw_fixed_text(&label_fb, 18, mid_y - 66, "1-8px", COLOR_BLACK, 1);
     if (epd_has_red())
-        fb_utf8_scaled(&label_fb, W - 98, mid_y - 66, "RED", COLOR_RED, 1);
+        ui_draw_fixed_text(&label_fb, W - 98, mid_y - 66, "RED",
+                           COLOR_RED, 1);
 
     if (yellow) {
         for (int y = mid_y + 20; y < H - 20; y++) {

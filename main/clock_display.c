@@ -28,7 +28,7 @@
 static const char k_wx_placeholder_l1[] =
     "\xe5\xa4\xa9\xe6\xb0\x94\xe6\x95\xb0\xe6\x8d\xae\xe6\x9c\xaa\xe5\xb0\xb1\xe7\xbb\xaa"; /* 天气数据未就绪 */
 static const char k_wx_placeholder_l2[] =
-    "\xe8\xaf\xb7\xe5\x9c\xa8\xe3\x80\x8c\xe5\xa4\xa9\xe6\xb0\x94\xe3\x80\x8d\xe9\xa1\xb5\xe5\xa1\xab API \xe5\x90\x8e\xe7\x82\xb9\xe5\x88\xb7\xe6\x96\xb0"; /* 请在「天气」页填 API 后点刷新 */
+    "\xe8\xaf\xb7\xe5\x85\x88\xe5\x9c\xa8\xe5\xa4\xa9\xe6\xb0\x94\xe9\xa1\xb5\xe5\xa1\xab API Key"; /* 请先在天气页填 API Key */
 
 static const char *TAG    = "clock";
 static const char *NVS_NS = "clock";
@@ -221,7 +221,7 @@ static int clock_text_px(const char *s, int scale)
 {
     if (scale < 1)
         scale = 1;
-    return ui_text_width(s, scale);
+    return ui_fixed_text_width(NULL, s, scale);
 }
 
 static int clock_draw_text(fb_t *fb, int x, int y, const char *s,
@@ -229,7 +229,7 @@ static int clock_draw_text(fb_t *fb, int x, int y, const char *s,
 {
     if (scale < 1)
         scale = 1;
-    return fb_utf8_scaled_builtin(fb, x, y, s, color, scale);
+    return ui_draw_fixed_text(fb, x, y, s, color, scale);
 }
 
 static int clock_draw_text_maxw(fb_t *fb, int x, int y, const char *s,
@@ -237,35 +237,12 @@ static int clock_draw_text_maxw(fb_t *fb, int x, int y, const char *s,
 {
     if (scale < 1)
         scale = 1;
-    return fb_utf8_scaled_builtin_maxw(fb, x, y, s, color, scale, max_w);
+    return ui_draw_fixed_text_maxw(fb, x, y, s, color, scale, max_w);
 }
 
 static void clock_draw_footer(fb_t *fb, const char *left, const char *right)
 {
-    if (!fb)
-        return;
-
-    const int W = fb->width;
-    const int H = fb->height;
-    const int s = ui_scale_for(fb);
-    const int y = H - 20 * s;
-
-    ui_draw_dotted_hline(fb, 12 * s, y - 4 * s, W - 24 * s,
-                         COLOR_BLACK, 6);
-
-    int left_max_w = W - 28 * s;
-    if (right && right[0]) {
-        int rw = clock_text_px(right, 1);
-        left_max_w = W - 34 * s - rw;
-    }
-    if (left && left[0] && left_max_w > 0)
-        clock_draw_text_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1,
-                             left_max_w);
-
-    if (right && right[0]) {
-        int rw = clock_text_px(right, 1);
-        clock_draw_text(fb, W - 14 * s - rw, y, right, COLOR_BLACK, 1);
-    }
+    ui_draw_footer(fb, left, right);
 }
 
 /* ── weekday strings ──────────────────────────────────────────────── */
@@ -347,46 +324,7 @@ static void clock_draw_ref_card(fb_t *fb, int x, int y, int w, int h)
 
 static void clock_draw_ref_battery(fb_t *fb, int right_x, int y)
 {
-    battery_status_t st = {0};
-    battery_mon_get_status(&st);
-
-    char label[8];
-    if (!st.valid)
-        snprintf(label, sizeof(label), "--");
-    else
-        snprintf(label, sizeof(label), "%u%%", (unsigned)st.percent);
-
-    const int icon_w = 28;
-    const int icon_h = 12;
-    const int cap_w = 3;
-    const int gap = 5;
-    const int text_w = clock_text_px(label, 1);
-    const int x = right_x - icon_w - cap_w - gap - text_w;
-    const int icon_x = x;
-    const int icon_y = y + 3;
-
-    fb_rect(fb, icon_x, icon_y, icon_w, icon_h, COLOR_BLACK);
-    fb_fill_rect(fb, icon_x + icon_w, icon_y + 3, cap_w, icon_h - 6, COLOR_BLACK);
-    if (st.valid) {
-        const int inner_w = icon_w - 4;
-        int remain = inner_w * st.percent / 100;
-        if (st.percent > 0 && remain < 1)
-            remain = 1;
-        if (remain > inner_w)
-            remain = inner_w;
-        if (remain > 0)
-            fb_fill_rect(fb, icon_x + 2, icon_y + 2, remain, icon_h - 4, COLOR_RED);
-        if (remain < inner_w)
-            fb_fill_rect(fb, icon_x + 2 + remain, icon_y + 2,
-                         inner_w - remain, icon_h - 4, COLOR_BLACK);
-        if (remain > 0 && remain < inner_w)
-            fb_vline(fb, icon_x + 1 + remain, icon_y + 2, icon_h - 4, COLOR_WHITE);
-    } else {
-        fb_hline(fb, icon_x + 5, icon_y + 4, 10, COLOR_RED);
-        fb_hline(fb, icon_x + 7, icon_y + 6, 10, COLOR_RED);
-    }
-    clock_draw_text(fb, icon_x + icon_w + cap_w + gap, y + 1,
-                    label, COLOR_BLACK, 1);
+    ui_draw_battery_badge(fb, right_x, y);
 }
 
 static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
@@ -401,7 +339,7 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
     const int time_w = 3 * d_gap + col_w_px + dw;
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    clock_draw_ref_battery(fb, W - 11, 15);
+    clock_draw_ref_battery(fb, W - 14, 8);
 
     int hour = tm->tm_hour;
     int min = tm->tm_min;
@@ -487,7 +425,8 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
                           : "\xe7\xad\x89\xe5\xbe\x85\xe7\xbd\x91\xe7\xbb\x9c\xe6\xa0\xa1\xe6\x97\xb6";
     int info_x = split_x + 20;
     int info_w = card_x + card_w - 20 - info_x;
-    fb_utf8_px_maxw(fb, info_x, card_y + 10, ampm, COLOR_BLACK, 30, info_w);
+    ui_draw_text_px_maxw(fb, info_x, card_y + 10, ampm, COLOR_BLACK,
+                         30, info_w);
     clock_draw_text_maxw(fb, info_x, card_y + 50, tag,
                          time_sync_is_synced() ? COLOR_BLACK : COLOR_RED,
                          1, info_w);
@@ -578,7 +517,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
     int col_w_px = BASE_COL * ds_num / ds_den;
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    clock_draw_ref_battery(fb, W - 11, 15);
+    clock_draw_ref_battery(fb, W - 14, 8);
 
     int total_w = 4 * d_gap + col_w_px - 6 * ds_num / ds_den;
     int time_x = (W - total_w) / 2;
@@ -678,10 +617,10 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
             snprintf(now_line, sizeof(now_line), "%.23s  %d\xc2\xb0""C",
                      wd->now.text, wd->now.temp);
 
-            fb_utf8_scaled_maxw(fb, left_x, current_y + 3, place,
-                                COLOR_BLACK, 1, split_x - left_x - 10);
-            fb_utf8_scaled_maxw(fb, left_x, current_y + 27, now_line,
-                                COLOR_RED, 1, split_x - left_x - 10);
+            clock_draw_text_maxw(fb, left_x, current_y + 3, place,
+                                  COLOR_BLACK, 1, split_x - left_x - 10);
+            clock_draw_text_maxw(fb, left_x, current_y + 27, now_line,
+                                  COLOR_RED, 1, split_x - left_x - 10);
 
             char feels[64];
             char humid[64];
@@ -695,12 +634,12 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
             snprintf(wind, sizeof(wind), "%.15s %d\xe7\xba\xa7",
                      wd->now.wind_dir, wd->now.wind_scale);
 
-            fb_utf8_scaled_maxw(fb, right_x, current_y + 0, feels,
-                                COLOR_BLACK, 1, W - right_x - MX);
-            fb_utf8_scaled_maxw(fb, right_x, current_y + 20, humid,
-                                COLOR_BLACK, 1, W - right_x - MX);
-            fb_utf8_scaled_maxw(fb, right_x, current_y + 40, wind,
-                                COLOR_BLACK, 1, W - right_x - MX);
+            clock_draw_text_maxw(fb, right_x, current_y + 0, feels,
+                                  COLOR_BLACK, 1, W - right_x - MX);
+            clock_draw_text_maxw(fb, right_x, current_y + 20, humid,
+                                  COLOR_BLACK, 1, W - right_x - MX);
+            clock_draw_text_maxw(fb, right_x, current_y + 40, wind,
+                                  COLOR_BLACK, 1, W - right_x - MX);
 
             int dot_y = current_y + 66;
             ui_draw_dotted_hline(fb, MX + 10, dot_y, W - 2 * MX - 20,
@@ -742,11 +681,11 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
                 int text_w = icon_fx - fx - 5;
                 if (text_w < 32)
                     text_w = fcol - 8;
-                fb_utf8_scaled_maxw(fb, fx + 4, row_y, label,
-                                    (i == 0) ? COLOR_RED : COLOR_BLACK,
-                                    1, text_w);
-                fb_utf8_scaled_maxw(fb, fx + 4, row_y + 21, detail,
-                                    COLOR_BLACK, 1, text_w);
+                clock_draw_text_maxw(fb, fx + 4, row_y, label,
+                                      (i == 0) ? COLOR_RED : COLOR_BLACK,
+                                      1, text_w);
+                clock_draw_text_maxw(fb, fx + 4, row_y + 21, detail,
+                                      COLOR_BLACK, 1, text_w);
             }
         } else {
         char line1[280];
@@ -768,7 +707,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
             int lx = icon_x + WEATHER_ICON_W + 10;
             int lw = W - lx - MX - 8;
             if (lw < 24) lw = 24;
-            fb_utf8_scaled_maxw(fb, lx, bot_y, line1, COLOR_BLACK, wx_head_sc, lw);
+            clock_draw_text_maxw(fb, lx, bot_y, line1, COLOR_BLACK, wx_head_sc, lw);
         }
 
         char line2[280];
@@ -783,7 +722,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
             int lx2 = W * 80 / 648;
             int lw2 = W - lx2 - MX - 8;
             if (lw2 < 24) lw2 = 24;
-            fb_utf8_scaled_maxw(fb, lx2, bot_y + wx_head_gap, line2, COLOR_BLACK, wx_head_sc, lw2);
+            clock_draw_text_maxw(fb, lx2, bot_y + wx_head_gap, line2, COLOR_BLACK, wx_head_sc, lw2);
         }
 
         int dot_y = bot_y + 2 * wx_head_gap + 2;
@@ -829,22 +768,31 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
             int text_max = max_fc - WEATHER_ICON_W - 6;
             if (text_max < 32)
                 text_max = max_fc;
-            fb_utf8_scaled_maxw(fb, fx, row_y, line_a,
-                                (i == 0) ? COLOR_RED : COLOR_BLACK,
-                                wx_body_sc, text_max);
-            fb_utf8_scaled_maxw(fb, fx, row_y + line_gap, line_b,
-                                COLOR_BLACK, wx_body_sc, text_max);
+            clock_draw_text_maxw(fb, fx, row_y, line_a,
+                                  (i == 0) ? COLOR_RED : COLOR_BLACK,
+                                  wx_body_sc, text_max);
+            clock_draw_text_maxw(fb, fx, row_y + line_gap, line_b,
+                                  COLOR_BLACK, wx_body_sc, text_max);
         }
         }
     } else if (cfg_local.show_weather) {
         /* 已勾选「显示天气摘要」但尚未拉到 API 数据：提示原因，避免误以为开关无效 */
-        int lx = MX + 16;
-        int lw = W - 2 * MX - 32;
-        if (lw < 24) lw = 24;
-        fb_utf8_scaled_maxw(fb, lx, bot_y, k_wx_placeholder_l1,
-                            COLOR_BLACK, wx_body_sc, lw);
-        fb_utf8_scaled_maxw(fb, lx, bot_y + 16 * wx_body_sc + 6,
-                            k_wx_placeholder_l2, COLOR_BLACK, wx_body_sc, lw);
+        int card_x = wide_clock ? 52 : 34;
+        int card_w = W - 2 * card_x;
+        int card_h = wide_clock ? 76 : 54;
+        int card_y = bot_y + (wide_clock ? 4 : 0);
+        int line_gap = wide_clock ? 30 : 22;
+        int text_px = wide_clock ? 24 : 16;
+        if (card_w < 80)
+            card_w = W - 2 * MX;
+        ui_draw_card(fb, card_x, card_y, card_w, card_h, true);
+        ui_draw_text_px_maxw(fb, card_x + 12, card_y + (wide_clock ? 10 : 8),
+                             k_wx_placeholder_l1, COLOR_BLACK, text_px,
+                             card_w - 24);
+        ui_draw_text_px_maxw(fb, card_x + 12,
+                             card_y + (wide_clock ? 10 : 8) + line_gap,
+                             k_wx_placeholder_l2, COLOR_RED, text_px,
+                             card_w - 24);
     } else {
         char ampm[16];
         if (hour < 6)       snprintf(ampm, sizeof(ampm), "\xe5\x87\x8c\xe6\x99\xa8");
@@ -876,7 +824,8 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
     }
 
     if (big || has_weather || cfg_local.show_weather)
-        clock_draw_footer(fb, "CLOCK", cfg_local.show_weather ? "WEATHER" : "TIME");
+        clock_draw_footer(fb, "\xe6\x97\xb6\xe9\x92\x9f",
+                          cfg_local.show_weather ? "\xe5\xa4\xa9\xe6\xb0\x94" : "\xe6\x97\xb6\xe9\x97\xb4");
 
 clock_render_done:
     if (!display_policy_epoch_is_current(epoch)) {

@@ -64,6 +64,7 @@ int         fb_utf8_scaled_builtin(fb_t *fb, int x, int y, const char *s,
 int         fb_utf8_scaled_builtin_maxw(fb_t *fb, int x, int y,
                                         const char *s, fb_color_t c,
                                         int scale, int max_w);
+int         fb_utf8_scaled_builtin_width(const char *s, int scale);
 int         fb_utf8_scaled_width(const char *s, int scale);
 int         fb_codepoint_scaled_width(int cp, int scale, bool styled);
 int         fb_utf8_scaled_styled(fb_t *fb, int x, int y, const char *s,

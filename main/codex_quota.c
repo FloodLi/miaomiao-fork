@@ -465,26 +465,10 @@ static void quota_reset_label(char *buf, size_t len)
 
 static void draw_header_like_reference(fb_t *fb, const codex_quota_data_t *data)
 {
-    const int W = fb->width;
-    const int header_h = 34;
-    fb_fill_rect(fb, 6, 6, W - 12, header_h, COLOR_RED);
-    fb_utf8_scaled(fb, 18, 14, "Codex额度", COLOR_WHITE, 1);
-
     char center[40];
+    (void)data;
     quota_date_header(center, sizeof(center));
-    int cw = ui_text_width(center, 1);
-    fb_utf8_scaled_maxw(fb, (W - cw) / 2, 16, center, COLOR_WHITE, 1, 140);
-
-    battery_status_t bat = {0};
-    battery_mon_get_status(&bat);
-    char right[12];
-    if (bat.valid)
-        snprintf(right, sizeof(right), "%u%%", (unsigned)bat.percent);
-    else if (data && data->valid && data->percent_used > 0)
-        snprintf(right, sizeof(right), "%d%%", data->percent_used);
-    else
-        snprintf(right, sizeof(right), "--");
-    fb_utf8_scaled(fb, W - 38, 16, right, COLOR_WHITE, 1);
+    ui_draw_header(fb, "Codex额度", center, true);
 }
 
 static void draw_quota_bar(fb_t *fb, int x, int y, int w, int h, int percent,
@@ -507,13 +491,13 @@ static void draw_quota_row(fb_t *fb, int y, const char *label, int percent,
     const int bar_x = 96;
     const int pct_x = 248;
     const int date_x = 306;
-    fb_utf8_scaled_maxw(fb, label_x, y - 2, label, COLOR_BLACK, 1, 72);
+    ui_draw_fixed_text_maxw(fb, label_x, y - 2, label, COLOR_BLACK, 1, 72);
     draw_quota_bar(fb, bar_x, y, 142, 12, percent, color);
 
     char pct[10];
     snprintf(pct, sizeof(pct), "%d%%", percent);
-    fb_utf8_scaled(fb, pct_x, y - 2, pct, color == COLOR_RED ? COLOR_RED : COLOR_BLACK, 1);
-    fb_utf8_scaled_maxw(fb, date_x, y - 2, right ? right : "--", COLOR_BLACK, 1, 84);
+    ui_draw_fixed_text(fb, pct_x, y - 2, pct, color == COLOR_RED ? COLOR_RED : COLOR_BLACK, 1);
+    ui_draw_fixed_text_maxw(fb, date_x, y - 2, right ? right : "--", COLOR_BLACK, 1, 84);
 }
 
 static void draw_quota_value_row(fb_t *fb, int y, const char *label,
@@ -523,14 +507,14 @@ static void draw_quota_value_row(fb_t *fb, int y, const char *label,
     const int label_x = 18;
     const int value_x = 96;
     const int date_x = 306;
-    fb_utf8_scaled_maxw(fb, label_x, y - 2, label, COLOR_BLACK, 1, 72);
-    fb_utf8_scaled_maxw(fb, value_x, y - 2, value ? value : "--", color, 1, 200);
-    fb_utf8_scaled_maxw(fb, date_x, y - 2, right ? right : "--", COLOR_BLACK, 1, 84);
+    ui_draw_fixed_text_maxw(fb, label_x, y - 2, label, COLOR_BLACK, 1, 72);
+    ui_draw_fixed_text_maxw(fb, value_x, y - 2, value ? value : "--", color, 1, 200);
+    ui_draw_fixed_text_maxw(fb, date_x, y - 2, right ? right : "--", COLOR_BLACK, 1, 84);
 }
 
 static void draw_section_title(fb_t *fb, int x, int y, const char *title)
 {
-    fb_utf8_scaled(fb, x, y, title, COLOR_BLACK, 2);
+    ui_draw_fixed_text(fb, x, y, title, COLOR_BLACK, 2);
 }
 
 static int quota_percent_from_data(const codex_quota_data_t *data)
@@ -601,14 +585,14 @@ static void render_quota_page(const codex_quota_config_t *cfg,
     char refresh_label[32];
     quota_refresh_label(cfg, refresh_label, sizeof(refresh_label));
 
-    fb_rect(fb, 6, 6, W - 12, H - 12, COLOR_BLACK);
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     draw_header_like_reference(fb, data);
 
     if (error) {
         ui_draw_empty_state(fb, "\xe9\xa2\x9d\xe5\xba\xa6\xe4\xb8\x8d\xe5\x8f\xaf\xe7\x94\xa8", error);
         fb_hline(fb, 14, H - 28, W - 28, COLOR_BLACK);
-        fb_utf8_scaled(fb, 20, H - 20, refresh_label, COLOR_BLACK, 1);
-        fb_utf8_scaled(fb, W - 44, H - 20, "1/1", COLOR_BLACK, 1);
+        ui_draw_fixed_text(fb, 20, H - 20, refresh_label, COLOR_BLACK, 1);
+        ui_draw_fixed_text(fb, W - 44, H - 20, "1/1", COLOR_BLACK, 1);
         epd_display_fb_free(fb);
         return;
     }
@@ -652,10 +636,10 @@ static void render_quota_page(const codex_quota_config_t *cfg,
     draw_quota_value_row(fb, y, "令牌", tokens, COLOR_BLACK, reset);
 
     ui_draw_dotted_hline(fb, 14, H - 32, W - 28, COLOR_BLACK, 4);
-    fb_utf8_scaled(fb, 20, H - 22, refresh_label, COLOR_BLACK, 1);
-    fb_utf8_scaled(fb, W / 2 - 16, H - 22, "[Zz]", COLOR_BLACK, 1);
-    fb_utf8_scaled(fb, W - 44, H - 22, cfg && cfg->enabled ? "1/1" : "0/1",
-                   COLOR_BLACK, 1);
+    ui_draw_fixed_text(fb, 20, H - 22, refresh_label, COLOR_BLACK, 1);
+    ui_draw_fixed_text(fb, W / 2 - 16, H - 22, "[Zz]", COLOR_BLACK, 1);
+    ui_draw_fixed_text(fb, W - 44, H - 22, cfg && cfg->enabled ? "1/1" : "0/1",
+                       COLOR_BLACK, 1);
     epd_display_fb_free(fb);
 }
 

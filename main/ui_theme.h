@@ -30,6 +30,16 @@ bool ui_layout_is_583(const fb_t *fb);
 bool ui_layout_is_wide(const fb_t *fb);
 int  ui_scale_for(const fb_t *fb);
 int  ui_text_width(const char *s, int scale);
+int  ui_fixed_text_width(const fb_t *fb, const char *s, int scale);
+int  ui_draw_fixed_text(fb_t *fb, int x, int y, const char *s,
+                        fb_color_t color, int scale);
+int  ui_draw_fixed_text_maxw(fb_t *fb, int x, int y, const char *s,
+                             fb_color_t color, int scale, int max_w);
+int  ui_text_width_px(const fb_t *fb, const char *s, int target_px);
+int  ui_draw_text_px(fb_t *fb, int x, int y, const char *s,
+                     fb_color_t color, int target_px);
+int  ui_draw_text_px_maxw(fb_t *fb, int x, int y, const char *s,
+                          fb_color_t color, int target_px, int max_w);
 int  ui_role_scale(const fb_t *fb, ui_text_role_t role);
 int  ui_role_text_width(const fb_t *fb, const char *s, ui_text_role_t role);
 int  ui_draw_text_role(fb_t *fb, int x, int y, const char *s,
@@ -44,5 +54,6 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
 void ui_draw_footer(fb_t *fb, const char *left, const char *right);
 void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent);
 void ui_draw_section_label(fb_t *fb, int x, int y, const char *label, fb_color_t color, int scale);
+void ui_draw_empty_state_compact(fb_t *fb, const char *title, const char *hint);
 void ui_draw_empty_state(fb_t *fb, const char *title, const char *hint);
 void ui_draw_progress_bar(fb_t *fb, int x, int y, int w, int h, int percent, fb_color_t fill);

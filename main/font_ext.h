@@ -6,7 +6,7 @@
 
 #include "fb_render.h"
 
-#define FONT_EXT_COUNT 3
+#define FONT_EXT_COUNT 2
 #define FONT_EXT_MAX_GLYPH_BYTES 288
 #define FONT_EXT_BASE_PATH "/fontfs/fonts"
 

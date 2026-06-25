@@ -18,6 +18,7 @@
 #include "epd.h"
 #include "display_policy.h"
 #include "scheduler.h"
+#include "ui_theme.h"
 
 #include <stdio.h>
 #include <math.h>
@@ -348,7 +349,7 @@ static void render_element(fb_t *fb, cJSON *el)
         int scale = js && cJSON_IsNumber(js) ? js->valueint : 1;
         if (scale < 1) scale = 1;
         if (scale > 6) scale = 6;
-        fb_utf8_px(fb, x, y, text, color, canvas_text_px_for_scale(scale));
+        ui_draw_text_px(fb, x, y, text, color, canvas_text_px_for_scale(scale));
         return;
     }
 

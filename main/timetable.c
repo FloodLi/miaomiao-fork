@@ -367,11 +367,22 @@ static int tt_collect_today_in(const timetable_config_t *cfg,
     return n;
 }
 
-static int tt_text_px(const char *s, int scale)
+static bool tt_has_any_course_in(const timetable_config_t *cfg)
+{
+    for (int d = 0; d < TT_DAYS; d++) {
+        for (int p = 0; p < cfg->period_count; p++) {
+            if (cfg->grid[d][p].name[0])
+                return true;
+        }
+    }
+    return false;
+}
+
+static int tt_text_px(const fb_t *fb, const char *s, int scale)
 {
     if (scale < 1)
         scale = 1;
-    return fb_utf8_px_width(s, 16 * scale);
+    return ui_fixed_text_width(fb, s, scale);
 }
 
 static int tt_draw_text(fb_t *fb, int x, int y, const char *s,
@@ -379,7 +390,7 @@ static int tt_draw_text(fb_t *fb, int x, int y, const char *s,
 {
     if (scale < 1)
         scale = 1;
-    return fb_utf8_px(fb, x, y, s, color, 16 * scale);
+    return ui_draw_fixed_text(fb, x, y, s, color, scale);
 }
 
 static int tt_draw_text_maxw(fb_t *fb, int x, int y, const char *s,
@@ -387,7 +398,30 @@ static int tt_draw_text_maxw(fb_t *fb, int x, int y, const char *s,
 {
     if (scale < 1)
         scale = 1;
-    return fb_utf8_px_maxw(fb, x, y, s, color, 16 * scale, max_w);
+    return ui_draw_fixed_text_maxw(fb, x, y, s, color, scale, max_w);
+}
+
+static int tt_course_text_px(const char *s, int scale)
+{
+    if (scale < 1)
+        scale = 1;
+    return ui_text_width_px(NULL, s, 16 * scale);
+}
+
+static int tt_draw_course_text(fb_t *fb, int x, int y, const char *s,
+                               fb_color_t color, int scale)
+{
+    if (scale < 1)
+        scale = 1;
+    return ui_draw_text_px(fb, x, y, s, color, 16 * scale);
+}
+
+static int tt_draw_course_text_maxw(fb_t *fb, int x, int y, const char *s,
+                                    fb_color_t color, int scale, int max_w)
+{
+    if (scale < 1)
+        scale = 1;
+    return ui_draw_text_px_maxw(fb, x, y, s, color, 16 * scale, max_w);
 }
 
 static int tt_layout_scale(const fb_t *fb)
@@ -403,9 +437,11 @@ static void tt_draw_header(fb_t *fb, const char *title, const char *right,
 
     const int W = fb->width;
     const int s = tt_layout_scale(fb);
+    const bool is_42 = ui_layout_is_42(fb);
     const int x = 14 * s;
     const int y = 8 * s;
     const int header_h = 18 * s;
+    const int line_y = is_42 ? 29 : header_h + 6 * s;
 
     if (red_accent)
         fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, COLOR_RED);
@@ -415,7 +451,7 @@ static void tt_draw_header(fb_t *fb, const char *title, const char *right,
         int title_max_w = W / 2 - 28 * s;
         if (title_max_w < 0)
             title_max_w = 0;
-        title_w = tt_text_px(title, 1);
+        title_w = tt_text_px(fb, title, 1);
         if (title_w > title_max_w)
             title_w = title_max_w;
         tt_draw_text_maxw(fb, x, y, title, COLOR_BLACK, 1, title_max_w);
@@ -432,16 +468,16 @@ static void tt_draw_header(fb_t *fb, const char *title, const char *right,
         if (min_right_x > right_limit)
             min_right_x = right_limit;
 
-        int rw = tt_text_px(right, 1);
+        int rw = tt_text_px(fb, right, 1);
         int rx = right_limit - rw;
         if (rx < min_right_x)
             rx = min_right_x;
         if (right_limit > rx)
-            tt_draw_text_maxw(fb, rx, y + 1 * s, right, COLOR_BLACK, 1,
+            tt_draw_text_maxw(fb, rx, y, right, COLOR_BLACK, 1,
                               right_limit - rx);
     }
 
-    ui_draw_dotted_hline(fb, 12 * s, header_h + 6 * s, W - 24 * s,
+    ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s,
                          COLOR_BLACK, 6);
 }
 
@@ -453,43 +489,56 @@ static void tt_draw_footer(fb_t *fb, const char *left, const char *right)
     const int W = fb->width;
     const int H = fb->height;
     const int s = tt_layout_scale(fb);
-    const int y = H - 20 * s;
+    const bool is_42 = ui_layout_is_42(fb);
+    const int y = is_42 ? H - 26 : H - 20 * s;
+    const int line_y = is_42 ? y - 8 : y - 4 * s;
 
-    ui_draw_dotted_hline(fb, 12 * s, y - 4 * s, W - 24 * s,
+    ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s,
                          COLOR_BLACK, 6);
 
     int left_max_w = W - 28 * s;
     if (right && right[0]) {
-        int rw = tt_text_px(right, 1);
+        int rw = tt_text_px(fb, right, 1);
         left_max_w = W - 34 * s - rw;
     }
     if (left && left[0] && left_max_w > 0)
         tt_draw_text_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1, left_max_w);
 
     if (right && right[0]) {
-        int rw = tt_text_px(right, 1);
+        int rw = tt_text_px(fb, right, 1);
         tt_draw_text(fb, W - 14 * s - rw, y, right, COLOR_BLACK, 1);
     }
 }
 
 static void tt_draw_empty_state(fb_t *fb, const char *title, const char *hint)
 {
-    if (!fb)
-        return;
-
-    int s = tt_layout_scale(fb);
-    int y = fb->height / 2 - 28 * s;
-    if (title) {
-        int w = tt_text_px(title, s + 1);
-        tt_draw_text(fb, (fb->width - w) / 2, y, title, COLOR_BLACK, s + 1);
-    }
-    if (hint) {
-        int w = tt_text_px(hint, s);
-        tt_draw_text(fb, (fb->width - w) / 2, y + 28 * s, hint, COLOR_RED, s);
-    }
+    ui_draw_empty_state_compact(fb, title, hint);
 }
 
 /* ── EPD: full-week grid view (for 5.83" 648x480) ────────────────── */
+
+static esp_err_t tt_show_hint_page(const char *title, const char *hint,
+                                   const char *footer_right, unsigned epoch)
+{
+    fb_t *fb = fb_create();
+    if (!fb)
+        return ESP_ERR_NO_MEM;
+
+    fb_clear(fb);
+    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    tt_draw_header(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
+                   footer_right, true);
+    tt_draw_empty_state(fb, title, hint);
+    tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
+                   footer_right ? footer_right : "\xe8\xae\xbe\xe7\xbd\xae");
+
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return epd_display_fb_free(fb);
+}
 
 static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
                                           int today, int now_min, int week,
@@ -527,7 +576,9 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
 
     int pc = cfg->period_count;
     if (pc == 0) {
-        tt_draw_empty_state(fb, "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b", "\xe8\xaf\xb7\xe9\x80\x9a\xe8\xbf\x87\xe7\xbd\x91\xe9\xa1\xb5\xe6\xb7\xbb\xe5\x8a\xa0");
+        tt_draw_empty_state(fb,
+                            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae",
+                            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             return ESP_ERR_INVALID_STATE;
@@ -555,7 +606,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
     /* ── day header row ── */
     {
         const char *jie = "\xe8\x8a\x82\xe6\xac\xa1";
-        int jw = tt_text_px(jie, 1);
+        int jw = tt_text_px(fb, jie, 1);
         tt_draw_text(fb, margin + (pcol_w - jw) / 2,
                      y_start + (hdr_h - 16) / 2, jie, COLOR_BLACK, 1);
     }
@@ -569,7 +620,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
 
         char label[16];
         snprintf(label, sizeof(label), "\xe5\x91\xa8%s", DAY_SHORT[d]);
-        int lw = tt_text_px(label, 1);
+        int lw = tt_text_px(fb, label, 1);
         fb_color_t lc = (d == today) ? COLOR_RED : COLOR_BLACK;
         tt_draw_text(fb, cx + (cell_w - lw) / 2,
                      y_start + (hdr_h - 16) / 2, label, lc, 1);
@@ -600,24 +651,24 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
                  pd->end_hour, pd->end_minute);
 
         if (cell_h >= 64) {
-            int pnw = tt_text_px(pnum, 2);
-            int t1w = tt_text_px(t_start, 1);
-            int t2w = tt_text_px(t_end, 1);
+            int pnw = tt_text_px(fb, pnum, 2);
+            int t1w = tt_text_px(fb, t_start, 1);
+            int t2w = tt_text_px(fb, t_end, 1);
             int vy = ry + (cell_h - 64) / 2;
             tt_draw_text(fb, margin + (pcol_w - pnw) / 2, vy, pnum, COLOR_BLACK, 2);
             tt_draw_text(fb, margin + (pcol_w - t1w) / 2, vy + 32, t_start, COLOR_BLACK, 1);
             tt_draw_text(fb, margin + (pcol_w - t2w) / 2, vy + 48, t_end, COLOR_BLACK, 1);
         } else if (cell_h >= 48) {
-            int pnw1 = tt_text_px(pnum, 1);
-            int t1w = tt_text_px(t_start, 1);
-            int t2w = tt_text_px(t_end, 1);
+            int pnw1 = tt_text_px(fb, pnum, 1);
+            int t1w = tt_text_px(fb, t_start, 1);
+            int t2w = tt_text_px(fb, t_end, 1);
             int vy = ry + (cell_h - 48) / 2;
             tt_draw_text(fb, margin + (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
             tt_draw_text(fb, margin + (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
             tt_draw_text(fb, margin + (pcol_w - t2w) / 2, vy + 32, t_end, COLOR_BLACK, 1);
         } else {
-            int pnw1 = tt_text_px(pnum, 1);
-            int t1w = tt_text_px(t_start, 1);
+            int pnw1 = tt_text_px(fb, pnum, 1);
+            int t1w = tt_text_px(fb, t_start, 1);
             int vy = ry + (cell_h - 32) / 2;
             tt_draw_text(fb, margin + (pcol_w - pnw1) / 2, vy, pnum, COLOR_BLACK, 1);
             tt_draw_text(fb, margin + (pcol_w - t1w) / 2, vy + 16, t_start, COLOR_BLACK, 1);
@@ -643,7 +694,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
             int pad = 8;
             int content_w = cell_w - pad * 2;
 
-            int nw2 = tt_text_px(cell->name, 2);
+            int nw2 = tt_course_text_px(cell->name, 2);
             int name_sc = (cell_h >= 58 && nw2 <= content_w) ? 2 : 1;
             int name_h = 16 * name_sc;
             int room_h = (cell->room[0] && cell_h >= 34) ? 16 : 0;
@@ -652,11 +703,11 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
             int ny = ry + (cell_h - total_h) / 2;
             if (ny < ry + 1) ny = ry + 1;
 
-            tt_draw_text_maxw(fb, cx + pad, ny,
-                              cell->name, nc, name_sc, content_w);
+            tt_draw_course_text_maxw(fb, cx + pad, ny,
+                                     cell->name, nc, name_sc, content_w);
             if (room_h)
-                tt_draw_text_maxw(fb, cx + pad, ny + name_h + gap,
-                                  cell->room, rc, 1, content_w);
+                tt_draw_course_text_maxw(fb, cx + pad, ny + name_h + gap,
+                                         cell->room, rc, 1, content_w);
         }
     }
 
@@ -691,7 +742,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
         snprintf(foot, sizeof(foot),
                  "%s %d\xe8\x8a\x82 / \xe6\x9c\xac\xe5\x91\xa8%d\xe8\x8a\x82",
                  TT_DAY_FULL[today], today_courses, week_courses);
-        tt_draw_footer(fb, "TIMETABLE", foot);
+        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8", foot);
     }
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -727,7 +778,10 @@ esp_err_t timetable_show_day(int day)
     }
     if (!snap->enabled) {
         free(snap);
-        return ESP_ERR_INVALID_STATE;
+        return tt_show_hint_page(
+            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe5\x90\xaf\xe7\x94\xa8",
+            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae",
+            "\xe8\xae\xbe\xe7\xbd\xae", epoch);
     }
 
     struct tm tm;
@@ -735,7 +789,10 @@ esp_err_t timetable_show_day(int day)
     if (!have_time) {
         ESP_LOGW(TAG, "time not synced");
         free(snap);
-        return ESP_ERR_INVALID_STATE;
+        return tt_show_hint_page(
+            "\xe7\xad\x89\xe5\xbe\x85\xe6\x97\xb6\xe9\x97\xb4\xe5\x90\x8c\xe6\xad\xa5",
+            "\xe8\x81\x94\xe7\xbd\x91\xe5\x90\x8e\xe6\x98\xbe\xe7\xa4\xba\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
+            "\xe6\x97\xb6\xe9\x97\xb4", epoch);
     }
 
     int W = epd_width();
@@ -788,16 +845,50 @@ esp_err_t timetable_show_day(int day)
     int order[TT_MAX_PERIODS];
     int count = tt_collect_today_in(snap, day, week, order, TT_MAX_PERIODS);
 
+    if (snap->period_count == 0) {
+        tt_draw_empty_state(fb,
+                            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae",
+                            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae");
+        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
+                       "\xe8\xae\xbe\xe7\xbd\xae");
+        if (!display_policy_epoch_is_current(epoch)) {
+            fb_destroy(fb);
+            free(snap);
+            return ESP_ERR_INVALID_STATE;
+        }
+        esp_err_t err = epd_display_fb_free(fb);
+        free(snap);
+        return err;
+    }
+
+    if (!tt_has_any_course_in(snap)) {
+        tt_draw_empty_state(fb,
+                            "\xe6\x9a\x82\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b",
+                            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\xb7\xbb\xe5\x8a\xa0");
+        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
+                       "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b");
+        if (!display_policy_epoch_is_current(epoch)) {
+            fb_destroy(fb);
+            free(snap);
+            return ESP_ERR_INVALID_STATE;
+        }
+        esp_err_t err = epd_display_fb_free(fb);
+        free(snap);
+        return err;
+    }
+
     if (count == 0) {
         /* "X无课" */
         char msg[32];
         snprintf(msg, sizeof(msg), "%s\xe6\x97\xa0\xe8\xaf\xbe", TT_DAY_FULL[day]);
-        int mw = tt_text_px(msg, s + 1);
+        int mw = tt_text_px(fb, msg, s + 1);
         int mx = (W - mw) / 2;
         (void)mw;
         (void)mx;
-        tt_draw_empty_state(fb, msg, "\xe4\xbb\x8a\xe5\xa4\xa9\xe6\xb2\xa1\xe6\x9c\x89\xe8\xaf\xbe\xe7\xa8\x8b");
-        tt_draw_footer(fb, "TIMETABLE", "EMPTY");
+        tt_draw_empty_state(fb, msg,
+                            "\xe4\xbb\x8a\xe5\xa4\xa9\xe6\xb2\xa1\xe6\x9c\x89\xe8\xaf\xbe\xe7\xa8\x8b");
+        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
+                       "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             free(snap);
@@ -860,7 +951,7 @@ esp_err_t timetable_show_day(int day)
 
             if (is_now) {
                 const char *tag = "\xe8\xbf\x9b\xe8\xa1\x8c\xe4\xb8\xad";
-                int tw = tt_text_px(tag, s);
+                int tw = tt_text_px(fb, tag, s);
                 tt_draw_text(fb, W - rm - tw, ty, tag, COLOR_RED, s);
             }
 
@@ -869,17 +960,17 @@ esp_err_t timetable_show_day(int day)
 
             int room_w = 0;
             if (cell->room[0])
-                room_w = tt_text_px(cell->room, s);
+                room_w = tt_course_text_px(cell->room, s);
 
             int name_max = content_w;
             if (room_w > 0) {
                 name_max = content_w - room_w - 8 * s;
                 int room_y = ny + (16 * name_sc - 16 * s) / 2;
-                tt_draw_text(fb, W - rm - room_w, room_y,
-                             cell->room, COLOR_BLACK, s);
+                tt_draw_course_text(fb, W - rm - room_w, room_y,
+                                    cell->room, COLOR_BLACK, s);
             }
-            tt_draw_text_maxw(fb, lm, ny, cell->name,
-                              COLOR_BLACK, name_sc, name_max);
+            tt_draw_course_text_maxw(fb, lm, ny, cell->name,
+                                     COLOR_BLACK, name_sc, name_max);
 
             if (i < count - 1) {
                 int sep_y = by + block_h - 1;
@@ -902,14 +993,14 @@ esp_err_t timetable_show_day(int day)
             int nmax = W - nx - rm;
 
             if (cell->room[0]) {
-                int rw = tt_text_px(cell->room, s);
+                int rw = tt_course_text_px(cell->room, s);
                 nmax -= rw + 8 * s;
-                tt_draw_text(fb, W - rm - rw, ly,
-                             cell->room, COLOR_BLACK, s);
+                tt_draw_course_text(fb, W - rm - rw, ly,
+                                    cell->room, COLOR_BLACK, s);
             }
             if (nmax < 16 * s) nmax = 16 * s;
-            tt_draw_text_maxw(fb, nx, ly, cell->name,
-                              COLOR_BLACK, s, nmax);
+            tt_draw_course_text_maxw(fb, nx, ly, cell->name,
+                                     COLOR_BLACK, s, nmax);
 
             if (i < count - 1) {
                 int sep_y = by + block_h - 1;
@@ -925,7 +1016,7 @@ esp_err_t timetable_show_day(int day)
         snprintf(foot, sizeof(foot),
                  "%s %d \xe8\x8a\x82\xe8\xaf\xbe",
                  TT_DAY_FULL[day], count);
-        tt_draw_footer(fb, "TIMETABLE", foot);
+        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8", foot);
     }
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -947,9 +1038,24 @@ esp_err_t timetable_show_day(int day)
 
 esp_err_t timetable_show(void)
 {
+    unsigned epoch = display_policy_display_epoch();
+
+    timetable_config_t snap;
+    if (timetable_get_config(&snap) == ESP_OK && !snap.enabled) {
+        return tt_show_hint_page(
+            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe5\x90\xaf\xe7\x94\xa8",
+            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae",
+            "\xe8\xae\xbe\xe7\xbd\xae", epoch);
+    }
+
     struct tm tm;
-    if (!time_sync_get_local_relaxed(&tm))
-        return ESP_ERR_INVALID_STATE;
+    if (!time_sync_get_local_relaxed(&tm)) {
+        ESP_LOGW(TAG, "time not synced");
+        return tt_show_hint_page(
+            "\xe7\xad\x89\xe5\xbe\x85\xe6\x97\xb6\xe9\x97\xb4\xe5\x90\x8c\xe6\xad\xa5",
+            "\xe8\x81\x94\xe7\xbd\x91\xe5\x90\x8e\xe6\x98\xbe\xe7\xa4\xba\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
+            "\xe6\x97\xb6\xe9\x97\xb4", epoch);
+    }
     return timetable_show_day(tt_weekday_mon0(&tm));
 }
 

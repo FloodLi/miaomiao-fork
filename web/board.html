@@ -167,7 +167,10 @@ body.page-task .wrap>.row{margin-top:16px}
 body.page-upload .card,body.page-config .card{width:100%}
 body.page-gallery .card,body.page-timetable .card{width:100%;margin-left:auto!important;margin-right:auto!important}
 body.page-gallery .wrap>.row,body.page-gallery .wrap>.log,body.page-timetable .wrap>.row,body.page-timetable .wrap>.log{width:100%;margin-left:auto!important;margin-right:auto!important}
-body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
+body .epd-credit{width:100%;max-width:100%!important;margin:0 auto!important;padding:8px 12px;border-top:1px solid var(--cb);font-size:12px;color:var(--t2);text-align:center;line-height:1.4;background:var(--cd);flex-shrink:0}
+body .epd-credit strong{color:var(--tx);font-weight:700}
+body .epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}
+body .epd-credit a:hover{text-decoration:underline}
 @media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
 </style>
 </head>
@@ -369,6 +372,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
 
 </div><!-- /sidebar -->
 </div><!-- /app -->
+<footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">源码仓库</a></footer>
 <div id="toast"></div>
 
 <!-- 发送前预览 -->

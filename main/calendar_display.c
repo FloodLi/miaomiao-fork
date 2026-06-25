@@ -365,7 +365,7 @@ static int cal_draw_compact_date(fb_t *fb, int x, int y,
     char date[32];
     snprintf(date, sizeof(date), "%04d年%d月%d日", year, month, day);
 
-    return fb_utf8_px(fb, x, y + 3, date, COLOR_RED, 24);
+    return ui_draw_text_px(fb, x, y + 3, date, COLOR_RED, 24);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -391,13 +391,14 @@ static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month)
     fb_fill_rect(fb, L->grid_x, is_583 ? 18 : 8 * s,
                  2 * s, is_583 ? 20 : 12 * s, COLOR_RED);
     if (is_583)
-        fb_utf8_px(fb, L->grid_x + 18, 14, title, COLOR_BLACK, 32);
+        ui_draw_text_px(fb, L->grid_x + 18, 14, title, COLOR_BLACK, 32);
     else
-        fb_utf8_scaled(fb, L->grid_x + 8 * s, 6 * s, title, COLOR_BLACK, s);
+        ui_draw_fixed_text(fb, L->grid_x + 8 * s, 6 * s, title,
+                           COLOR_BLACK, s);
     if (meta[0]) {
-        int tw = cal_utf8_width_px(meta, 8, 16);
-        fb_utf8_scaled(fb, W - tw - L->grid_x,
-                       is_583 ? 24 : 10 * s, meta, COLOR_BLACK, 1);
+        int tw = ui_fixed_text_width(fb, meta, 1);
+        ui_draw_fixed_text(fb, W - tw - L->grid_x,
+                           is_583 ? 24 : 10 * s, meta, COLOR_BLACK, 1);
     }
     ui_draw_dotted_hline(fb, L->grid_x, L->title_h - 4 * s,
                          L->col_w * CAL_GRID_COLS,
@@ -414,10 +415,7 @@ static void cal_draw_weekday_row(fb_t *fb, const cal_layout_t *L)
     for (int c = 0; c < CAL_GRID_COLS; c++) {
         int x = L->grid_x + c * L->col_w + (L->col_w - glyph_px) / 2;
         fb_color_t col = (c == 0 || c == CAL_GRID_COLS - 1) ? COLOR_RED : COLOR_BLACK;
-        if (is_583)
-            fb_utf8_px(fb, x, y, WD[c], col, glyph_px);
-        else
-            fb_utf8_scaled(fb, x, y, WD[c], col, 1);
+        ui_draw_text_px(fb, x, y, WD[c], col, glyph_px);
     }
 }
 
@@ -477,14 +475,11 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
 
     char ds[12];
     snprintf(ds, sizeof(ds), "%d", day);
-    int dw = is_583 ? fb_utf8_px_width(ds, day_px) : (int)strlen(ds) * 8 * text_sc;
+    int dw = ui_text_width_px(fb, ds, day_px);
     int dx = cell_x + (cw - dw) / 2;
     int dy = cell_y + top_pad;
     fb_color_t num_c = weekend ? COLOR_RED : COLOR_BLACK;
-    if (is_583)
-        fb_utf8_px(fb, dx, dy, ds, num_c, day_px);
-    else
-        fb_utf8_scaled(fb, dx, dy, ds, num_c, text_sc);
+    ui_draw_text_px(fb, dx, dy, ds, num_c, day_px);
 
     lunar_date_t ld;
     const char *label  = NULL;
@@ -515,22 +510,20 @@ static void cal_draw_day_cell(fb_t *fb, const cal_layout_t *L,
 
     int max_w = cw - 2;
     if (max_w < 8) max_w = 8;
-    int lw = is_583 ? fb_utf8_px_width(label, lunar_px)
-                    : cal_utf8_width_px(label, 8 * text_sc, 16 * text_sc);
+    int lw;
+    lw = ui_text_width_px(fb, label, lunar_px);
     int lx = (lw <= max_w) ? cell_x + (cw - lw) / 2 : cell_x + (cw - max_w) / 2;
     if (lx < cell_x + 1)
         lx = cell_x + 1;
-    if (is_583)
-        fb_utf8_px_maxw(fb, lx, ly, label, sub_c, lunar_px, max_w);
-    else
-        fb_utf8_scaled_maxw(fb, lx, ly, label, sub_c, text_sc, max_w);
+    ui_draw_text_px_maxw(fb, lx, ly, label, sub_c, lunar_px, max_w);
 }
 
 /* -------------------------------------------------------------------------- */
 /* 合成一帧                                                                   */
 /* -------------------------------------------------------------------------- */
 
-static void cal_draw_overview_weather(fb_t *fb, int x, int y, int max_w, bool big)
+static void cal_draw_overview_weather(fb_t *fb, int x, int y, int max_w,
+                                      bool big, bool crisp)
 {
     weather_summary_t wd;
     memset(&wd, 0, sizeof(wd));
@@ -585,23 +578,39 @@ static void cal_draw_overview_weather(fb_t *fb, int x, int y, int max_w, bool bi
                 snprintf(l3, sizeof(l3), "%d级", wd.now.wind_scale);
         }
         if (big) {
-            fb_utf8_scaled_maxw(fb, tx, y + 4, l1, COLOR_BLACK, 1, tw);
-            fb_utf8_scaled_maxw(fb, tx, y + 22, l2, COLOR_BLACK, 1, tw);
-        } else {
-            fb_utf8_scaled_maxw(fb, tx, y, l1, COLOR_BLACK, 1, tw);
-            int temp_w = fb_utf8_scaled_maxw(fb, tx, y + 16, temp_num,
-                                             COLOR_BLACK, 1, 24);
+            ui_draw_fixed_text_maxw(fb, tx, y + 4, l1, COLOR_BLACK, 1, tw);
+            ui_draw_fixed_text_maxw(fb, tx, y + 22, l2, COLOR_BLACK, 1, tw);
+        } else if (crisp) {
+            ui_draw_fixed_text_maxw(fb, tx, y, l1, COLOR_BLACK, 1, tw);
+            int temp_w = ui_draw_fixed_text_maxw(fb, tx, y + 16, temp_num,
+                                                 COLOR_BLACK, 1, 24);
             cal_draw_degree_mark(fb, tx + temp_w + 1, y + 18, COLOR_BLACK);
-            fb_utf8_scaled(fb, tx + temp_w + 6, y + 16, "C", COLOR_BLACK, 1);
-            fb_utf8_scaled(fb, tx + 40, y + 16, "|", COLOR_BLACK, 1);
-            fb_utf8_scaled_maxw(fb, tx + 50, y + 16, hum_part, COLOR_BLACK, 1,
-                                tw - 50);
-            fb_utf8_scaled_maxw(fb, tx, y + 32, l3, COLOR_BLACK, 1, tw);
+            ui_draw_fixed_text(fb, tx + temp_w + 6, y + 16, "C",
+                               COLOR_BLACK, 1);
+            ui_draw_fixed_text(fb, tx + 40, y + 16, "|", COLOR_BLACK, 1);
+            ui_draw_fixed_text_maxw(fb, tx + 50, y + 16, hum_part,
+                                    COLOR_BLACK, 1, tw - 50);
+            ui_draw_fixed_text_maxw(fb, tx, y + 32, l3, COLOR_BLACK, 1, tw);
+        } else {
+            ui_draw_fixed_text_maxw(fb, tx, y, l1, COLOR_BLACK, 1, tw);
+            int temp_w = ui_draw_fixed_text_maxw(fb, tx, y + 16, temp_num,
+                                                 COLOR_BLACK, 1, 24);
+            cal_draw_degree_mark(fb, tx + temp_w + 1, y + 18, COLOR_BLACK);
+            ui_draw_fixed_text(fb, tx + temp_w + 6, y + 16, "C",
+                               COLOR_BLACK, 1);
+            ui_draw_fixed_text(fb, tx + 40, y + 16, "|", COLOR_BLACK, 1);
+            ui_draw_fixed_text_maxw(fb, tx + 50, y + 16, hum_part,
+                                    COLOR_BLACK, 1, tw - 50);
+            ui_draw_fixed_text_maxw(fb, tx, y + 32, l3, COLOR_BLACK, 1, tw);
         }
     } else {
-        fb_utf8_scaled_maxw(fb, x + 8, y + (big ? 13 : 9),
-                            "\xe6\x97\xa0\xe5\xa4\xa9\xe6\xb0\x94",
-                            COLOR_BLACK, 1, max_w - 16);
+        if (!big && crisp)
+            ui_draw_fixed_text_maxw(fb, x + 8, y + 9, "无天气",
+                               COLOR_BLACK, 1, max_w - 16);
+        else
+            ui_draw_fixed_text_maxw(fb, x + 8, y + (big ? 13 : 9),
+                                    "\xe6\x97\xa0\xe5\xa4\xa9\xe6\xb0\x94",
+                                    COLOR_BLACK, 1, max_w - 16);
     }
 }
 
@@ -632,17 +641,12 @@ static void cal_draw_overview_cell(fb_t *fb, int x, int y, int w, int h,
 
     char ds[12];
     snprintf(ds, sizeof(ds), "%d", day);
-    int day_w = is_583 ? fb_utf8_px_width(ds, day_px)
-                       : cal_utf8_width_px(ds, 8, 16);
+    int day_w = ui_text_width_px(fb, ds, day_px);
     int num_x = x + (w - day_w) / 2;
     if (num_x < x + 1)
         num_x = x + 1;
-    if (is_583)
-        fb_utf8_px(fb, num_x, num_y, ds,
-                   weekend ? COLOR_RED : COLOR_BLACK, day_px);
-    else
-        fb_utf8_scaled(fb, num_x, num_y, ds,
-                       weekend ? COLOR_RED : COLOR_BLACK, 1);
+    ui_draw_text_px(fb, num_x, num_y, ds,
+                    weekend ? COLOR_RED : COLOR_BLACK, day_px);
 
     lunar_date_t ld;
     const char *label = NULL;
@@ -669,19 +673,13 @@ static void cal_draw_overview_cell(fb_t *fb, int x, int y, int w, int h,
 
     if (max_w < 8)
         max_w = 8;
-    int lw = is_583 ? fb_utf8_px_width(label, lunar_px)
-                    : cal_utf8_width_px(label, 8, 16);
+    int lw = ui_text_width_px(fb, label, lunar_px);
     int lx = (lw <= max_w) ? x + (w - lw) / 2 : x + (w - max_w) / 2;
     if (lx < x + 1)
         lx = x + 1;
-    if (is_583)
-        fb_utf8_px_maxw(fb, lx, lunar_y, label,
-                        (special || weekend) ? COLOR_RED : COLOR_BLACK,
-                        lunar_px, max_w);
-    else
-        fb_utf8_scaled_maxw(fb, lx, lunar_y, label,
-                            (special || weekend) ? COLOR_RED : COLOR_BLACK,
-                            1, max_w);
+    ui_draw_text_px_maxw(fb, lx, lunar_y, label,
+                         (special || weekend) ? COLOR_RED : COLOR_BLACK,
+                         lunar_px, max_w);
 }
 
 static void cal_render_overview(fb_t *fb, int year, int month,
@@ -692,6 +690,7 @@ static void cal_render_overview(fb_t *fb, int year, int month,
     const ui_layout_class_t layout = ui_layout_for(fb);
     const bool is_583 = (layout == UI_LAYOUT_583);
     const bool big = (layout == UI_LAYOUT_LARGE);
+    const bool crisp = (!is_583 && !big && W == 400 && H == 300);
     const int mx = big ? 24 : (is_583 ? 28 : 14);
     const int top = big ? 16 : (is_583 ? 18 : 10);
     const int header_h = big ? 84 : (is_583 ? 96 : 56);
@@ -719,18 +718,19 @@ static void cal_render_overview(fb_t *fb, int year, int month,
         snprintf(date_big, sizeof(date_big), "%04d.%02d.%02d",
                  today_y, today_m, today_d);
         if (is_583)
-            date_w = fb_utf8_px(fb, date_x, top + 4, date_big,
-                                COLOR_RED, 40);
+            date_w = ui_draw_text_px(fb, date_x, top + 4, date_big,
+                                     COLOR_RED, 40);
         else
-            date_w = fb_utf8_scaled(fb, date_x, top + 4, date_big,
-                                    COLOR_RED, 3);
+            date_w = ui_draw_fixed_text(fb, date_x, top + 4, date_big,
+                                        COLOR_RED, 3);
     } else {
         date_w = cal_draw_compact_date(fb, date_x, top + 3,
                                        today_y, today_m, today_d);
         char week_line[16];
         snprintf(week_line, sizeof(week_line), "第%d周",
                  cal_iso_week_number(today_y, today_m, today_d));
-        fb_utf8_scaled_maxw(fb, date_x, top + 35, week_line, COLOR_RED, 1, 80);
+        ui_draw_fixed_text_maxw(fb, date_x, top + 35, week_line,
+                                COLOR_RED, 1, 80);
     }
 
     char lunar_line[80] = "";
@@ -760,7 +760,7 @@ static void cal_render_overview(fb_t *fb, int year, int month,
                           (is_583 ? W - mx - weather_w : W - mx - weather_w - 2);
     const int weather_y = top + (big ? 9 : (is_583 ? 12 : 6));
     cal_draw_overview_weather(fb, weather_x, weather_y, weather_w,
-                              big || is_583);
+                              big || is_583, crisp);
 
     if (big || is_583) {
         const int sub_y = top + (big ? 58 : (is_583 ? 66 : 50));
@@ -769,27 +769,27 @@ static void cal_render_overview(fb_t *fb, int year, int month,
             sub_max = W / 2;
         if (is_583) {
             const int meta_px = 18;
-            int lunar_w = fb_utf8_px_width(lunar_line, meta_px);
+            int lunar_w = ui_text_width_px(fb, lunar_line, meta_px);
             int gap_w = 12;
             int week_x = date_x + lunar_w + gap_w;
             int week_max = sub_max - lunar_w - gap_w;
             if (week_max < 32)
                 week_max = 32;
-            fb_utf8_px_maxw(fb, date_x, sub_y - 1, lunar_line,
-                            COLOR_BLACK, meta_px, sub_max);
-            fb_utf8_px_maxw(fb, week_x, sub_y - 1, WD_LONG[wday],
-                            COLOR_RED, meta_px, week_max);
+            ui_draw_text_px_maxw(fb, date_x, sub_y - 1, lunar_line,
+                                 COLOR_BLACK, meta_px, sub_max);
+            ui_draw_text_px_maxw(fb, week_x, sub_y - 1, WD_LONG[wday],
+                                 COLOR_RED, meta_px, week_max);
         } else {
-            int lunar_w = fb_utf8_scaled_width(lunar_line, 1);
+            int lunar_w = ui_fixed_text_width(fb, lunar_line, 1);
             int gap_w = 8;
             int week_x = date_x + lunar_w + gap_w;
             int week_max = sub_max - lunar_w - gap_w;
             if (week_max < 32)
                 week_max = 32;
-            fb_utf8_scaled_maxw(fb, date_x, sub_y, lunar_line,
-                                COLOR_BLACK, 1, sub_max);
-            fb_utf8_scaled_maxw(fb, week_x, sub_y, WD_LONG[wday],
-                                COLOR_RED, 1, week_max);
+            ui_draw_fixed_text_maxw(fb, date_x, sub_y, lunar_line,
+                                    COLOR_BLACK, 1, sub_max);
+            ui_draw_fixed_text_maxw(fb, week_x, sub_y, WD_LONG[wday],
+                                    COLOR_RED, 1, week_max);
         }
     } else {
         char meta_top[48] = "";
@@ -803,10 +803,10 @@ static void cal_render_overview(fb_t *fb, int year, int month,
         int meta_x = date_x + date_w + 8;
         int meta_w = weather_x - meta_x - 4;
         if (meta_w > 24) {
-            fb_utf8_scaled_maxw(fb, meta_x, top + 6, meta_top,
-                                COLOR_BLACK, 1, meta_w);
-            fb_utf8_scaled_maxw(fb, meta_x, top + 24, meta_bot,
-                                COLOR_BLACK, 1, meta_w);
+            ui_draw_fixed_text_maxw(fb, meta_x, top + 6, meta_top,
+                                    COLOR_BLACK, 1, meta_w);
+            ui_draw_fixed_text_maxw(fb, meta_x, top + 24, meta_bot,
+                                    COLOR_BLACK, 1, meta_w);
         }
     }
     if (big || is_583) {
@@ -823,9 +823,9 @@ static void cal_render_overview(fb_t *fb, int year, int month,
         int x = grid_x + c * col_w;
         if (c == 0)
             fb_fill_rect(fb, x, week_y, col_w, week_h, COLOR_RED);
-        fb_utf8_scaled(fb, x + (col_w - 16) / 2,
-                       week_y + (week_h - 16) / 2,
-                       WD_SHORT[c], COLOR_WHITE, 1);
+        ui_draw_fixed_text(fb, x + (col_w - 16) / 2,
+                           week_y + (week_h - 16) / 2,
+                           WD_SHORT[c], COLOR_WHITE, 1);
     }
 
     fb_rect(fb, grid_x, grid_top, grid_actual_w, grid_actual_h, COLOR_BLACK);
@@ -886,7 +886,7 @@ static void cal_render_month(fb_t *fb, int year, int month,
 
     char today[40];
     snprintf(today, sizeof(today), "%04d-%02d-%02d", today_y, today_m, today_d);
-    ui_draw_footer(fb, "CALENDAR", today);
+    ui_draw_footer(fb, "\xe6\x97\xa5\xe5\x8e\x86", today);
 }
 
 static void cal_state_note_shown(int year, int month, int day)

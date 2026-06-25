@@ -55,6 +55,8 @@
 | HTTP 接口 | 73 条注册路由，覆盖图片、WiFi、配置、天气、课程、待办、倒计时、画板、OTA、鉴权、存储空间和系统状态 |
 | 字库资源 | 内置紧凑字库 + `fontfs` 外置字库；留言/画板支持浏览器字体渲染成图片后推屏 |
 | 分区表 | factory + 双 OTA + coredump + fontfs + SPIFFS，面向 16MB Flash 固件发布 |
+
+> 首次源码编译会下载开源字体生成 `fontfs`。若日志停在 `fetch_open_fonts.py` 并提示 read timeout，通常是 GitHub 原始文件访问超时；可重试，或把 `LXGW975YuanSC-400W.ttf`、`NotoSansMono-Regular.ttf` 放入 `tools/fonts/noto/` 后重新执行 `idf.py build`。也可设置 `MIAOO_FONT_SOURCE_DIR` 指向本地开源字体缓存目录。
 | 发布包 | `release/epaper_uploader_full_16MB.bin` 与 ZIP 已按 v2.3.3 当前源码重新构建并记录 SHA256 |
 | 文档 | README、使用说明、工程文档、实现说明、字库说明、发布流程、安全支持、公开发布检查清单和更新日志 |
 
@@ -91,7 +93,7 @@
 |------|----------|
 | app 分区 | factory + ota_0 + ota_1，三槽均为 3MB，支持出厂固件和 OTA 回滚空间 |
 | coredump | `0x920000` 起，128KB，用于崩溃诊断 |
-| fontfs | `0x940000` 起，2.875MB，放固件随附 16/24/32px 字库资源 |
+| fontfs | `0x940000` 起，2.875MB，放固件随附 24/32px 外置字库资源；16px 小字走内置清晰位图 |
 | 用户 SPIFFS | `0xC20000` 起，3.875MB，放图片、画布素材、运行时文件和用户数据 |
 | Web 字体渲染 | 留言/画板页面可调用浏览器本机字体渲染为图片后推屏，不需要把所有字体都塞进固件 |
 | release 固件 | 当前 `release/` 已按 v2.3.3 重新构建并记录 SHA256；后续修改源码、分区表或字库后必须重新构建 |
@@ -478,7 +480,7 @@ msp/
 | factory | app | 3 MB | 出厂固件槽，保留回滚/救援入口 |
 | ota_0 / ota_1 | app | 各 3 MB | OTA 双分区，具体 app 余量以发布前 `idf.py build` 的 size 输出为准 |
 | coredump | data | 128 KB | panic / watchdog 崩溃转储，便于售后排障 |
-| fontfs | data | 2.875 MB | 内置 16/24/32px 字库资源分区 |
+| fontfs | data | 2.875 MB | 24/32px 外置字库资源分区，16px 小字保留在 app 内置位图 |
 | spiffs | data | 3.875 MB | 用户图片、画布素材和运行时文件 |
 
 > 当前分区表面向 16MB Flash。`spiffs` 用户文件区固定在 `0xC20000`，用于尽量保护已有图库/配置；`fontfs` 位于 `0x940000`。分区表或字库分区变更后，不能只 OTA app，需要同时更新 `partition_table` 和 `fontfs.bin`，出厂包建议使用完整 16MB 固件。
@@ -550,6 +552,7 @@ msp/
 
 - **允许**：个人学习、研究、修改与非商业性使用、分发（须附带许可证全文）。
 - **商业使用**：默认**不在** PolyForm 非商业许可范围内；若你希望将本项目用于营利（如量产销售、商用 SaaS 等），须事先联系著作权人并取得**书面同意**，双方可另签商业许可协议。中国大陆商业授权提示见 [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md)。
+- **署名保留**：再分发源码、修改版本或固件时，应保留 `LICENSE` 顶部的 `Required Notice`、Web 管理端页面底部的项目署名和 Gitee 源码仓库链接，不得把修改版本伪装成官方原版。
 - PolyForm 对「非营利机构、学校、部分公共机构」等有单独说明，请以英文正文为准。**商用 / 授权洽谈**：`430601574@qq.com`，微信 `GXPmiaomiao`，或 Gitee 仓库 Issue / 私信。
 
 **免责声明**：以上内容仅为项目授权说明，不构成法律意见。若涉及商业使用、再分发、再授权或争议处理，请咨询专业律师；`LICENSE` 顶部的 `Required Notice` 应与实际著作权人或授权主体保持一致。

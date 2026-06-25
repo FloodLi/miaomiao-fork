@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "battery_mon.h"
+#include "ui_crisp_font.h"
 
 ui_layout_class_t ui_layout_for(const fb_t *fb)
 {
@@ -100,38 +101,92 @@ int ui_role_scale(const fb_t *fb, ui_text_role_t role)
     }
 }
 
-static bool ui_role_prefers_ext(const fb_t *fb, ui_text_role_t role, int scale)
+int ui_fixed_text_width(const fb_t *fb, const char *s, int scale)
+{
+    if (!s)
+        return 0;
+    if (scale < 1)
+        scale = 1;
+    return ui_text_width_px(fb, s, 16 * scale);
+}
+
+int ui_draw_fixed_text(fb_t *fb, int x, int y, const char *s,
+                       fb_color_t color, int scale)
+{
+    if (!s)
+        return 0;
+    if (scale < 1)
+        scale = 1;
+    return ui_draw_text_px(fb, x, y, s, color, 16 * scale);
+}
+
+int ui_draw_fixed_text_maxw(fb_t *fb, int x, int y, const char *s,
+                            fb_color_t color, int scale, int max_w)
+{
+    if (!s || max_w <= 0)
+        return 0;
+    if (scale < 1)
+        scale = 1;
+    return ui_draw_text_px_maxw(fb, x, y, s, color, 16 * scale, max_w);
+}
+
+int ui_text_width_px(const fb_t *fb, const char *s, int target_px)
 {
     (void)fb;
-    (void)role;
-    (void)scale;
-    return false;
+    if (!s)
+        return 0;
+    if (target_px < 8)
+        target_px = 8;
+    if (target_px < 24) {
+        return ui_crisp_font_width(s, 1);
+    }
+    return fb_utf8_px_width(s, target_px);
+}
+
+int ui_draw_text_px(fb_t *fb, int x, int y, const char *s,
+                    fb_color_t color, int target_px)
+{
+    if (!s)
+        return 0;
+    if (target_px < 8)
+        target_px = 8;
+    if (target_px < 24) {
+        return ui_crisp_font_draw(fb, x, y, s, color, 1);
+    }
+    return fb_utf8_px(fb, x, y, s, color, target_px);
+}
+
+int ui_draw_text_px_maxw(fb_t *fb, int x, int y, const char *s,
+                         fb_color_t color, int target_px, int max_w)
+{
+    if (!s || max_w <= 0)
+        return 0;
+    if (target_px < 8)
+        target_px = 8;
+    if (target_px < 24) {
+        return ui_crisp_font_draw_maxw(fb, x, y, s, color, 1, max_w);
+    }
+    return fb_utf8_px_maxw(fb, x, y, s, color, target_px, max_w);
 }
 
 int ui_role_text_width(const fb_t *fb, const char *s, ui_text_role_t role)
 {
     int scale = ui_role_scale(fb, role);
-    if (ui_role_prefers_ext(fb, role, scale))
-        return fb_utf8_scaled_styled_width(s, scale);
-    return fb_utf8_scaled_width(s, scale);
+    return ui_fixed_text_width(fb, s, scale);
 }
 
 int ui_draw_text_role(fb_t *fb, int x, int y, const char *s,
                       fb_color_t color, ui_text_role_t role)
 {
     int scale = ui_role_scale(fb, role);
-    if (ui_role_prefers_ext(fb, role, scale))
-        return fb_utf8_scaled_styled(fb, x, y, s, color, scale);
-    return fb_utf8_scaled(fb, x, y, s, color, scale);
+    return ui_draw_fixed_text(fb, x, y, s, color, scale);
 }
 
 int ui_draw_text_role_maxw(fb_t *fb, int x, int y, const char *s,
                            fb_color_t color, ui_text_role_t role, int max_w)
 {
     int scale = ui_role_scale(fb, role);
-    if (ui_role_prefers_ext(fb, role, scale))
-        return fb_utf8_scaled_styled_maxw(fb, x, y, s, color, scale, max_w);
-    return fb_utf8_scaled_maxw(fb, x, y, s, color, scale, max_w);
+    return ui_draw_fixed_text_maxw(fb, x, y, s, color, scale, max_w);
 }
 
 void ui_draw_dotted_hline(fb_t *fb, int x, int y, int w, fb_color_t color, int step)
@@ -211,11 +266,13 @@ int ui_draw_battery_badge(fb_t *fb, int right_x, int y)
     const int icon_h = 10;
     const int cap_w = 3;
     const int gap = 4;
-    const int text_w = ui_text_width(label, 1);
+    const int text_w = ui_fixed_text_width(fb, label, 1);
     const int total_w = icon_w + cap_w + gap + text_w;
     const int x = right_x - total_w;
     const int icon_x = x;
-    const int icon_y = y + 3;
+    const int row_h = 16;
+    const int text_y = y;
+    const int icon_y = y + (row_h - icon_h) / 2;
 
     fb_rect(fb, icon_x, icon_y, icon_w, icon_h, COLOR_BLACK);
     fb_fill_rect(fb, icon_x + icon_w, icon_y + 3, cap_w, icon_h - 6, COLOR_BLACK);
@@ -235,7 +292,7 @@ int ui_draw_battery_badge(fb_t *fb, int right_x, int y)
         fb_hline(fb, icon_x + 7, icon_y + 6, 10, COLOR_RED);
     }
 
-    fb_utf8_scaled(fb, icon_x + icon_w + cap_w + gap, y + 1, label, accent, 1);
+    ui_draw_fixed_text(fb, icon_x + icon_w + cap_w + gap, text_y, label, accent, 1);
     return total_w;
 }
 
@@ -246,9 +303,10 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
 
     const int W = fb->width;
     const int s = ui_scale_for(fb);
+    const bool is_42 = ui_layout_is_42(fb);
     const int x = 14 * s;
     const int y = 8 * s;
-    const int header_h = 18 * s;
+    const int line_y = is_42 ? 29 : 24 * s;
 
     if (red_accent)
         fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, COLOR_RED);
@@ -258,10 +316,10 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
         int title_max_w = W / 2 - 28 * s;
         if (title_max_w < 0)
             title_max_w = 0;
-        title_w = ui_text_width(title, 1);
+        title_w = ui_fixed_text_width(fb, title, 1);
         if (title_w > title_max_w)
             title_w = title_max_w;
-        fb_utf8_scaled_maxw(fb, x, y, title, COLOR_BLACK, 1, title_max_w);
+        ui_draw_fixed_text_maxw(fb, x, y, title, COLOR_BLACK, 1, title_max_w);
     }
 
     int battery_right = W - 14 * s;
@@ -275,17 +333,16 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
         if (min_right_x > right_limit)
             min_right_x = right_limit;
 
-        int rw = ui_text_width(right, 1);
+        int rw = ui_fixed_text_width(fb, right, 1);
         int rx = right_limit - rw;
         if (rx < min_right_x)
             rx = min_right_x;
         if (right_limit > rx)
-            fb_utf8_scaled_maxw(fb, rx, y + 1 * s, right, COLOR_BLACK, 1,
-                                right_limit - rx);
+            ui_draw_fixed_text_maxw(fb, rx, y, right, COLOR_BLACK, 1,
+                                    right_limit - rx);
     }
 
-    ui_draw_dotted_hline(fb, 12 * s, header_h + 6 * s, W - 24 * s,
-                         COLOR_BLACK, 6);
+    ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s, COLOR_BLACK, 6);
 }
 
 void ui_draw_footer(fb_t *fb, const char *left, const char *right)
@@ -296,21 +353,23 @@ void ui_draw_footer(fb_t *fb, const char *left, const char *right)
     const int W = fb->width;
     const int H = fb->height;
     const int s = ui_scale_for(fb);
-    const int y = H - 20 * s;
+    const bool is_42 = ui_layout_is_42(fb);
+    const int y = is_42 ? H - 26 : H - 20 * s;
+    const int line_y = is_42 ? y - 8 : y - 4 * s;
 
-    ui_draw_dotted_hline(fb, 12 * s, y - 4 * s, W - 24 * s, COLOR_BLACK, 6);
+    ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s, COLOR_BLACK, 6);
 
     int left_max_w = W - 28 * s;
     if (right && right[0]) {
-        int rw = ui_text_width(right, 1);
+        int rw = ui_fixed_text_width(fb, right, 1);
         left_max_w = W - 34 * s - rw;
     }
     if (left && left[0] && left_max_w > 0)
-        fb_utf8_scaled_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1, left_max_w);
+        ui_draw_fixed_text_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1, left_max_w);
 
     if (right && right[0]) {
-        int rw = ui_text_width(right, 1);
-        fb_utf8_scaled(fb, W - 14 * s - rw, y, right, COLOR_BLACK, 1);
+        int rw = ui_fixed_text_width(fb, right, 1);
+        ui_draw_fixed_text(fb, W - 14 * s - rw, y, right, COLOR_BLACK, 1);
     }
 }
 
@@ -338,23 +397,40 @@ void ui_draw_section_label(fb_t *fb, int x, int y, const char *label,
     if (scale < 1)
         scale = 1;
     fb_fill_rect(fb, x, y + 4 * scale, 4 * scale, 10 * scale, color);
-    fb_utf8_scaled(fb, x + 8 * scale, y, label, color, scale);
+    ui_draw_fixed_text(fb, x + 8 * scale, y, label, color, scale);
 }
 
-void ui_draw_empty_state(fb_t *fb, const char *title, const char *hint)
+static void ui_draw_centered_text_px(fb_t *fb, int y, const char *s,
+                                     fb_color_t color, int target_px)
+{
+    if (!fb || !s)
+        return;
+    int w = ui_text_width_px(fb, s, target_px);
+    int x = (fb->width - w) / 2;
+    if (x < 0)
+        x = 0;
+    ui_draw_text_px(fb, x, y, s, color, target_px);
+}
+
+void ui_draw_empty_state_compact(fb_t *fb, const char *title, const char *hint)
 {
     if (!fb)
         return;
     int s = ui_scale_for(fb);
     int y = fb->height / 2 - 28 * s;
     if (title) {
-        int w = ui_text_width(title, s + 1);
-        fb_utf8_scaled(fb, (fb->width - w) / 2, y, title, COLOR_BLACK, s + 1);
+        int px = ui_layout_is_42(fb) ? 16 : 32;
+        ui_draw_centered_text_px(fb, y, title, COLOR_BLACK, px);
     }
     if (hint) {
-        int w = ui_text_width(hint, s);
-        fb_utf8_scaled(fb, (fb->width - w) / 2, y + 28 * s, hint, COLOR_RED, s);
+        int px = 16 * s;
+        ui_draw_centered_text_px(fb, y + 28 * s, hint, COLOR_RED, px);
     }
+}
+
+void ui_draw_empty_state(fb_t *fb, const char *title, const char *hint)
+{
+    ui_draw_empty_state_compact(fb, title, hint);
 }
 
 void ui_draw_progress_bar(fb_t *fb, int x, int y, int w, int h, int percent, fb_color_t fill)

@@ -1149,8 +1149,8 @@ static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
                                 w - (temp_x - x) - 12);
 
     fb_fill_rect(fb, temp_x, y + 108, 30, 3, COLOR_RED);
-    fb_utf8_scaled_maxw(fb, temp_x, y + 118, wd->now.text,
-                        COLOR_RED, 2, w - 146);
+    ui_draw_fixed_text_maxw(fb, temp_x, y + 118, wd->now.text,
+                            COLOR_RED, 2, w - 146);
 
     int today_low = wd->now.temp;
     int today_high = wd->now.temp;
@@ -1165,8 +1165,8 @@ static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
     int range_w = temp_x - x - 42;
     if (range_w < 96 || range_w > w - 44)
         range_w = w - 44;
-    fb_utf8_scaled_maxw(fb, x + 28, y + h - 28, range,
-                        COLOR_BLACK, 1, range_w);
+    ui_draw_fixed_text_maxw(fb, x + 28, y + h - 28, range,
+                            COLOR_BLACK, 1, range_w);
 
     const char *city = (cfg && cfg->city_name[0]) ? cfg->city_name : "";
     (void)city; /* City/date already lives in the page header on the large layout. */
@@ -1181,11 +1181,11 @@ static void draw_stat_box(fb_t *fb, int x, int y, int w, int h,
     fb_fill_rect(fb, x, y, 2, h, accent);
     if (accent == COLOR_RED)
         fb_fill_rect(fb, x, y, w / 4, 2, COLOR_RED);
-    fb_utf8_scaled_maxw(fb, x + 9, y + 4, label, accent, 1, w - 18);
+    ui_draw_fixed_text_maxw(fb, x + 9, y + 4, label, accent, 1, w - 18);
     int value_y = (value_scale >= 2) ? (y + h - 16 * value_scale - 1)
                                      : (y + h - 22);
-    fb_utf8_scaled_maxw(fb, x + 8, value_y, value,
-                        COLOR_BLACK, value_scale, w - 16);
+    ui_draw_fixed_text_maxw(fb, x + 8, value_y, value,
+                            COLOR_BLACK, value_scale, w - 16);
 }
 
 static void draw_metric_deck(fb_t *fb, int x, int y, int w, int h,
@@ -1260,9 +1260,10 @@ static void draw_forecast_orbit(fb_t *fb, int x, int y, int w, int h,
         fb_rect(fb, bx, card_y, bw, card_h, COLOR_BLACK);
         if (i == 0)
             fb_fill_rect(fb, bx, card_y, bw / 4, 2, COLOR_RED);
-        fb_utf8_scaled_maxw(fb, bx + 8, card_y + 7, md, accent, 1, bw - 48);
-        fb_utf8_scaled_maxw(fb, bx + 66, card_y + 7, day->text_day,
-                            accent, 1, bw - 108);
+        ui_draw_fixed_text_maxw(fb, bx + 8, card_y + 7, md,
+                                accent, 1, bw - 48);
+        ui_draw_fixed_text_maxw(fb, bx + 66, card_y + 7, day->text_day,
+                                accent, 1, bw - 108);
 
         int icon_x = bx + bw - 36;
         draw_weather_icon_code(fb, icon_x, card_y + 20,
@@ -1272,8 +1273,8 @@ static void draw_forecast_orbit(fb_t *fb, int x, int y, int w, int h,
         char temp[32];
         snprintf(temp, sizeof(temp), "\xe9\xab\x98%d / \xe4\xbd\x8e%d\xc2\xb0",
                  day->temp_max, day->temp_min);
-        fb_utf8_scaled_maxw(fb, bx + 8, card_y + card_h - 18, temp,
-                            COLOR_BLACK, 1, bw - 52);
+        ui_draw_fixed_text_maxw(fb, bx + 8, card_y + card_h - 18, temp,
+                                COLOR_BLACK, 1, bw - 52);
     }
 }
 
@@ -1286,8 +1287,8 @@ static void draw_temp_marker(fb_t *fb, int px, int py, const char *tag,
     bool wide_583 = (fb && (fb->width == 600 || fb->width == 648) &&
                      fb->height >= 430);
     int text_px = wide_583 ? 16 : 0;
-    int lw = wide_583 ? fb_utf8_px_width(label, text_px)
-                      : ui_text_width(label, 1);
+    int lw = wide_583 ? ui_text_width_px(fb, label, text_px)
+                      : ui_fixed_text_width(fb, label, 1);
     int tx = clamp_i(px - lw / 2, plot_x + 1, plot_x + plot_w - lw - 1);
     int ty = (py < plot_y + 18) ? (py + 8) : (py - 18);
     ty = clamp_i(ty, plot_y + 2, plot_y + plot_h - (wide_583 ? 16 : 14));
@@ -1303,9 +1304,9 @@ static void draw_temp_marker(fb_t *fb, int px, int py, const char *tag,
     fb_fill_rect(fb, px - 3, py - 3, 7, 7, color);
     if (wide_583) {
         fb_fill_rect(fb, tx - 2, ty - 1, lw + 4, 18, COLOR_WHITE);
-        fb_utf8_px(fb, tx, ty, label, color, text_px);
+        ui_draw_text_px(fb, tx, ty, label, color, text_px);
     } else {
-        fb_utf8_scaled(fb, tx, ty, label, color, 1);
+        ui_draw_fixed_text(fb, tx, ty, label, color, 1);
     }
 }
 
@@ -1448,22 +1449,25 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
     int summary_w = wide_583 ? 224 : 262;
     int summary_x = x + w - summary_w - (wide_583 ? 16 : 16);
     if (wide_583)
-        fb_utf8_px_maxw(fb, summary_x, y + 10, summary, COLOR_RED, 16, summary_w);
+        ui_draw_text_px_maxw(fb, summary_x, y + 10, summary,
+                             COLOR_RED, 16, summary_w);
     else
-        fb_utf8_scaled_maxw(fb, x + w - 278, y + 12, summary,
-                            COLOR_RED, 1, 262);
+        ui_draw_fixed_text_maxw(fb, x + w - 278, y + 12, summary,
+                                COLOR_RED, 1, 262);
 
     char axis[16];
     snprintf(axis, sizeof(axis), "%d\xc2\xb0", data_max);
     if (wide_583)
-        fb_utf8_px(fb, x + 14, plot_y - 3, axis, COLOR_RED, 16);
+        ui_draw_text_px(fb, x + 14, plot_y - 3, axis, COLOR_RED, 16);
     else
-        fb_utf8_scaled(fb, x + 14, plot_y - 2, axis, COLOR_RED, 1);
+        ui_draw_fixed_text(fb, x + 14, plot_y - 2, axis, COLOR_RED, 1);
     snprintf(axis, sizeof(axis), "%d\xc2\xb0", data_min);
     if (wide_583)
-        fb_utf8_px(fb, x + 14, plot_y + plot_h - 13, axis, COLOR_BLACK, 16);
+        ui_draw_text_px(fb, x + 14, plot_y + plot_h - 13, axis,
+                        COLOR_BLACK, 16);
     else
-        fb_utf8_scaled(fb, x + 14, plot_y + plot_h - 12, axis, COLOR_BLACK, 1);
+        ui_draw_fixed_text(fb, x + 14, plot_y + plot_h - 12, axis,
+                           COLOR_BLACK, 1);
 
     fb_vline(fb, plot_x, plot_y, plot_h, COLOR_BLACK);
     fb_hline(fb, plot_x, plot_y + plot_h, plot_w, COLOR_BLACK);
@@ -1547,11 +1551,11 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
                 if (label_idx[k] == i) duplicate = true;
             }
             if (duplicate) continue;
-            int lw = fb_utf8_px_width(labels[m], 16);
+            int lw = ui_text_width_px(fb, labels[m], 16);
             int tx = clamp_i(px[i] - lw / 2, plot_x + 1, plot_x + plot_w - lw - 1);
             if (tx - last_label_x > 50) {
-                fb_utf8_px(fb, tx, plot_y + plot_h + 5,
-                           labels[m], COLOR_BLACK, 16);
+                ui_draw_text_px(fb, tx, plot_y + plot_h + 5,
+                                labels[m], COLOR_BLACK, 16);
                 last_label_x = tx;
             }
         }
@@ -1565,11 +1569,11 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
                 if (label_idx[k] == i) duplicate = true;
             }
             if (duplicate) continue;
-            int lw = ui_text_width(xlabels[i], 1);
+            int lw = ui_fixed_text_width(fb, xlabels[i], 1);
             int tx = clamp_i(px[i] - lw / 2, plot_x + 1, plot_x + plot_w - lw - 1);
             if (tx - last_label_x > 44) {
-                fb_utf8_scaled(fb, tx, plot_y + plot_h + 4,
-                               xlabels[i], COLOR_BLACK, 1);
+                ui_draw_fixed_text(fb, tx, plot_y + plot_h + 4,
+                                   xlabels[i], COLOR_BLACK, 1);
                 last_label_x = tx;
             }
         }
@@ -1584,8 +1588,9 @@ static void draw_compact_metric(fb_t *fb, int x, int y, int w,
         return;
 
     fb_fill_rect(fb, x, y + 3, 2, 10, accent);
-    fb_utf8_scaled_maxw(fb, x + 6, y, label, accent, 1, w - 6);
-    fb_utf8_scaled_maxw(fb, x + 6, y + 15, value, COLOR_BLACK, 1, w - 6);
+    ui_draw_fixed_text_maxw(fb, x + 6, y, label, accent, 1, w - 6);
+    ui_draw_fixed_text_maxw(fb, x + 6, y + 15, value, COLOR_BLACK, 1,
+                            w - 6);
 }
 
 static const char *compact_forecast_name(int index)
@@ -1622,22 +1627,24 @@ static void draw_compact_forecast_card(fb_t *fb, int x, int y, int w, int h,
         fb_fill_rect(fb, x, y, 2, 24, COLOR_RED);
     }
 
-    fb_utf8_scaled_maxw(fb, x + 8, y + 7, compact_forecast_name(index),
-                        accent, 1, w - 42);
-    fb_utf8_scaled_maxw(fb, x + 8, y + 24, compact_forecast_date(day),
-                        COLOR_BLACK, 1, w - 42);
+    ui_draw_fixed_text_maxw(fb, x + 8, y + 7,
+                            compact_forecast_name(index), accent, 1,
+                            w - 42);
+    ui_draw_fixed_text_maxw(fb, x + 8, y + 24,
+                            compact_forecast_date(day), COLOR_BLACK, 1,
+                            w - 42);
     draw_weather_icon_code(fb, x + w - 34, y + 8,
                            day->icon_day, day->text_day,
                            QW_ICON_SMALL_SIZE, COLOR_BLACK);
 
-    fb_utf8_scaled_maxw(fb, x + 8, y + 47, day->text_day,
-                        COLOR_BLACK, 1, w - 16);
+    ui_draw_fixed_text_maxw(fb, x + 8, y + 47, day->text_day,
+                            COLOR_BLACK, 1, w - 16);
 
     char temp[24];
     snprintf(temp, sizeof(temp), "%d/%d\xc2\xb0",
              day->temp_max, day->temp_min);
-    fb_utf8_scaled_maxw(fb, x + 8, y + h - 26, temp,
-                        COLOR_BLACK, 1, w - 16);
+    ui_draw_fixed_text_maxw(fb, x + 8, y + h - 26, temp,
+                            COLOR_BLACK, 1, w - 16);
 }
 
 static void draw_weather_583_metric(fb_t *fb, int x, int y, int w, int h,
@@ -1655,9 +1662,9 @@ static void draw_weather_583_metric(fb_t *fb, int x, int y, int w, int h,
             accent_w = 28;
         fb_fill_rect(fb, x, y, accent_w, 2, COLOR_RED);
     }
-    fb_utf8_px_maxw(fb, x + 10, y + 6, label, accent, 16, w - 20);
-    fb_utf8_px_maxw(fb, x + 10, y + h - 21, value,
-                    COLOR_BLACK, 18, w - 20);
+    ui_draw_text_px_maxw(fb, x + 10, y + 6, label, accent, 16, w - 20);
+    ui_draw_text_px_maxw(fb, x + 10, y + h - 21, value,
+                         COLOR_BLACK, 18, w - 20);
 }
 
 static void draw_weather_583_current(fb_t *fb, int x, int y, int w, int h,
@@ -1688,15 +1695,15 @@ static void draw_weather_583_current(fb_t *fb, int x, int y, int w, int h,
                                 COLOR_BLACK, 5, w - (temp_x - x) - 12);
 
     fb_fill_rect(fb, temp_x, y + 105, 38, 3, COLOR_RED);
-    fb_utf8_px_maxw(fb, temp_x, y + 116, wd->now.text,
-                    COLOR_RED, 18, w - (temp_x - x) - 12);
+    ui_draw_text_px_maxw(fb, temp_x, y + 116, wd->now.text,
+                         COLOR_RED, 18, w - (temp_x - x) - 12);
 
     char range[48];
     snprintf(range, sizeof(range),
              "\xe4\xbb\x8a\xe6\x97\xa5 %d/%d\xc2\xb0",
              today_high, today_low);
-    fb_utf8_scaled_maxw(fb, x + 25, y + 116, range,
-                        COLOR_BLACK, 1, temp_x - x - 34);
+    ui_draw_fixed_text_maxw(fb, x + 25, y + 116, range,
+                            COLOR_BLACK, 1, temp_x - x - 34);
 
     (void)cfg; /* City/date is already shown in the page header. */
 }
@@ -1755,19 +1762,19 @@ static void draw_weather_583_forecast_card(fb_t *fb, int x, int y, int w, int h,
     char date[32];
     snprintf(date, sizeof(date), "%s %s",
              compact_forecast_name(index), compact_forecast_date(day));
-    fb_utf8_px_maxw(fb, x + 10, y + 9, date, accent, 17, w - 20);
+    ui_draw_text_px_maxw(fb, x + 10, y + 9, date, accent, 17, w - 20);
 
     draw_weather_icon_code(fb, x + w - 42, y + 34,
                            day->icon_day, day->text_day,
                            QW_ICON_SMALL_SIZE, COLOR_BLACK);
-    fb_utf8_px_maxw(fb, x + 10, y + 39, day->text_day,
-                    COLOR_BLACK, 18, w - 58);
+    ui_draw_text_px_maxw(fb, x + 10, y + 39, day->text_day,
+                         COLOR_BLACK, 18, w - 58);
 
     char temp[28];
     snprintf(temp, sizeof(temp), "%d/%d\xc2\xb0",
              day->temp_max, day->temp_min);
-    fb_utf8_px_maxw(fb, x + 10, y + h - 25, temp,
-                    COLOR_BLACK, 17, w - 20);
+    ui_draw_text_px_maxw(fb, x + 10, y + h - 25, temp,
+                         COLOR_BLACK, 17, w - 20);
 }
 
 static void draw_weather_583_forecast(fb_t *fb, int x, int y, int w, int h,
@@ -1875,8 +1882,8 @@ static void draw_compact_weather_page(fb_t *fb, int W, int H, int MX,
     char summary[48];
     snprintf(summary, sizeof(summary), "%s  %d/%d\xc2\xb0",
              wd->now.text, today_high, today_low);
-    fb_utf8_scaled_maxw(fb, temp_x, top_y + 75, summary,
-                        COLOR_RED, 1, metric_x - temp_x - 8);
+    ui_draw_fixed_text_maxw(fb, temp_x, top_y + 75, summary,
+                            COLOR_RED, 1, metric_x - temp_x - 8);
 
     ui_draw_dotted_vline(fb, metric_x - 10, top_y + 16,
                          top_h - 30, COLOR_BLACK, 6);

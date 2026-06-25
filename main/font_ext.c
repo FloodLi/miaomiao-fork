@@ -33,7 +33,6 @@ typedef struct {
 } glyph_cache_t;
 
 static const font_slot_t s_slots[FONT_EXT_COUNT] = {
-    { 16, FONT_EXT_BASE_PATH "/cjk16.mef" },
     { 24, FONT_EXT_BASE_PATH "/cjk24.mef" },
     { 32, FONT_EXT_BASE_PATH "/cjk32.mef" },
 };
@@ -92,7 +91,7 @@ static uint16_t glyph_bytes_for_px(uint16_t px)
 
 bool font_ext_supported_px(int px)
 {
-    return px == 16 || px == 24 || px == 32;
+    return px == 24 || px == 32;
 }
 
 const char *font_ext_path_for_px(int px)
@@ -322,21 +321,23 @@ static bool choose_px_order(int scale, uint16_t order[FONT_EXT_COUNT])
     if (scale < 2)
         return false;
     if (scale == 2) {
-        order[0] = 32; order[1] = 24; order[2] = 16;
+        order[0] = 32;
+        order[1] = 24;
     } else {
-        order[0] = 32; order[1] = 24; order[2] = 16;
+        order[0] = 32;
+        order[1] = 24;
     }
     return true;
 }
 
 static void choose_px_order_for_target(int target_px, uint16_t order[FONT_EXT_COUNT])
 {
-    if (target_px <= 16) {
-        order[0] = 16; order[1] = 24; order[2] = 32;
-    } else if (target_px <= 24) {
-        order[0] = 24; order[1] = 16; order[2] = 32;
+    if (target_px <= 24) {
+        order[0] = 24;
+        order[1] = 32;
     } else {
-        order[0] = 32; order[1] = 24; order[2] = 16;
+        order[0] = 32;
+        order[1] = 24;
     }
 }
 

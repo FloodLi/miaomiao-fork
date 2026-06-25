@@ -11,6 +11,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#include "ui_theme.h"
+
 static const char *TAG = "battery";
 
 /* BAT_DET is VBAT / 2.  Use calibrated mV first; raw thresholds are only fallback. */
@@ -318,7 +320,7 @@ void battery_mon_draw_on_fb(fb_t *fb, int x, int y, fb_color_t color, int scale)
         snprintf(line, sizeof(line),
                  "\xe7\x94\xb5\xe9\x87\x8f %u%%", (unsigned)s.percent);
     }
-    fb_utf8_scaled(fb, x, y, line, color, scale);
+    ui_draw_fixed_text(fb, x, y, line, color, scale);
 }
 
 void battery_mon_draw_percent_compact(fb_t *fb, int x, int y, fb_color_t color, int scale)
@@ -337,5 +339,5 @@ void battery_mon_draw_percent_compact(fb_t *fb, int x, int y, fb_color_t color, 
     else
         snprintf(line, sizeof(line), "%u%%", (unsigned)s.percent);
 
-    fb_utf8_scaled(fb, x, y, line, color, scale);
+    ui_draw_fixed_text(fb, x, y, line, color, scale);
 }

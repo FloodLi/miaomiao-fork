@@ -86,9 +86,9 @@ static void draw_todo_stat_card(fb_t *fb, int x, int y, int w, int h,
     if (value_y < label_y)
         value_y = label_y;
 
-    fb_utf8_scaled_maxw(fb, inner_x, label_y, label, accent, 1, inner_w);
-    fb_utf8_scaled_maxw(fb, inner_x, value_y, value,
-                        COLOR_BLACK, value_scale, inner_w);
+    ui_draw_fixed_text_maxw(fb, inner_x, label_y, label, accent, 1, inner_w);
+    ui_draw_fixed_text_maxw(fb, inner_x, value_y, value,
+                            COLOR_BLACK, value_scale, inner_w);
 }
 
 /* Select visible rows by usefulness when the screen cannot show every item. */
@@ -261,8 +261,8 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
             max_w = W - tx - 8 * s;
         }
         if (max_w < 1) max_w = 1;
-        int drawn_w = fb_utf8_scaled_maxw(fb, tx, text_y, it->text,
-                                          COLOR_BLACK, sc, max_w);
+        int drawn_w = ui_draw_fixed_text_maxw(fb, tx, text_y, it->text,
+                                              COLOR_BLACK, sc, max_w);
 
         if (it->done) {
             int ly = text_y + ch_h / 2;
@@ -272,19 +272,19 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
 
         int pri_x = W - 2 * 16 * pri_sc - 13 * s;
         if (show_pri && it->priority >= 2)
-            fb_utf8_scaled(fb, pri_x, text_y,
-                           "\xe7\xb4\xa7\xe6\x80\xa5", COLOR_RED, pri_sc);
+            ui_draw_fixed_text(fb, pri_x, text_y,
+                               "\xe7\xb4\xa7\xe6\x80\xa5", COLOR_RED, pri_sc);
         else if (show_pri && it->priority == 1)
-            fb_utf8_scaled(fb, pri_x, text_y,
-                           "\xe9\x87\x8d\xe8\xa6\x81", COLOR_BLACK, pri_sc);
+            ui_draw_fixed_text(fb, pri_x, text_y,
+                               "\xe9\x87\x8d\xe8\xa6\x81", COLOR_BLACK, pri_sc);
     }
 
-    char foot[20];
+    char foot[48];
     if (cfg->count > n_show)
         snprintf(foot, sizeof(foot), "%d/%d", n_show, (int)cfg->count);
     else
-        snprintf(foot, sizeof(foot), "%d PENDING", pending_n);
-    ui_draw_footer(fb, "TODO", foot);
+        snprintf(foot, sizeof(foot), "%d \xe6\x9c\xaa\xe5\xae\x8c\xe6\x88\x90", pending_n);
+    ui_draw_footer(fb, "\xe5\xbe\x85\xe5\x8a\x9e", foot);
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);

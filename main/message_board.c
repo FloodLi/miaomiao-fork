@@ -139,7 +139,7 @@ static int utf8_char_width_px(int cp, int target_px)
 {
     char one[5];
     utf8_encode_codepoint(cp, one);
-    return fb_utf8_px_width(one, target_px);
+    return ui_text_width_px(NULL, one, target_px);
 }
 
 /* ── word-wrap rendering ──────────────────────────────────────────── */
@@ -185,7 +185,7 @@ static void render_message(unsigned epoch)
              (int)strlen(cfg.text));
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    ui_draw_header(fb, "\xe7\x95\x99\xe8\xa8\x80\xe6\x9d\xbf", "MESSAGE", true);
+    ui_draw_header(fb, "\xe7\x95\x99\xe8\xa8\x80\xe6\x9d\xbf", "\xe7\x95\x99\xe8\xa8\x80", true);
 
     /* first pass: calculate lines for vertical centering */
     typedef struct { const char *start; int len; int px_w; } line_t;
@@ -260,17 +260,19 @@ static void render_message(unsigned epoch)
         memcpy(buf, lines[i].start, copy_len);
         buf[copy_len] = '\0';
 
-        fb_utf8_px(fb, x, y, buf, color, target_px);
+        ui_draw_text_px(fb, x, y, buf, color, target_px);
     }
 
     if (truncated) {
         int hint_y = start_y + line_count * line_h;
         if (hint_y + 16 <= fb->height)
-            fb_utf8_px(fb, (fb->width - fb_utf8_px_width("...", 16)) / 2,
-                       hint_y, "...", COLOR_BLACK, 16);
+            ui_draw_text_px(fb,
+                            (fb->width - ui_text_width_px(fb, "...", 16)) / 2,
+                            hint_y, "...", COLOR_BLACK, 16);
     }
 
-    ui_draw_footer(fb, "MSG", cfg.align == MSG_ALIGN_CENTER ? "CENTER" : "LEFT");
+    ui_draw_footer(fb, "\xe7\x95\x99\xe8\xa8\x80\xe6\x9d\xbf",
+                   cfg.align == MSG_ALIGN_CENTER ? "\xe5\xb1\x85\xe4\xb8\xad" : "\xe5\xb7\xa6\xe5\xaf\xb9\xe9\xbd\x90");
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
