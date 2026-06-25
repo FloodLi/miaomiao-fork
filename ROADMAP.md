@@ -152,7 +152,7 @@
 - **协议与源码公开规范对齐**：
   - 全局更换为 PolyForm Noncommercial License 1.0.0。
   - Web UI（`/index`, `/timetable` 等）底部加入统一页脚版权声明（`<div class="epd-credit">Made with ❤️ by 喵喵</div>`）。
-  - HTTP 路由注册：增加返回值检查 + 错误日志，`max_uri_handlers` 扩大至 64。
+  - HTTP 路由注册：增加返回值检查 + 错误日志，当前注册表约 73 条路由，`max_uri_handlers` 配置为 80。
   - `timetable` 与 `todo` 模块新增 `SemaphoreHandle_t s_cfg_mutex` 保护配置读写。
   - `time_sync` / `message_board` / `display_policy` 使用 C11 `atomic_bool` 替代 `volatile bool`。
   - WiFi STA 认证支持 WPA3 SAE（`sae_pwe_h2e = WPA3_SAE_PWE_BOTH`）。
@@ -280,9 +280,9 @@
 - **方案**：
   - 后端新增 `GET /image?name=...` 端点，返回画廊原始图片用于缩略图预览
   - 前端增加画廊网格视图，启用 Basic Auth 后通过带认证 `fetch()` 转 Blob URL 预览，支持点击显示、单张删除
-  - 显示 SPIFFS 剩余空间
+  - 显示 SPIFFS 用户文件区使用率
 - **涉及文件**：`http_app.c`（前端 HTML + 后端路由）
-- **实现**：8 个 HTTP 端点（`/`, `/upload`, `/status`, `/images`, `/image`, `/show`, `/delete_image`, `/delete`）；画廊网格 + SPIFFS 用量条
+- **实现**：当前 HTTP 注册表约 73 条路由；画廊相关入口覆盖上传、列表、预览、显示和删除；前端显示 SPIFFS 用户文件区用量条
 
 #### ✅ P1-4 前端重构：外部化 HTML
 
@@ -563,7 +563,7 @@ Week 1          Week 2          Week 3          Week 4          Week 5          
 | 风险 | 影响 | 概率 | 应对策略 |
 |------|------|------|----------|
 | SPIFFS 写入寿命 | Flash 磨损导致文件系统损坏 | 中 | 限制写入频率；考虑迁移到 LittleFS（磨损均衡更好） |
-| 中文字库体积 | GB2312 全字库 ~256KB 占用 Flash | 低 | 仅嵌入常用 3000 字；或使用外部 SPI Flash |
+| 字库体积 | 外置 `fontfs` 字库占用独立分区 | 低 | 使用独立 `fontfs` 分区，和用户 SPIFFS 分离；新增字体需同步分区和 release |
 | STA 断线重连 | 设备离线无法远程控制 | 中 | 实现自动重连机制（指数退避）；断线回退 AP 模式 |
 | JPEG 解码内存峰值 | 大尺寸 JPEG 解码时 OOM | 中 | 限制上传文件大小 2MB；缩放选择优先小比例 |
 | 三色屏刷新慢 | 全刷新需 15~20 秒，用户体验差 | 高 | UI 明确提示刷新中状态；后期考虑局部刷新（限黑白） |
@@ -607,7 +607,7 @@ spiffs,      data, spiffs,   0xC20000,  0x3E0000    # 3.875MB — 用户文件
 | 堆内存水位 | 空闲 >80KB | `esp_get_free_heap_size()` 定期打印 |
 | 上传→刷屏延迟 | <5 秒（含解码+传输+刷新） | HTTP 响应时间 |
 | WiFi 重连成功率 | >99% | 日志统计 |
-| SPIFFS 可用空间 | >20% 时告警 | `/status` API 返回 |
+| SPIFFS 用户区使用率 | >90% 时告警 | `/status` API 返回 |
 | Deep sleep 电流 | <10μA | 万用表实测 |
 
 ---
