@@ -1,4 +1,4 @@
-# 水墨屏产品开发规划方案
+# 喵哎-MiaooAim 开发路线图
 
 ## 当前开发状态（2026-06-25）
 
@@ -151,7 +151,7 @@
   - 新增 `display_mode_index_t` 枚举，解耦硬编码的模式 ID。
 - **协议与源码公开规范对齐**：
   - 全局更换为 PolyForm Noncommercial License 1.0.0。
-  - Web UI（`/index`, `/timetable` 等）底部加入统一页脚版权声明（`<div class="epd-credit">Made with ❤️ by 喵喵</div>`）。
+  - Web UI（`/index`, `/timetable` 等）底部加入统一页脚版权声明（`<div class="epd-credit">Made with MiaooAim</div>`）。
   - HTTP 路由注册：增加返回值检查 + 错误日志，当前注册表约 73 条路由，`max_uri_handlers` 配置为 80。
   - `timetable` 与 `todo` 模块新增 `SemaphoreHandle_t s_cfg_mutex` 保护配置读写。
   - `time_sync` / `message_board` / `display_policy` 使用 C11 `atomic_bool` 替代 `volatile bool`。
