@@ -530,6 +530,7 @@ msp/
 | [公开发布检查清单.md](公开发布检查清单.md) | 公开发布检查清单、release 校验和剩余验证建议 | 维护者 / 复刻者 |
 | [v2.3.3优化改动说明.md](v2.3.3优化改动说明.md) | v2.3.3 正式改动说明 | 用户 / 开发者 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区行为规范、日志脱敏和协作边界 | 所有参与者 |
 | [SECURITY.md](SECURITY.md) | 安全边界、漏洞报告和密钥脱敏建议 | 用户 / 维护者 |
 | [SUPPORT.md](SUPPORT.md) | 支持渠道、提问信息和支持边界 | 用户 / 复刻者 |
 | [NOTICE.md](NOTICE.md) | 第三方源码、字体、组件和素材声明 | 用户 / 维护者 |
@@ -541,7 +542,7 @@ msp/
 
 ## 参与贡献
 
-欢迎提交屏幕适配、网页体验、文档和排障反馈。提交前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，并尽量附带屏幕型号、驱动 IC、BUSY 电平、ESP-IDF 版本、串口日志和复现步骤。
+欢迎提交屏幕适配、网页体验、文档和排障反馈。提交前请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)，并尽量附带屏幕型号、驱动 IC、BUSY 电平、ESP-IDF 版本、串口日志和复现步骤。
 
 ## 许可证
 

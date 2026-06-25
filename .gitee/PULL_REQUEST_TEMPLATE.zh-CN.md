@@ -28,6 +28,7 @@
 
 ## 公开发布检查
 
+- [ ] 已阅读并遵守 `CODE_OF_CONDUCT.md`
 - [ ] 未提交 `build/`、`sdkconfig`、`managed_components/`、`spiffs_image/`、本地参考包或个人素材
 - [ ] 未提交真实 WiFi 密码、天气 API Key、Codex/中转站 API Key、私钥、签名证书或个人敏感信息
 - [ ] 若新增字体/图片/第三方代码，已确认授权允许随本仓库分发

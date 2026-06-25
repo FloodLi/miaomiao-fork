@@ -2,6 +2,8 @@
 
 感谢你愿意改进喵哎-MiaooAim 项目。这个仓库面向复刻和二次开发，提交问题时请尽量提供可复现信息，提交代码时请保持改动聚焦。
 
+参与 Issue、PR 和交流群讨论前，请同时阅读 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。公开提交日志、截图或配置时，请先脱敏 WiFi 密码、天气 API Key、Codex/中转站 API Key、私钥、证书和个人信息。
+
 ## 环境基线
 
 - 芯片：ESP32-S3，建议 16MB Flash；有 8MB PSRAM 时图片转换体验更好。
@@ -57,6 +59,7 @@ idf.py -p COMx flash monitor
 - 提交前运行 `idf.py build`。
 - 文档或 release 相关改动请运行 `python tools/check_public_docs.py`。
 - 前端改动请确认页面语法无误，并尽量在手机浏览器上试一次。
+- 遵守 `CODE_OF_CONDUCT.md` 的协作规范，讨论时聚焦证据、复现步骤和实际硬件条件。
 - 不要提交 `build/`、`sdkconfig`、`managed_components/`、本地参考包或个人素材。
 - 不要提交真实 WiFi 密码、天气 API Key、私钥、签名证书或个人敏感信息。
 
