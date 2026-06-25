@@ -8,16 +8,16 @@
 
 ## 字体来源
 
-公开固件字库使用 `tools/fonts/noto/` 下的 OFL 开源字体生成：
+公开固件字库由 OFL 开源字体生成：
 
 - `LXGW975YuanSC-400W.ttf`：中文、英文、数字和常用符号主字形。
 - `NotoSansMono-Regular.ttf`：部分符号/等宽字符兜底。
 
-这些字体遵循 SIL Open Font License 1.1。许可文件保留在 `tools/fonts/noto/`，构建脚本为 `tools/fetch_open_fonts.py`、`tools/gen_font.py`、`tools/gen_ext_font.py`。
+这些字体遵循 SIL Open Font License 1.1。公开仓库保留下载和生成脚本，不直接提交大体积 TTF 缓存文件：`tools/fetch_open_fonts.py` 会在构建时把字体和许可文件下载到本地 ignored 目录 `tools/fonts/noto/`，随后 `tools/gen_font.py`、`tools/gen_ext_font.py` 生成固件使用的位图字库。
 
 ## 分区与生成
 
-`partitions.csv` 中 `fontfs` 位于 `0x940000`，大小 `0x2E0000`（2.875MB）。构建时会从 `spiffs_image/fonts/` 生成 `fontfs.bin`，并随完整 16MB 固件一起烧录。
+`partitions.csv` 中 `fontfs` 位于 `0x940000`，大小 `0x2E0000`（2.875MB）。构建时会先生成本地 ignored 输出 `spiffs_image/fonts/*.mef`，再由 ESP-IDF 生成 `fontfs.bin`，并随完整 16MB 固件一起烧录。
 
 当前保留三档 MEF：
 

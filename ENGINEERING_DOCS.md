@@ -4,7 +4,7 @@
 
 本文档反映当前 ESP32-S3 三色墨水屏固件的工程实现状态。已完成显示 epoch 仲裁、日历/画布/留言异步显示返回语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 用户数据保护与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、手动画面期间天气后台收敛、EPD 初始化失败降级诊断、AP 密码日志脱敏、外置 fontfs 字库、低功耗按模式快速刷新、日历跨日刷新、Web 画板字体渲染和 5.83" 页面/驱动说明同步。
 
-2026-06-24 完成公开发布目录整理与一致性检查：构建缓存、SDK 配置、生成镜像和工具缓存等可再生成内容不随仓库发布，保留 release、开源字库源文件和必要参考素材；发布检查已覆盖 HTTP 路由、Web 嵌入资源、分区表、字库授权和 release 烧录说明；`release/README.md` 已修正 fontfs 烧录地址为 `0x940000`。
+2026-06-24 完成公开发布目录整理与一致性检查：构建缓存、SDK 配置、生成镜像和工具缓存等可再生成内容不随仓库发布，保留 release、字库下载/生成脚本和必要参考素材；TTF 字体缓存由构建脚本按需下载到本地 ignored 目录；发布检查已覆盖 HTTP 路由、Web 嵌入资源、分区表、字库授权和 release 烧录说明；`release/README.md` 已修正 fontfs 烧录地址为 `0x940000`。
 
 2026-06-25 完成文档一致性补充：低功耗开关不关闭正常启动后台，只有 RTC 定时器唤醒才进入 quick-refresh；5.83" BWR 供应商标注兼容微雪 5.83b V2 时优先选择 `Waveshare 5.83" BWR B V2`；Web 嵌入资源为 12 个 HTML 页面 + 1 个 PNG；用户 SPIFFS 与 fontfs 分区职责分离。
 
@@ -524,7 +524,7 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 - 位图绘制
 
 **字库:**
-- 紧凑内置字库：ASCII 95 字符 (8×16) + 中文 6814 字符 (16×16)，由 `tools/gen_font.py` 从 `tools/fonts/noto/LXGW975YuanSC-400W.ttf` 生成。
+- 紧凑内置字库：ASCII 95 字符 (8×16) + 中文 6814 字符 (16×16)，由 `tools/gen_font.py` 使用本地字体缓存 `tools/fonts/noto/LXGW975YuanSC-400W.ttf` 生成；该缓存由 `tools/fetch_open_fonts.py` 按需下载，不随仓库提交。
 - 外置 `fontfs` 字库：16/24/32px MEF，存放在独立 `fontfs` 分区，来源同为 OFL 开源字体。
 - 扩展：常用汉字 3000+
 
