@@ -45,6 +45,8 @@ PUBLIC_TEXT_FILES = [
     "COURSE_TABLE_README.md",
     "ENGINEERING_DOCS.md",
     "IMPLEMENTATION.md",
+    "SECURITY.md",
+    "SUPPORT.md",
     "ROADMAP.md",
     "docs/fonts.md",
     "docs/gitee-about.md",

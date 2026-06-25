@@ -445,6 +445,8 @@ msp/
 ├── CHANGELOG.md                 # 版本更新记录
 ├── LICENSE / COMMERCIAL_LICENSE.md
 ├── 公开发布检查清单.md
+├── SECURITY.md
+├── SUPPORT.md
 ├── v2.3.3优化改动说明.md
 └── CMakeLists.txt               # 顶层构建脚本
 ```
@@ -510,6 +512,8 @@ msp/
 | [公开发布检查清单.md](公开发布检查清单.md) | 公开发布检查清单、release 校验和剩余验证建议 | 维护者 / 复刻者 |
 | [v2.3.3优化改动说明.md](v2.3.3优化改动说明.md) | v2.3.3 正式改动说明 | 用户 / 开发者 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
+| [SECURITY.md](SECURITY.md) | 安全边界、漏洞报告和密钥脱敏建议 | 用户 / 维护者 |
+| [SUPPORT.md](SUPPORT.md) | 支持渠道、提问信息和支持边界 | 用户 / 复刻者 |
 | [hardware/BOM.md](hardware/BOM.md) | 硬件与固件对齐提要（无采购表） | 复刻者 |
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
 

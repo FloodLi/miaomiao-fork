@@ -13,6 +13,7 @@
 - 扩展 README 首页“项目状态”区域和 `docs/gitee-about.md` 仓库简介建议，让 Gitee 首页第一屏更清楚说明当前版本、交付内容、适用人群、功能状态、屏幕验证范围、低功耗策略和发布边界。
 - 统一 README 与工程文档的公开表达风格，补齐 README 中系统测试、文件系统恢复、画布素材等 HTTP 路由分类，并修正 Gitee 简介同步脚本的描述/主页字段解析方式。
 - 新增 `tools/check_public_docs.py` 只读检查脚本，用于发布前核对版本号、HTTP 路由、Web 嵌入资源、分区表、release SHA256、Markdown 链接和公开文档敏感词。
+- 新增 `SECURITY.md` 与 `SUPPORT.md`，明确安全报告、密钥脱敏、支持渠道、提问信息和支持边界。
 
 ## 2026-06-24
 
