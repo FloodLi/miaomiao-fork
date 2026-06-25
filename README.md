@@ -37,7 +37,7 @@ ZIP 内只包含上述整包固件文件；解压后的 bin 校验信息以本�
 
 ```text
 Size:   12713984 bytes
-SHA256: E9C97364E8BE1F90221D1BE9BE310E99333D65A8FD9B71404DA1824C1378ADDE
+SHA256: 14313DA11CE09ABEE735A6D10E39080FD72CD1AA7535B3A930D2E517992ED79F
 ```
 
 说明：`firmware-download.zip` 是 Gitee 按分支动态打包生成的下载文件，不建议固定校验 ZIP 本身；请以解压后的 `epaper_uploader_full_16MB.bin` SHA256 为准。
