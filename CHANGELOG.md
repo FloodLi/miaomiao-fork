@@ -14,6 +14,7 @@
 - 统一 README 与工程文档的公开表达风格，补齐 README 中系统测试、文件系统恢复、画布素材等 HTTP 路由分类，并修正 Gitee 简介同步脚本的描述/主页字段解析方式。
 - 新增 `tools/check_public_docs.py` 只读检查脚本，用于发布前核对版本号、HTTP 路由、Web 嵌入资源、分区表、release SHA256、Markdown 链接和公开文档敏感词。
 - 新增 `SECURITY.md` 与 `SUPPORT.md`，明确安全报告、密钥脱敏、支持渠道、提问信息和支持边界。
+- 新增 `RELEASE.md`，明确维护者发布新固件时的构建、整包合并、ZIP/SHA256、`firmware-download` 分支同步和回滚原则。
 
 ## 2026-06-24
 

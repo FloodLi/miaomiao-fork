@@ -443,6 +443,7 @@ msp/
 ├── sdkconfig.defaults           # 项目默认配置
 ├── timetable_example.json       # 课程表示例配置
 ├── CHANGELOG.md                 # 版本更新记录
+├── RELEASE.md                   # 发布流程与固件整包生成说明
 ├── LICENSE / COMMERCIAL_LICENSE.md
 ├── 公开发布检查清单.md
 ├── SECURITY.md
@@ -508,6 +509,7 @@ msp/
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
 | [ROADMAP.md](ROADMAP.md) | 当前维护路线图、发布边界和后续优先级 | 贡献者 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新记录 | 用户 / 维护者 |
+| [RELEASE.md](RELEASE.md) | 维护者发布流程、整包合并、校验和分支同步 | 维护者 |
 | [docs/fonts.md](docs/fonts.md) | 字库来源、授权、生成和应用范围 | 二次开发者 |
 | [公开发布检查清单.md](公开发布检查清单.md) | 公开发布检查清单、release 校验和剩余验证建议 | 维护者 / 复刻者 |
 | [v2.3.3优化改动说明.md](v2.3.3优化改动说明.md) | v2.3.3 正式改动说明 | 用户 / 开发者 |

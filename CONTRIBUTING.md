@@ -78,6 +78,7 @@ idf.py -p COMx flash monitor
 
 如果改动会影响分区表、`fontfs`、release 固件或免编译下载包，还需要同步：
 
+- `RELEASE.md`（发布流程变化时）
 - `release/README.md`
 - `公开发布检查清单.md`
 - `docs/fonts.md`（涉及字体来源或生成方式时）

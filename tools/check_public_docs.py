@@ -45,6 +45,7 @@ PUBLIC_TEXT_FILES = [
     "COURSE_TABLE_README.md",
     "ENGINEERING_DOCS.md",
     "IMPLEMENTATION.md",
+    "RELEASE.md",
     "SECURITY.md",
     "SUPPORT.md",
     "ROADMAP.md",
