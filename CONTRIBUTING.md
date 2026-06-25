@@ -74,3 +74,12 @@ idf.py -p COMx flash monitor
 - `CHANGELOG.md`
 - `ENGINEERING_DOCS.md`
 - 对应专题文档，例如 `COURSE_TABLE_README.md`
+
+如果改动会影响分区表、`fontfs`、release 固件或免编译下载包，还需要同步：
+
+- `release/README.md`
+- `公开发布检查清单.md`
+- `docs/fonts.md`（涉及字体来源或生成方式时）
+- `firmware-download` 分支（用于 README 中的“下载固件烧录包”入口）
+
+更新 `firmware-download` 分支时，只保留面向下载的 `README.md` 和 `epaper_uploader_full_16MB.bin`，并确认该 bin 与 `master:release/epaper_uploader_full_16MB.bin` 为同一版本。
