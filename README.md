@@ -67,7 +67,7 @@
 
 下图统一使用 `docs/images/` 下的英文文件名，避免代码托管平台对中文图片路径渲染不稳定。
 
-**Web 界面截图**
+### Web 界面截图
 
 | `上传面板.png` | `设备配置.png` |
 | :---: | :---: |
@@ -77,7 +77,7 @@
 | :---: | :---: |
 | ![课程表](docs/images/web-timetable.png) | ![待办事项](docs/images/web-todo.png) |
 
-**墨水屏实物**
+### 墨水屏实物
 
 | `4.2寸正面-立绘.jpg` | `4.2寸背壳.jpg` |
 | :---: | :---: |
@@ -105,7 +105,7 @@
 
 本仓库是固件与 Web 管理端；配套硬件已开源到嘉立创开源硬件平台：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。嘉立创工程提供 4.2" SSD1619 PCB、外壳附件与硬件结构，固件烧录、屏幕型号选择和引脚说明仍以本仓库 README 为准。
 
-**屏幕驱动支持状态**
+### 屏幕驱动支持状态
 
 | 状态 | 面板 | 分辨率 | 颜色 | 说明 |
 |------|------|--------|------|------|
@@ -122,7 +122,7 @@
 
 以下为复刻时常用器件的**示意配图**（文件名与下图一致）；配套 PCB / 外壳见 [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)，**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
 
-**模组（乐鑫原装）**
+### 模组与开发板
 
 适用于贴片/SMT 或自制载板：**ESP32-S3-WROOM-1U-N16R8**（**1U** = IPEX 外接天线；**N16R8** = 16MB Flash + 8MB PSRAM）。固件**不依赖 PSRAM**，同系列 **N16**（无 R8）亦可，但须满足默认分区对 **16MB Flash** 的要求。
 
@@ -138,7 +138,7 @@
 | :---: |
 | ![ESP32-S3-N16R8 核心板](docs/images/part-esp32-s3-n16r8-devboard.png) |
 
-**内部构造（整机 / 自定义 PCB）**
+### 整机结构与接线
 
 磁吸一体板与 DevKit 飞线等**整机内部布置**：
 
@@ -181,7 +181,7 @@
 
 ## 🚀 快速开始
 
-**1. 环境准备**
+### 1. 环境准备
 
 **ESP-IDF 最低要求 v5.5.1。** 请安装 v5.5.1 或更新的 **5.5.x** 工具链（[官方指南以 5.5.1 为基准](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32s3/get-started/)）：
 
@@ -192,14 +192,14 @@
 
 ```
 
-**2. 克隆项目**
+### 2. 克隆项目
 
 ```bash
 git clone https://gitee.com/gxp666111/miaomiao.git
 cd miaomiao   # 或你本地的 msp 目录名
 ```
 
-**3. 免编译一键烧录**
+### 3. 免编译一键烧录
 
 如果只是想把固件烧进设备，不需要安装 ESP-IDF，也不需要自己编译。仓库已提供整包固件。
 
@@ -234,7 +234,7 @@ BAUD: 115200 或 460800
 
 新板子或配置混乱时可以先点 `ERASE`，再点 `START`；如果不想清空 WiFi、天气、面板等已有配置，不要点 `ERASE`，直接 `START`。更详细的小白烧录说明见 [release/README.md](release/README.md)。
 
-**4. 开发者编译与烧录**
+### 4. 开发者编译与烧录
 
 本项目目标芯片固定为 **ESP32-S3**。仓库已在 `CMakeLists.txt` 和 `.vscode/settings.json` 中写入默认目标；如果你是从 Gitee 源码 ZIP 解压后首次用 VSCode 打开，建议先执行一次“干净配置”，避免旧目录残留的 `build/CMakeCache.txt`、`sdkconfig` 或 VSCode 缓存继续按普通 ESP32 编译。
 
@@ -263,7 +263,7 @@ idf.py -p COM3 build flash monitor
 
 > 不建议把新下载的源码 ZIP 直接覆盖到旧工程目录；如果覆盖后 VSCode 仍然报错，删掉 `build/` 后重新 `idf.py set-target esp32s3` 即可。更稳的方式是用 `git clone` 获取源码。
 
-**5. 关于 erase-flash**
+### 5. 关于 erase-flash
 
 ```powershell
 # 仅在 Flash 内容混乱、分区表切换或需要完全恢复出厂状态时使用
@@ -277,7 +277,7 @@ idf.py -p COM3 build flash monitor
 
 > 注意：`erase-flash` 会清空整颗 Flash，包括 WiFi 配置、NVS 设置、SPIFFS 里的图片和布局。新芯片本来就是空的，不需要先擦除。若擦除后首次启动提示 SPIFFS 未挂载，请连接设备热点进入网页恢复/格式化文件系统。
 
-**6. 首次使用**
+### 6. 首次使用
 
 1. 设备上电后自动创建 WiFi 热点 `ESP32_EPD_xxxxxx`（默认密码 `12345678`）
 2. 手机连接该热点，浏览器打开 `http://192.168.4.1/`
