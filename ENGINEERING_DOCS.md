@@ -4,7 +4,7 @@
 
 本文档反映当前 ESP32-S3 三色墨水屏固件的工程实现状态。已完成显示 epoch 仲裁、日历/画布/留言异步显示返回语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 用户数据保护与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、手动画面期间天气后台收敛、EPD 初始化失败降级诊断、AP 密码日志脱敏、外置 fontfs 字库、低功耗按模式快速刷新、日历跨日刷新、Web 画板字体渲染和 5.83" 页面/驱动说明同步。
 
-2026-06-24 完成上线前目录整理与静态检查：删除本地 build/缓存/临时输出，保留 release、开源字库源文件和参考素材；发布检查已覆盖 HTTP 路由、Web 嵌入资源、分区表、字库授权和 release 烧录说明；`release/README.md` 已修正 fontfs 烧录地址为 `0x940000`。
+2026-06-24 完成公开发布目录整理与一致性检查：构建缓存、SDK 配置、生成镜像和工具缓存等可再生成内容不随仓库发布，保留 release、开源字库源文件和必要参考素材；发布检查已覆盖 HTTP 路由、Web 嵌入资源、分区表、字库授权和 release 烧录说明；`release/README.md` 已修正 fontfs 烧录地址为 `0x940000`。
 
 2026-06-25 完成文档一致性补充：低功耗开关不关闭正常启动后台，只有 RTC 定时器唤醒才进入 quick-refresh；5.83" BWR 供应商标注兼容微雪 5.83b V2 时优先选择 `Waveshare 5.83" BWR B V2`；Web 嵌入资源为 12 个 HTML 页面 + 1 个 PNG；用户 SPIFFS 与 fontfs 分区职责分离。
 
@@ -974,7 +974,7 @@ spiffs,      data, spiffs,   0xC20000,  0x3E0000    # 3.875MB
 ```
 
 设计原则：
-- app 三槽均为 3MB。当前清理后未保留 build 目录，具体 app 体积以发布前重新 `idf.py build` 的 `size` 输出为准。
+- app 三槽均为 3MB。公开仓库不保留构建输出目录，具体 app 体积以发布前重新 `idf.py build` 的 `size` 输出为准。
 - `coredump` 保存 panic / watchdog 崩溃转储，便于现场设备复盘；配置在 `sdkconfig.defaults` 中启用 `CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH`。
 - `fontfs` 独立保存内置 MEF 字库，和用户图片/画布文件分离，避免字体资源挤占用户文件区。
 - 用户 `spiffs` 保持在 `0xC20000`，减少分区调整时对已有用户数据的影响。

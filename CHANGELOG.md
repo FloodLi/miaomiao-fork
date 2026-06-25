@@ -13,10 +13,10 @@
 
 ## 2026-06-24
 
-### 上线前整理
+### 公开发布整理
 
-- 清理本地 build、managed_components、sdkconfig、spiffs_image、outputs、Playwright/Cursor 缓存等可再生成文件，保留 release、开源字库源文件和参考素材目录。
-- 完成公开发布前静态检查；后续发布新固件时需在 ESP-IDF v5.5.x 环境重新执行完整 `idf.py build`。
+- 明确构建缓存、SDK 配置、生成镜像和工具缓存等可再生成目录不随公开仓库发布，保留 release、开源字库源文件和必要参考素材。
+- 完成公开发布一致性检查；后续发布新固件时需在 ESP-IDF v5.5.x 环境重新执行完整 `idf.py build`。
 - 修正 `release/README.md` 中 `fontfs.bin` 合并地址：当前分区表 `0x920000` 是 `coredump`，`fontfs` 应烧录到 `0x940000`。
 - 紧凑内置字库重新由 OFL 开源字体 `LXGW975YuanSC-400W.ttf` 生成，避免公开固件继续携带 Windows 系统字体派生产物标记。
 - 同步文档中的 HTTP 路由数量、字库来源、分区表、release 固件状态和上线检查结果。
@@ -31,7 +31,7 @@
 ### 修复与发布
 
 - 将 ESP-IDF main task 栈从默认值提高到 8192 字节，避免启动欢迎页切换到时钟页时出现 `task main` 栈溢出重启。
-- 重新生成 release 整包固件与校验信息，确保 Gitee 免编译烧录包与当前源码一致。
+- 更新 release 整包固件与校验信息，确保 Gitee 免编译烧录包与当前源码一致。
 
 ## 2026-05-09
 

@@ -1,8 +1,8 @@
 # 课程表功能使用说明
 
-## 当前状态（2026-05-02）
+## 当前状态（2026-06-25）
 
-课程表功能已接入多模式显示、网页配置、Basic Auth 和 display epoch 仲裁。启用认证后，`GET /timetable.json`、`POST /timetable`、`POST /timetable_show` 均需授权；手动显示课程表时会参与全局显示仲裁，避免旧显示任务覆盖用户新操作。
+课程表功能已接入多模式显示、网页配置、Basic Auth、display epoch 仲裁和低功耗模式记忆。启用认证后，`GET /timetable.json`、`POST /timetable`、`POST /timetable_show` 均需授权；手动显示课程表时会参与全局显示仲裁，避免旧显示任务覆盖用户新操作。4.2" 屏幕以单日议程为主，5.83" 屏幕保留更完整的网格展示空间。
 
 > **HTTP 鉴权**：若设备上已配置 Basic Auth，则 **`GET /timetable.json`、`POST /timetable`、`POST /timetable_show`** 都需在请求头携带 `Authorization: Basic …`（浏览器在配置页保存认证后，`timetable.html` 会自动附带）。
 
