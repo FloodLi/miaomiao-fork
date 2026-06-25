@@ -31,7 +31,7 @@ firmware-download.zip
 epaper_uploader_full_16MB.bin
 ```
 
-ZIP 内只包含上述整包固件文件；校验信息以本文件为准。
+ZIP 内只包含上述整包固件文件；解压后的 bin 校验信息以本文件为准。
 
 校验信息：
 
@@ -40,7 +40,9 @@ Size:   12713984 bytes
 SHA256: E9C97364E8BE1F90221D1BE9BE310E99333D65A8FD9B71404DA1824C1378ADDE
 ```
 
-ZIP 校验信息：
+说明：推荐入口中的 `firmware-download.zip` 是 Gitee 按 `firmware-download` 分支动态打包生成的下载文件，不建议固定校验 ZIP 本身；请以解压后的 `epaper_uploader_full_16MB.bin` SHA256 为准。
+
+仓库内同时保留 `release/epaper_uploader_full_16MB.zip`，它是随当前源码发布的静态 ZIP 产物，校验信息如下：
 
 ```text
 Size:   1960347 bytes
