@@ -47,14 +47,14 @@
 - ✅ **图片显示**: JPEG/PNG/BMP 格式，Floyd-Steinberg 抖动算法
 - ✅ **Web 管理**: 响应式 UI，三套主题，OTA 升级
 - ✅ **内容丰富**: 天气、时钟、日历、课程表、待办、倒计时、Codex 额度看板、留言板、WYSIWYG 画布
-- ✅ **低功耗**: 深度睡眠，定时器/按键唤醒，80+ 天续航
+- ✅ **低功耗**: 深度睡眠，定时器/按键唤醒；续航需按实际电池、屏幕、LDO、唤醒间隔和联网时长估算
 - ✅ **物理交互**: 三键循环切换 **8 种**已注册 `display_mode`（时钟/日历/课程表/天气/轮播/待办/倒计时/额度）；**留言板与画布**由网页推屏，不参与按键轮显
 
 ### 1.3 技术栈
 
 | 层级 | 技术 | 版本 |
 |------|------|------|
-| 硬件 | ESP32-S3 **N16R8（8MB PSRAM）为主力**；N16 无 PSRAM 为降级兼容 | 16MB Flash；`sdkconfig` 已开 `CONFIG_SPIRAM`，真机确认 8MB PSRAM |
+| 硬件 | ESP32-S3 **N16R8（8MB PSRAM）为主力**；N16 无 PSRAM 为降级兼容目标 | 16MB Flash；`sdkconfig.defaults` 启用 PSRAM 且允许缺失，N16 发布前仍需按大图/网页并发场景实测 |
 | 框架 | ESP-IDF | **最低 v5.5.1**（推荐同系列 5.5.x） |
 | 驱动 | SSD1619 / UC8179 | 原厂驱动 |
 | 文件系统 | SPIFFS | `fontfs` 2.875MB + 用户 `spiffs` 3.875MB |
@@ -174,7 +174,7 @@ EPD 驱动刷新
 
 **Flash 容量：** 本仓库分区表约需 **16MB** 级 Flash（factory + 双 OTA 各 3MB、128KB coredump、2.875MB fontfs、3.875MB 用户 SPIFFS）。**仅 8MB Flash（如部分 N8 模组）无法直接用于当前默认分区布局**，需改分区表后再谈兼容。
 
-**PSRAM：** 主力硬件为 **N16R8（8MB PSRAM）**，`sdkconfig.defaults` 已开启 `CONFIG_SPIRAM`，真机启动日志确认 `Found 8MB PSRAM device`，大分配（PNG/JPEG 解码、双平面帧缓冲）可走 PSRAM。固件同时保留**无 PSRAM（N16）下的保守内存峰值控制**作为降级兼容，同一固件可直接烧录两种机型。
+**PSRAM：** 主力硬件为 **N16R8（8MB PSRAM）**，`sdkconfig.defaults` 已开启 `CONFIG_SPIRAM` 和 `CONFIG_SPIRAM_IGNORE_NOTFOUND`。带 PSRAM 机型的大分配（PNG/JPEG 解码、双平面帧缓冲）可走 PSRAM；无 PSRAM（N16）作为降级兼容目标，发布前应按大图、5.83"、网页并发和画板场景单独实测。
 
 **示例模组名：** `ESP32-S3-WROOM-1U-N16`、`ESP32-S3-WROOM-1U-N16R8`（具体以采购料号为准）。
 
@@ -551,7 +551,7 @@ fb_bitmap(fb, x, y, black, red, w, h);
 |------|------|--------|
 | 活跃 | 150-300mA | 按键/HTTP |
 | 闲置 | 50mA | 按键/定时器 |
-| 深睡 | <10μA | EXT1/RTC |
+| 深睡 | 需按硬件实测 | EXT1/RTC；受 LDO、充电 IC、USB 转串口、屏幕转接板和 GPIO 状态影响 |
 
 **深睡优化**：进入深度睡眠前，固件依次执行以下步骤以确保最低漏电流：
 1. 等待当前 EPD 刷新完成（最多 20 秒轮询 BUSY）

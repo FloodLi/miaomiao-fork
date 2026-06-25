@@ -20,15 +20,15 @@
 **核心数据流：**
 
 ```
-浏览器(Canvas压缩→JPEG) → WiFi SoftAP → HTTP Server(流式接收)
-    → SPIFFS文件存储 → TJpgDec/LodePNG流式解码
+浏览器(Canvas预览→面板尺寸 PNG) → WiFi SoftAP → HTTP Server(流式接收)
+    → SPIFFS文件存储 → LodePNG/TJpgDec 解码
     → 灰度+红色分离 → Floyd-Steinberg抖动 → 1bpp MSB-first打包
     → 黑色/彩色平面打包 → SPI DMA批量传输 → 当前面板驱动 → 墨水屏刷新
 ```
 
 **系统特性：**
 
-- 浏览器端 Canvas 压缩，减少传输数据量
+- 浏览器端 Canvas 预览和面板尺寸 PNG 预处理，减少固件侧重复抖动
 - JPEG 流式解码（从文件读取，非全量载入内存），降低无 PSRAM 机型的峰值内存压力；带 PSRAM 机型可承载更大的图片和 framebuffer 分配
 - Floyd-Steinberg 误差扩散抖动，灰度照片显示效果自然
 - SPI DMA 4KB 分块批量传输，数据传输高效
@@ -177,9 +177,9 @@ msp/
 ```
  ┌───────────────────────────────┐
  │         用户手机浏览器         │
- │  选择图片 → Canvas缩放(800×600)│
- │  → toBlob('image/jpeg', 0.85) │
- │  ≈ 50~150KB JPEG              │
+ │  选择图片 → 按面板尺寸预览      │
+ │  → Floyd-Steinberg 预处理       │
+ │  → toBlob('image/png')          │
  └──────────────┬────────────────┘
                 │ POST /upload (WiFi SoftAP, 192.168.4.1)
                 ▼
@@ -196,7 +196,7 @@ msp/
  │  1. 读取文件头魔数，判断 JPEG/PNG   │
  │  2. JPEG: TJpgDec 文件流式解码      │
  │     PNG: LodePNG 内存解码           │
- │  3. 自动缩放(1/1~1/8)，居中放置     │
+ │  3. 按当前面板尺寸缩放/居中或识别预处理 PNG │
  │  4. RGB → 灰度 + 红色通道分离       │
  │  5. Floyd-Steinberg 误差扩散抖动    │
  │  6. 灰度 → 1bpp 黑色平面打包       │
@@ -340,20 +340,20 @@ static void epd_send_data_bulk(const uint8_t *data, size_t len)
 
 图片从用户选择到屏幕显示，经过完整的处理流水线：
 
-#### 第一步：浏览器端压缩
+#### 第一步：浏览器端预览与预处理
 
 ```javascript
-// web/index.html — Canvas 压缩
-function compressImage(file, maxW, maxH, quality) {
-    // 1. 将图片绘制到 Canvas 上，限制最大尺寸 800×600
-    // 2. 使用 toBlob 输出为 JPEG，质量 0.85
-    // 原始几 MB 的照片 → 压缩为 50~150KB
+// web/index.html — 预览 Canvas 导出
+function buildUploadBlobFromPreview() {
+    // 1. 将图片绘制到当前面板尺寸的预览 Canvas
+    // 2. 应用方向、裁剪/适应、阈值、红色/黄色识别和抖动参数
+    // 3. 使用 toBlob 输出为 PNG，再通过 /upload 上传
 }
 ```
 
-- **目的**：减少 WiFi 传输数据量和 SPIFFS 存储占用
-- **最大尺寸**：800×600（对于 400×300 的屏幕已足够）
-- **质量**：0.85（视觉无明显损失，文件体积大幅减少）
+- **目的**：让用户在浏览器中先看到接近墨水屏的黑白红/黑白红黄效果，再上传已经按面板尺寸处理过的 PNG。
+- **输出尺寸**：由 `epdPanelW` / `epdPanelH` 决定，来自设备当前面板配置；4.2" 为 400×300，5.83" 为 648×480。
+- **优势**：截图、线稿、二维码和纯黑白图片可在浏览器端提前量化，固件侧识别预处理 PNG 后可走 passthrough/阈值路径，减少二次抖动导致的线条问题。
 
 #### 第二步：JPEG 流式解码（TJpgDec 从文件读取）
 
@@ -374,7 +374,7 @@ static UINT jpeg_infunc_file(JDEC *jd, BYTE *buf, UINT len)
 - **TJpgDec** 是 ESP32 ROM 内置的轻量 JPEG 解码器
 - 使用 **文件流式读取**（`jpeg_infunc_file`），避免将整个 JPEG 载入内存
 - 工作池仅需 20KB（`POOL_SIZE = 20 * 1024`）
-- 支持 1/1、1/2、1/4、1/8 四档缩放，自动选择最适合 400×300 的比例
+- 支持 1/1、1/2、1/4、1/8 四档缩放，按当前 `epd_width()` / `epd_height()` 选择适合面板目标尺寸的比例
 
 **缩放策略：**
 
@@ -384,7 +384,7 @@ static UINT jpeg_infunc_file(JDEC *jd, BYTE *buf, UINT len)
 for (uint8_t s = 0; s <= 3; s++) {
     int sw = (in_w + ((1 << s) - 1)) >> s;  // 向上取整除以 2^s
     int sh = (in_h + ((1 << s) - 1)) >> s;
-    if (sw <= EPD_W && sh <= EPD_H) return s;
+    if (sw <= epd_width() && sh <= epd_height()) return s;
 }
 ```
 
@@ -523,15 +523,15 @@ ESP32-S3 内部 SRAM 有限；在无 PSRAM 机型上图片处理需要精细控�
 | 彩色平面 `red[]` / `yellow[]` | 每平面 `width × height / 8` 字节；4.2" 为 15,000 字节，5.83" 为 38,880 字节 | 解码→抖动→写文件后释放 |
 | 黑色平面 `black[]` | 每平面 `width × height / 8` 字节 | 打包→写文件后释放 |
 | TJpgDec 工作池 | 20,480 字节 | 解码期间 |
-| EPD DMA 缓冲区 | 15,000×2 字节 | 文件读取→SPI 传输后释放 |
-| 总峰值 | 随面板尺寸和图片格式变化 | 4.2" 黑白红约 170KB 量级；5.83" 和 PNG 解码建议使用带 PSRAM 的 N16R8 |
+| EPD DMA / 行缓冲 | 约 4KB DMA 块或按行临时缓冲 | 文件读取→SPI 传输后释放；实际大小由 `epd_stub.c` 的发送路径决定 |
+| 总峰值 | 随面板尺寸和图片格式变化 | 4.2" 黑白红约 170KB 量级；5.83"、PNG 解码和四色路径建议使用带 PSRAM 的 N16R8 |
 
 **关键优化措施：**
 
 1. **JPEG 流式解码**：`jpeg_infunc_file` 从文件流式读取，不需要将整个 JPEG 载入内存
 2. **分阶段释放**：灰度缓冲区在打包为 1bpp 后立即释放；抖动和打包共享灰度缓冲区
 3. **DMA 缓冲区复用**：`epd_fill_data` 分配单个 4KB 缓冲区，填充后重复发送
-4. **EPD raw 文件中转**：转换结果先写入 SPIFFS（30KB），EPD 驱动再从文件读取，避免同时持有两份平面数据
+4. **EPD raw 文件中转**：转换结果先写入 SPIFFS，raw 大小按 `epd_plane_bytes()` 和颜色平面数动态变化；EPD 驱动再从文件读取，避免同时持有多份完整平面数据
 5. **LodePNG 编译裁剪**：禁用编码器、磁盘 I/O、辅助块、C++ 支持，减小代码体积
 
 ```cmake
@@ -560,7 +560,9 @@ lodepng_decode32(&rgba, &pw, &ph, buf, got);
 free(buf);  // 立即释放 PNG 原始数据
 
 // 3. 计算缩放比例（保持宽高比）
-float scale = max(pw/EPD_W, ph/EPD_H, 1.0);
+int ew = epd_width();
+int eh = epd_height();
+float scale = max(pw/ew, ph/eh, 1.0);
 
 // 4. 最近邻缩放 + 居中 + 红色分离 + 灰度
 // 5. Alpha 通道合成（透明区域与白色背景混合）
@@ -572,7 +574,7 @@ if (a < 255) {
 // 6. Floyd-Steinberg 抖动 → 1bpp 打包 → 写文件
 ```
 
-> **注意**：PNG 路径内存需求较高（RGBA 占 4×宽×高 字节），不适合处理大尺寸 PNG。浏览器端会先将 PNG 压缩为 JPEG（最大 800×600）再上传。
+> **注意**：PNG 路径内存需求较高（RGBA 占 4×宽×高 字节）。当前上传页会把图片先渲染到设备面板尺寸后再上传 PNG；若后续支持更大屏幕或高分辨率原图直传，需要重新评估 PNG 大小限制和 PSRAM 需求。
 
 ---
 
@@ -606,8 +608,9 @@ httpd_resp_send(req, (const char *)index_html_start,
 ### 5.3 上传流程
 
 ```
-用户选择图片 → compressImage(800, 600, 0.85)
-  → Canvas 缩放 → toBlob('image/jpeg')
+用户选择图片 → 按当前面板尺寸生成预览 Canvas
+  → 应用阈值/对比度/红色或黄色识别/抖动
+  → toBlob('image/png')
   → fetch('/upload', {method:'POST', body:blob})
   → 服务器接收 → 保存到 SPIFFS → 转换 → EPD 显示
   → 自动刷新状态和画廊
@@ -704,7 +707,7 @@ httpd_resp_send(req, (const char *)index_html_start,
 
 1. 实现 `jpeg_infunc_file` 回调，让 TJpgDec 直接从文件流式读取
 2. 不再需要 JPEG 原始数据的内存缓冲
-3. 峰值内存降至约 170KB（灰度 120KB + 色彩平面 30KB + 工作池 20KB）
+3. 4.2" BWR 典型峰值降至约 170KB 量级；5.83"、PNG 和四色面板路径需按实际面板尺寸重新估算
 
 ```c
 // 对比两种路径
@@ -761,11 +764,11 @@ uint8_t bit = 1 << (x & 7);       // 千万不要这样写！
 ```c
 epd_set_cursor_home();     // ① 先设光标
 epd_send_command(0x24);    // ② 再选黑色 RAM
-epd_send_data_bulk(black, EPD_PLANE_BYTES);  // ③ 写数据
+epd_send_data_bulk(black, epd_plane_bytes());  // ③ 写数据
 
 epd_set_cursor_home();     // ④ 写完黑色后光标已移动，必须重新设
 epd_send_command(0x26);    // ⑤ 选红色 RAM
-epd_send_data_bulk(red, EPD_PLANE_BYTES);    // ⑥ 写数据
+epd_send_data_bulk(red, epd_plane_bytes());    // ⑥ 写数据
 ```
 
 ### 6.6 引脚映射匹配物理接线
@@ -810,17 +813,17 @@ static void epd_clear(void)
     // 第一遍：黑色平面全白(0xFF) + 红色平面全零(0x00) → 刷新
     // 清除红色残影
     epd_set_cursor_home();
-    epd_send_command(0x24); epd_fill_data(0xFF, EPD_PLANE_BYTES);
+    epd_send_command(0x24); epd_fill_data(0xFF, epd_plane_bytes());
     epd_set_cursor_home();
-    epd_send_command(0x26); epd_fill_data(0x00, EPD_PLANE_BYTES);
+    epd_send_command(0x26); epd_fill_data(0x00, epd_plane_bytes());
     epd_refresh_full();
 
     // 第二遍：两个平面都全白(0xFF) → 刷新
     // 确保完全清屏
     epd_set_cursor_home();
-    epd_send_command(0x24); epd_fill_data(0xFF, EPD_PLANE_BYTES);
+    epd_send_command(0x24); epd_fill_data(0xFF, epd_plane_bytes());
     epd_set_cursor_home();
-    epd_send_command(0x26); epd_fill_data(0xFF, EPD_PLANE_BYTES);
+    epd_send_command(0x26); epd_fill_data(0xFF, epd_plane_bytes());
     epd_refresh_full();
 }
 ```
@@ -893,14 +896,14 @@ idf.py -p COMx flash
 
 ### 8.2 上传图片
 
-1. 点击「选择文件」按钮，选择一张 JPEG 或 PNG 图片
+1. 点击「选择文件」按钮，选择一张 JPEG、PNG 或 BMP 图片
 2. 点击「上传并显示」按钮
-3. 浏览器自动将图片压缩为 ≤800×600 的 JPEG
+3. 浏览器按当前面板尺寸生成预处理 PNG
 4. 上传到 ESP32 后，系统自动进行：
-   - 保存原始 JPEG 到画廊
-   - JPEG 解码 → 灰度/红色分离 → Floyd-Steinberg 抖动 → 1bpp 打包
+   - 按文件魔数保存画廊副本（`.png` / `.bmp` / `.jpg`）
+   - 固件识别 JPEG / PNG / BMP 后转换为当前面板 raw 平面
    - 通过 SPI DMA 传输到墨水屏
-5. 等待约 15~20 秒，墨水屏完成全刷新
+5. 等待墨水屏完成全刷新；实际耗时随 4.2"/5.83" 面板、温度和 BUSY 状态变化，常见约 10~35 秒
 
 ### 8.3 画廊管理
 
@@ -911,14 +914,14 @@ idf.py -p COMx flash
 
 ### 8.4 设备状态
 
-- **upload.jpg**：最近一次上传的原始 JPEG 文件大小
+- **upload.jpg**：最近一次上传的临时文件路径名；历史上沿用 `.jpg` 后缀，实际内容可能是浏览器预处理后的 PNG
 - **image.bin**：最近一次转换的 EPD raw 文件，大小随面板尺寸和颜色平面数变化；4.2" BWR 典型为 30000 字节
 - **SPIFFS**：文件系统总容量和已用空间，进度条直观显示使用率
 
 ### 8.5 注意事项
 
 - 墨水屏断电后画面保持，无需持续供电
-- 三色墨水屏全刷新需要 15~20 秒，请耐心等待
+- 三色墨水屏全刷新耗时随面板、温度和 BUSY 状态变化，常见约 10~35 秒，请耐心等待
 - 红色识别对颜色纯度有要求（R>150, G<120, B<120），偏橙或偏棕的颜色可能不显示为红色
 - SPIFFS 剩余空间不足时，请删除画廊中不需要的图片
 - 出现异常时，尝试重新上电或通过串口执行 `erase-flash` 后重新烧录
