@@ -1,6 +1,6 @@
-# ESP32-S3 E-Paper Firmware Flash Guide
+# 喵哎-MiaooAim 免编译固件烧录指南
 
-本文档给不熟悉 ESP-IDF 的用户使用。只需要一个整包固件文件和 Espressif 下载工具即可完成烧录。
+本文档面向不准备自行编译的复刻用户。只需要下载整包固件文件，并使用 Espressif Flash Download Tool 写入 ESP32-S3，即可完成基础烧录。
 
 ## 项目入口
 
@@ -10,6 +10,8 @@ Gitee 固件仓库:       https://gitee.com/gxp666111/miaomiao
 ```
 
 ## 固件文件
+
+> **发布状态说明（2026-06-25）**：本目录已按当前源码重新构建并合并 `epaper_uploader_full_16MB.bin`。若源码、分区表或 fontfs 字库在此后继续变化，发布前必须在 ESP-IDF 终端重新 `idf.py build` 并重新合并整包。
 
 推荐下载入口：
 
@@ -29,21 +31,16 @@ firmware-download.zip
 epaper_uploader_full_16MB.bin
 ```
 
-ZIP 内只包含上述整包固件文件；校验信息以本文件为准。
+ZIP 内只包含上述整包固件文件；解压后的 bin 校验信息以本文件为准。
 
 校验信息：
 
 ```text
-Size:   2039904 bytes
-SHA256: ED5382D4DD6AF500AA7E141D95EAE4378591DC013DED51ED7E6127C45A2B90A0
+Size:   12713984 bytes
+SHA256: E9C97364E8BE1F90221D1BE9BE310E99333D65A8FD9B71404DA1824C1378ADDE
 ```
 
-ZIP 校验信息：
-
-```text
-Size:   1065866 bytes
-SHA256: AB42B43547F8D61801E7A19417989B0755AEA3C948F51EABE2BA768CCC215EC7
-```
+说明：`firmware-download.zip` 是 Gitee 按分支动态打包生成的下载文件，不建议固定校验 ZIP 本身；请以解压后的 `epaper_uploader_full_16MB.bin` SHA256 为准。
 
 如果手动点 raw 下载后文件名带了单引号，例如：
 
@@ -121,7 +118,7 @@ START
 说明：
 
 ```text
-整包固件会写入 bootloader、partition table、otadata 和 app。
+整包固件会写入 bootloader、partition table、otadata、app 和 fontfs 字库分区。
 不点 ERASE 时，NVS 配置区和 SPIFFS 数据区不会被主动清空。
 ```
 
@@ -134,9 +131,11 @@ START
 0x8000   partition_table/partition-table.bin
 0x15000  ota_data_initial.bin
 0x20000  epaper_uploader.bin
+0x920000 coredump (128KB，崩溃日志分区，用户不用手动选择)
+0x940000 fontfs.bin
 ```
 
-因此普通用户不需要再分别选择 4 个文件。
+因此普通用户不需要再分别选择这些文件和分区。
 
 ## 常见问题
 
@@ -187,5 +186,6 @@ python -m esptool --chip esp32s3 merge_bin `
   0x0 build\bootloader\bootloader.bin `
   0x8000 build\partition_table\partition-table.bin `
   0x15000 build\ota_data_initial.bin `
-  0x20000 build\epaper_uploader.bin
+  0x20000 build\epaper_uploader.bin `
+  0x940000 build\fontfs.bin
 ```
