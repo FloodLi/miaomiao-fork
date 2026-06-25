@@ -23,13 +23,13 @@
 浏览器(Canvas压缩→JPEG) → WiFi SoftAP → HTTP Server(流式接收)
     → SPIFFS文件存储 → TJpgDec/LodePNG流式解码
     → 灰度+红色分离 → Floyd-Steinberg抖动 → 1bpp MSB-first打包
-    → 黑色平面(0x24) + 红色平面(0x26) → SPI DMA批量传输 → SSD1619 → 墨水屏刷新
+    → 黑色/彩色平面打包 → SPI DMA批量传输 → 当前面板驱动 → 墨水屏刷新
 ```
 
 **系统特性：**
 
 - 浏览器端 Canvas 压缩，减少传输数据量
-- JPEG 流式解码（从文件读取，非全量载入内存），适配无 PSRAM 的 ESP32-S3
+- JPEG 流式解码（从文件读取，非全量载入内存），降低无 PSRAM 机型的峰值内存压力；带 PSRAM 机型可承载更大的图片和 framebuffer 分配
 - Floyd-Steinberg 误差扩散抖动，灰度照片显示效果自然
 - SPI DMA 4KB 分块批量传输，数据传输高效
 - 画廊管理：存储、预览、选择显示、单张删除
@@ -43,9 +43,9 @@
 
 | 组件 | 型号 | 说明 |
 |------|------|------|
-| 主控 | **ESP32-S3** | 双核 Xtensa LX7，240MHz；**本仓库软件按无 PSRAM 优化**（亦可在带 PSRAM 模组上运行） |
-| 墨水屏 | **GDEH042Z96** | 4.2 寸，400×300 像素，三色（黑/白/红） |
-| 屏幕控制器 | **SSD1619** | 内置 RAM，支持全刷新，SPI 接口 |
+| 主控 | **ESP32-S3，16MB Flash** | 建议 N16 或 N16R8；N16R8 的 8MB PSRAM 对 5.83" 图片转换和 Web 并发更稳，固件配置允许 PSRAM 缺失时降级运行 |
+| 主测墨水屏 | **4.2" SSD1619 BWR / 5.83" UC8179 BWR** | 4.2" 为 400×300，5.83" 为 648×480；两者默认采用稳定全刷 |
+| 实验面板 | **ATC/Solum 与 EPD-nRF5 参考面板** | 作为驱动移植入口保留，未标注主测的面板需实机验证清屏、纯黑、纯红、边框和棋盘格 |
 | Flash | 内置 16MB | factory + 双 OTA 各 3MB，coredump 128KB，fontfs 2.875MB，用户 SPIFFS 3.875MB |
 
 ### 2.2 引脚接线表
@@ -91,7 +91,7 @@ msp/
 │   ├── CMakeLists.txt          # 组件注册、源文件列表、EMBED_FILES
 │   ├── idf_component.yml       # ESP-IDF 组件依赖与版本约束
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
-│   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 + UC8179，SPI DMA）
+│   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 / UC8179 / ATC-Solum / EPD-nRF5 参考面板，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
 │   ├── http_app.c/h           # HTTP 服务器（73 条路由 + Basic Auth + OTA）
 │   ├── http_gallery.c         # 画廊 HTTP 路由
@@ -216,7 +216,7 @@ msp/
                 │ SPI DMA (4KB 分块)
                 ▼
  ┌──────────────────────────────────────┐
- │    GDEH042Z96 墨水屏 (400×300)      │
+ │  4.2" / 5.83" BWR 墨水屏 framebuffer │
  │    三色电子纸显示，断电保持画面      │
  └──────────────────────────────────────┘
 ```
@@ -515,16 +515,16 @@ epd_refresh_full();          // 0x22=0xC7, 0x20 触发刷新
 
 ### 4.5 内存优化策略
 
-ESP32-S3 无 PSRAM 时可用 RAM 约 240KB，图片处理需要精细的内存管理：
+ESP32-S3 内部 SRAM 有限；在无 PSRAM 机型上图片处理需要精细控制峰值，在 N16R8 等带 PSRAM 机型上大图解码和 5.83" framebuffer 可优先落到 PSRAM：
 
 | 数据 | 大小 | 生命周期 |
 |------|------|----------|
-| 灰度缓冲区 `gray[]` | 120,000 字节 (400×300) | 解码→抖动→打包后释放 |
-| 红色平面 `red[]` | 15,000 字节 | 解码→抖动→写文件后释放 |
-| 黑色平面 `black[]` | 15,000 字节 | 打包→写文件后释放 |
+| 灰度缓冲区 `gray[]` | 约 `width × height` 字节；4.2" 为 120,000 字节，5.83" 为 311,040 字节 | 解码→抖动→打包后释放 |
+| 彩色平面 `red[]` / `yellow[]` | 每平面 `width × height / 8` 字节；4.2" 为 15,000 字节，5.83" 为 38,880 字节 | 解码→抖动→写文件后释放 |
+| 黑色平面 `black[]` | 每平面 `width × height / 8` 字节 | 打包→写文件后释放 |
 | TJpgDec 工作池 | 20,480 字节 | 解码期间 |
 | EPD DMA 缓冲区 | 15,000×2 字节 | 文件读取→SPI 传输后释放 |
-| 总峰值 | ~170KB | |
+| 总峰值 | 随面板尺寸和图片格式变化 | 4.2" 黑白红约 170KB 量级；5.83" 和 PNG 解码建议使用带 PSRAM 的 N16R8 |
 
 **关键优化措施：**
 
@@ -869,16 +869,16 @@ idf.py flash monitor
 
 > 将 `COMx` 替换为实际的串口号，如 `COM3`（Windows）或 `/dev/ttyUSB0`（Linux）。
 
-### 7.4 首次使用需 erase-flash
+### 7.4 何时需要 erase-flash
 
-首次烧录或分区表变更后，必须先擦除整个 Flash：
+日常升级不要求先擦除整颗 Flash。只有在分区表变更、Flash 内容混乱、需要完全恢复出厂状态，或用户明确接受清空 WiFi/天气/面板配置和 SPIFFS 用户文件时，才建议执行：
 
 ```bash
 idf.py -p COMx erase-flash
 idf.py -p COMx flash
 ```
 
-**原因**：SPIFFS 分区中可能存在旧的文件系统数据，与新固件的分区布局不兼容，会导致挂载失败或数据损坏。擦除后 SPIFFS 区域为全 `0xFF`，当前版本 `format_if_mount_failed=false`，只建议在出厂/用户确认恢复出厂时格式化。
+**原因**：`erase-flash` 会清空 NVS、用户 SPIFFS、fontfs、app 和所有运行时数据。当前版本 `format_if_mount_failed=false`，SPIFFS 挂载失败时不会自动格式化用户内容；正常启动会保留 AP/Web 恢复入口，必要时由用户在配置页确认后再格式化。
 
 ---
 
@@ -887,7 +887,7 @@ idf.py -p COMx flash
 ### 8.1 连接 WiFi
 
 1. ESP32-S3 上电后，自动创建 WiFi 热点
-2. 在手机/电脑的 WiFi 列表中找到 **ESP32_EPD**
+2. 在手机/电脑的 WiFi 列表中找到 **ESP32_EPD_xxxxxx**
 3. 输入默认热点密码 **12345678** 连接
 4. 连接成功后，打开浏览器访问 **http://192.168.4.1/**
 

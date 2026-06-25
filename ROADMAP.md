@@ -103,7 +103,7 @@
 ### 2026-04（v2.2.0）
 
 - **文档与工程对齐**：
-  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由 73 条**、**双启动（完整 / 定时 quick）**、**无 PSRAM 内存策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
+  - `README.md` / `ENGINEERING_DOCS.md` / `文档索引.md` / `IMPLEMENTATION.md`：统一 **HTTP 路由 73 条**、**双启动（完整 / 定时 quick）**、**PSRAM 推荐但保留无 PSRAM 降级策略**、Gitee 克隆地址；修正 API 示例（如 `POST /show?name=`、`POST /timetable_show` JSON、`countdown_config` 字段）。
   - 工程技术文档补充 **§4.4 低功耗与功能**、**§4.5 HTTP Basic Auth**（含前端 `localStorage` 凭据与天气 Key 脱敏说明）。
 - **HTTP 安全加固（固件 + Web）**（与审计一致时）：
   - 敏感推屏/配置类 **POST** 走 `http_check_basic_auth`；`GET /weather_config` 不透传明文 API Key。
@@ -297,7 +297,7 @@
 #### ✅ P1-额外 浏览器端图片压缩（超出原规划）
 
 - **方案**：浏览器 Canvas 将任意图片缩放到 800×600 以内，转为 JPEG 后上传
-- **收益**：大幅减小上传体积（数 MB → ~50KB），适配无 PSRAM 的 ESP32-S3
+- **收益**：大幅减小上传体积（数 MB → ~50KB），降低无 PSRAM 机型的内存压力，也提升带 PSRAM 机型的上传速度
 
 #### ✅ P1-额外 SPIFFS 自动损坏检测与修复（超出原规划）
 
@@ -414,7 +414,7 @@
   - BMP：`bmp_decode_core()` 支持文件流和内存两种输入，逐行读取（内存高效），自动缩放/铺满裁剪 + Bayer 抖动 + HSV 红色检测
   - 自动格式检测：magic bytes `0x42 0x4D` (BMP)、`0xFF 0xD8` (JPEG)、`0x89 0x50` (PNG)
   - 画廊文件扩展名和 MIME type 支持 `.bmp` / `image/bmp`
-- **注意**：由于无 PSRAM，大图片文件由浏览器端自动压缩为 JPEG 后上传
+- **注意**：为降低传输体积和内存峰值，大图片文件由浏览器端自动压缩为 JPEG 后上传；无 PSRAM 机型尤其依赖该路径
 
 ---
 
@@ -445,7 +445,7 @@
 └────┬───┘                        └─────────────────┘
      │ SPI
 ┌────▼───────────────────┐
-│ GDEH042Z96 (400×300)   │
+│ 4.2" / 5.83" BWR EPD   │
 │ 三色墨水屏面板          │
 └────────────────────────┘
 ```

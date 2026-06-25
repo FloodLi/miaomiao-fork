@@ -1,6 +1,6 @@
-# ESP32-S3 E-Paper Firmware Flash Guide
+# 喵哎-MiaooAim 免编译固件烧录指南
 
-本文档给不熟悉 ESP-IDF 的用户使用。只需要一个整包固件文件和 Espressif 下载工具即可完成烧录。
+本文档面向不准备自行编译的复刻用户。只需要下载整包固件文件，并使用 Espressif Flash Download Tool 写入 ESP32-S3，即可完成基础烧录。
 
 ## 项目入口
 

@@ -235,7 +235,7 @@ cd miaomiao   # 或你本地的 msp 目录名
 
 ### 3. 免编译一键烧录
 
-如果只是想把固件烧进设备，不需要安装 ESP-IDF，也不需要自己编译。仓库已提供整包固件。
+如果只是想把固件烧进设备，无需安装 ESP-IDF，也无需自行编译。仓库已提供整包固件。
 
 **推荐下载：** [下载固件烧录包（文件名正常）](https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip)
 
@@ -266,7 +266,7 @@ DoNotChgBin: 勾选
 BAUD: 115200 或 460800
 ```
 
-新板子或配置混乱时可以先点 `ERASE`，再点 `START`；如果不想清空 WiFi、天气、面板等已有配置，不要点 `ERASE`，直接 `START`。更详细的小白烧录说明见 [release/README.md](release/README.md)。
+新板子或配置混乱时可以先点 `ERASE`，再点 `START`；如果不想清空 WiFi、天气、面板等已有配置，不要点 `ERASE`，直接 `START`。更详细的免编译烧录说明见 [release/README.md](release/README.md)。
 
 ### 4. 开发者编译与烧录
 
@@ -393,7 +393,7 @@ msp/
 │   ├── gitee-about.md           # Gitee 仓库简介建议
 │   ├── fonts.md                 # 字库来源、授权和生成说明
 │   └── images/                  # README 使用图片
-├── release/                     # 免编译烧录包与小白烧录说明
+├── release/                     # 免编译烧录包与烧录说明
 │   ├── README.md
 │   ├── epaper_uploader_full_16MB.bin
 │   └── epaper_uploader_full_16MB.zip
