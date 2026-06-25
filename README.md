@@ -343,7 +343,10 @@ msp/
 │   ├── board.html               # 画布留言板可视化编辑器
 │   └── miaooaim-mark.png        # Web 品牌图标资源
 ├── tools/                       # 辅助脚本
+│   ├── fetch_open_fonts.py       # 开源字体获取辅助脚本
 │   ├── gen_font.py              # 点阵字库生成工具
+│   ├── gen_ext_font.py          # 外置 MEF 字库生成工具
+│   ├── preview_ext_font.py      # 外置字库预览/检查工具
 │   ├── gen_city_excel.py        # 和风天气城市码导出
 │   ├── font_extra_chars.txt     # 字库补字清单
 │   ├── unifont.hex.gz           # 字库生成输入
@@ -360,8 +363,18 @@ msp/
 │   ├── README.md
 │   ├── epaper_uploader_full_16MB.bin
 │   └── epaper_uploader_full_16MB.zip
+├── test/                        # 主机端单元测试
+│   ├── README.md
+│   └── lunar/                   # 农历/节气算法测试工程
+├── .gitee/                      # Gitee Issue / PR 模板
+├── .vscode/                     # VSCode ESP-IDF 默认目标配置
 ├── partitions.csv               # 分区表（3MB app 三槽 + coredump + fontfs + 用户 SPIFFS）
 ├── sdkconfig.defaults           # 项目默认配置
+├── timetable_example.json       # 课程表示例配置
+├── CHANGELOG.md                 # 版本更新记录
+├── LICENSE / COMMERCIAL_LICENSE.md
+├── 公开发布检查清单.md
+├── v2.3.3优化改动说明.md
 └── CMakeLists.txt               # 顶层构建脚本
 ```
 
