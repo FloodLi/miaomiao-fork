@@ -134,7 +134,7 @@ msp/
 │   └── board.html             # 画布留言板可视化编辑器
 ├── README.md
 ├── IMPLEMENTATION.md           # 本文档
-└── ROADMAP.md                  # 开发规划
+└── ROADMAP.md                  # 当前维护路线图
 ```
 
 ### 3.2 模块职责

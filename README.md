@@ -488,7 +488,7 @@ msp/
 | [文档索引.md](文档索引.md) | 全部文档导航与按角色检索 | 所有人 |
 | [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) | 工程技术文档（架构/API/模块）⭐ | 开发者 |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
-| [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |
+| [ROADMAP.md](ROADMAP.md) | 当前维护路线图、发布边界和后续优先级 | 贡献者 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新记录 | 用户 / 维护者 |
 | [docs/fonts.md](docs/fonts.md) | 字库来源、授权、生成和应用范围 | 二次开发者 |
 | [公开发布检查清单.md](公开发布检查清单.md) | 公开发布检查清单、release 校验和剩余验证建议 | 维护者 / 复刻者 |

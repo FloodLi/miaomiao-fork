@@ -66,12 +66,12 @@
 
 | 指标 | 数值 | 备注 |
 |------|------|------|
-| 图片上传→显示 | <5 秒 | 含解码 + 传输 + 刷新 |
-| WiFi 连接时间 | <3 秒 | 冷启动 |
-| 屏幕刷新时间 | 15-20 秒 | 三色全刷 |
-| 待机功耗 | <10μA | 深度睡眠 |
+| 图片上传→转换 | 场景相关 | 取决于图片尺寸、格式、PSRAM、抖动模式和 SPIFFS 写入状态 |
+| 墨水屏全刷完成 | 约 10-35 秒 | 取决于面板型号、温度、BUSY 电平和波形；4.2"/5.83" 三色屏均以稳定全刷为当前默认路径 |
+| WiFi 连接时间 | 场景相关 | 取决于路由器、信号强度、认证方式和重连状态 |
+| 待机功耗 | 需按硬件实测 | 深度睡眠电流受 LDO、充电 IC、屏幕转接板、USB 芯片和 GPIO 漏电影响 |
 | 工作电流 | 150-300mA | WiFi+ 刷新 |
-| 续航时间 | 80+ 天 | 60 分钟刷新间隔 |
+| 续航时间 | 按电池和唤醒频率估算 | 需结合真实深睡电流、刷新耗时、天气联网耗时和电池容量计算 |
 | 堆内存空闲 | 因场景波动 | N16R8 有 8MB PSRAM 兜底大分配；N16 无 PSRAM 才需控制 JPEG/PNG 峰值，见 `IMPLEMENTATION.md` |
 
 ---
@@ -1111,7 +1111,7 @@ idf.py -p COM3 monitor
 - `文档索引.md` - 文档导航
 - `ENGINEERING_DOCS.md` - 本文档
 - `IMPLEMENTATION.md` - 实现说明
-- `ROADMAP.md` - 开发规划
+- `ROADMAP.md` - 当前维护路线图
 - `COURSE_TABLE_README.md` - 课程表专题
 - `hardware/BOM_ACTUAL.md` / `hardware/BOM.md` - 硬件与固件对齐提要（采购级 BOM 不公开）
 - `https://oshwhub.com/team_voosogmo/project_fxbcjhaa` - 配套嘉立创开源硬件工程（4.2" SSD1619 PCB/外壳）
