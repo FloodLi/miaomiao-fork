@@ -13,6 +13,6 @@
 | **模组** | 常见 **ESP32-S3-WROOM** 系列须满足 **16MB Flash**（如 N16、N16R8）；**勿用仅 8MB Flash（N8）** 直接烧录当前 `partitions.csv`。 |
 | **PSRAM** | **不是运行本固件的前提**；N16（无 R8）与 N16R8 共用同一软件内存策略。 |
 | **Flash 分区** | 当前默认布局包含 factory、双 OTA、128KB coredump、2.875MB fontfs 和 3.875MB 用户 SPIFFS；分区表或 fontfs 变化后不能只 OTA app。 |
-| **墨水屏** | 与仓库驱动一致时选 **4.2" SSD1619**、**5.83" UC8179** 等；若卖家标注兼容微雪 5.83b V2 / 648×480 / BWR，优先选固件里的 **微雪 5.83 寸黑白红 B V2**；若实际采购屏与上述不一致，须在刷机前核对 FPC、驱动 IC 与 `epd_stub.c` 是否兼容。 |
+| **墨水屏** | 与仓库驱动一致时选 **4.2" SSD1619**、**5.83" UC8179** 等；若供应商标注兼容微雪 5.83b V2 / 648×480 / BWR，优先选固件里的 **微雪 5.83 寸黑白红 B V2**；若实际采购屏与上述不一致，须在刷机前核对 FPC、驱动 IC 与 `epd_stub.c` 是否兼容。 |
 
 引脚与功能默认值以 [`README.md`](../README.md) 为准；工程总览见 [`ENGINEERING_DOCS.md`](../ENGINEERING_DOCS.md)。

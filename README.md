@@ -1,11 +1,11 @@
-# epaper_uploader — ESP32-S3 智能墨水屏终端
+# 喵哎-MiaooAim — ESP32-S3 智能墨水屏终端
 
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-%E2%89%A5v5.5.1%20%285.5.x%29-blue)](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/)
 [![License](https://img.shields.io/badge/license-PolyForm--Noncommercial-orange)](LICENSE)
 [![Hardware](https://img.shields.io/badge/hardware-ESP32--S3-orange)](#-硬件要求)
 [![JLC Hardware](https://img.shields.io/badge/JLCEDA-%E5%98%89%E7%AB%8B%E5%88%9B%E5%BC%80%E6%BA%90%E7%A1%AC%E4%BB%B6-red)](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)
 
-> 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。  
+> 一款基于 ESP32-S3 的低功耗三色墨水屏智能终端，支持图片展示、天气、时钟、日历、课程表、待办等功能，通过 Web 界面管理，开箱即用。固件与仓库代号为 `epaper_uploader`，release 固件文件名沿用该代号。<br>
 > **发布版本：v2.3.3**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 > **构建环境**：**ESP-IDF 最低要求 v5.5.1**；同大版本内更高发行版（如 5.5.4）一般可直接使用，若遇兼容问题以 5.5.1 为对照。
 
@@ -67,7 +67,7 @@
 
 下图统一使用 `docs/images/` 下的英文文件名，避免代码托管平台对中文图片路径渲染不稳定。
 
-### Web 界面截图
+**Web 界面截图**
 
 | `上传面板.png` | `设备配置.png` |
 | :---: | :---: |
@@ -77,7 +77,7 @@
 | :---: | :---: |
 | ![课程表](docs/images/web-timetable.png) | ![待办事项](docs/images/web-todo.png) |
 
-### 墨水屏实物
+**墨水屏实物**
 
 | `4.2寸正面-立绘.jpg` | `4.2寸背壳.jpg` |
 | :---: | :---: |
@@ -105,7 +105,7 @@
 
 本仓库是固件与 Web 管理端；配套硬件已开源到嘉立创开源硬件平台：[喵哎-MiaooAim 4.2寸 墨水屏 SSD1619](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)。嘉立创工程提供 4.2" SSD1619 PCB、外壳附件与硬件结构，固件烧录、屏幕型号选择和引脚说明仍以本仓库 README 为准。
 
-### 屏幕驱动支持状态
+**屏幕驱动支持状态**
 
 | 状态 | 面板 | 分辨率 | 颜色 | 说明 |
 |------|------|--------|------|------|
@@ -116,13 +116,13 @@
 | 实验参考 | EPD-nRF5 SSD1619 / UC8176 / UC8179 / UC8159 / SSD1677 / JD79668 / JD79665 | 400×300 ~ 880×528 | 黑白 / 黑白红 / 黑白红黄 | 参考 EPD-nRF5 控制器命令模型重写接入；JD79668/JD79665 图片转换会生成独立黄色平面并按 2bpp 输出，未实机验证 |
 
 > 除已验证的微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已按当前维护范围移除；7.5" / 4.2" UC8176 等改为 EPD-nRF5 参考实验入口，编号从 26 开始，若 NVS 中仍保存旧面板编号，固件会回退到默认 4.2" 面板。
-> 若购买页面标注“兼容微雪 5.83b V2 / 648×480 / BWR / 24Pin”，配置页优先选择 **微雪 5.83 寸 黑白红 B V2 (648×480)**。若画面尺寸正确、无镜像偏移且黑红颜色正常，边缘发虚通常优先排查屏体状态、FPC 接触、供电和温度，而不是继续切换驱动。
+> 若供应商页面标注“兼容微雪 5.83b V2 / 648×480 / BWR / 24Pin”，配置页优先选择 **微雪 5.83 寸 黑白红 B V2 (648×480)**。若画面尺寸正确、无镜像偏移且黑红颜色正常，边缘发虚通常优先排查屏体状态、FPC 接触、供电和温度，而不是继续切换驱动。
 > ATC/Solum 实验入口只移植屏控初始化与刷屏数据路径，不包含 nRF52811 项目的 UICR 自动识别、EPD 电源脚、BS 脚、3 线回读与外挂 EPD EEPROM 支持；请按配置页面板名手动选择。
 > JD79668/JD79665 四色屏的黄色目前作用于图片上传、画廊转换和测试图案；时钟、天气、课程表等内置页面仍使用黑/红两平面 framebuffer。
 
 以下为复刻时常用器件的**示意配图**（文件名与下图一致）；配套 PCB / 外壳见 [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)，**采购级 BOM 提要**见 [hardware/BOM.md](hardware/BOM.md)、[hardware/BOM_ACTUAL.md](hardware/BOM_ACTUAL.md)，整机原理与排障见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 第三章。
 
-### 模组（乐鑫原装）
+**模组（乐鑫原装）**
 
 适用于贴片/SMT 或自制载板：**ESP32-S3-WROOM-1U-N16R8**（**1U** = IPEX 外接天线；**N16R8** = 16MB Flash + 8MB PSRAM）。固件**不依赖 PSRAM**，同系列 **N16**（无 R8）亦可，但须满足默认分区对 **16MB Flash** 的要求。
 
@@ -130,7 +130,7 @@
 | :---: |
 | ![模组 ESP32-S3-WROOM-1U-N16R8](docs/images/part-esp32-s3-wroom-1u-n16r8.png) |
 
-### 开发板（核心板）
+**开发板（核心板）**
 
 飞线原型、对照 GPIO 丝印时，可使用市售 **ESP32-S3-N16R8 核心板**（示意图见下；具体品牌以实物为准，**请对照本页引脚表**接线）。
 
@@ -138,7 +138,7 @@
 | :---: |
 | ![ESP32-S3-N16R8 核心板](docs/images/part-esp32-s3-n16r8-devboard.png) |
 
-### 内部构造（整机 / 自定义 PCB）
+**内部构造（整机 / 自定义 PCB）**
 
 磁吸一体板与 DevKit 飞线等**整机内部布置**：
 
@@ -148,7 +148,7 @@
 
 > **所有已接入面板共用同一组 GPIO 接线**（见下表）。通过 Web 页面或 `POST /panel_config` 修改 `panel` 字段后，建议重启设备让面板尺寸、预留 framebuffer 与 `/spiffs/image.bin` 重新按新屏幕初始化；无需改线，也不需要修改 `main/epd_stub.c` 的引脚宏。
 
-### 硬件架构与自定义 PCB
+**硬件架构与自定义 PCB**
 
 自定义 PCB 采用针对 Deep Sleep 优化的电源路径：
 1. **锂电池直驱**：使用 **TP4054** 线性充电 IC 进行锂电池充放电管理。
@@ -157,13 +157,13 @@
 
 如果你没有打样 PCB，也可以使用普通的 ESP32-S3 开发板进行面包板跳线测试。
 
-#### 开发板基础接线图 (面包板测试用)
+**开发板基础接线图 (面包板测试用)**
 
 基础整机示意：**3.7V 电池 → 充放电模块 → 开关 → 开发板 5V 输入**；**水墨屏驱动板**经 SCL/SDI/RES、D/C、CS、BUSY 与 **3V3/GND** 接至开发板对应 IO；**SW3/SW4/SW5** 分别接 **IO9 / IO46 / IO3**，及 **GND** 与下图一致（与下表核对）。
 
 ![开发板接线图](docs/images/wiring-diagram.png)
 
-### 引脚连接
+**引脚连接**
 
 | 功能 | GPIO | 连接到 |
 |------|------|--------|
@@ -181,7 +181,7 @@
 
 ## 🚀 快速开始
 
-### 1. 环境准备
+**1. 环境准备**
 
 **ESP-IDF 最低要求 v5.5.1。** 请安装 v5.5.1 或更新的 **5.5.x** 工具链（[官方指南以 5.5.1 为基准](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32s3/get-started/)）：
 
@@ -192,14 +192,14 @@
 
 ```
 
-### 2. 克隆项目
+**2. 克隆项目**
 
 ```bash
 git clone https://gitee.com/gxp666111/miaomiao.git
 cd miaomiao   # 或你本地的 msp 目录名
 ```
 
-### 3. 免编译一键烧录
+**3. 免编译一键烧录**
 
 如果只是想把固件烧进设备，不需要安装 ESP-IDF，也不需要自己编译。仓库已提供整包固件。
 
@@ -234,7 +234,7 @@ BAUD: 115200 或 460800
 
 新板子或配置混乱时可以先点 `ERASE`，再点 `START`；如果不想清空 WiFi、天气、面板等已有配置，不要点 `ERASE`，直接 `START`。更详细的小白烧录说明见 [release/README.md](release/README.md)。
 
-### 4. 开发者编译与烧录
+**4. 开发者编译与烧录**
 
 本项目目标芯片固定为 **ESP32-S3**。仓库已在 `CMakeLists.txt` 和 `.vscode/settings.json` 中写入默认目标；如果你是从 Gitee 源码 ZIP 解压后首次用 VSCode 打开，建议先执行一次“干净配置”，避免旧目录残留的 `build/CMakeCache.txt`、`sdkconfig` 或 VSCode 缓存继续按普通 ESP32 编译。
 
@@ -263,7 +263,7 @@ idf.py -p COM3 build flash monitor
 
 > 不建议把新下载的源码 ZIP 直接覆盖到旧工程目录；如果覆盖后 VSCode 仍然报错，删掉 `build/` 后重新 `idf.py set-target esp32s3` 即可。更稳的方式是用 `git clone` 获取源码。
 
-### 5. 关于 erase-flash
+**5. 关于 erase-flash**
 
 ```powershell
 # 仅在 Flash 内容混乱、分区表切换或需要完全恢复出厂状态时使用
@@ -277,7 +277,7 @@ idf.py -p COM3 build flash monitor
 
 > 注意：`erase-flash` 会清空整颗 Flash，包括 WiFi 配置、NVS 设置、SPIFFS 里的图片和布局。新芯片本来就是空的，不需要先擦除。若擦除后首次启动提示 SPIFFS 未挂载，请连接设备热点进入网页恢复/格式化文件系统。
 
-### 6. 首次使用
+**6. 首次使用**
 
 1. 设备上电后自动创建 WiFi 热点 `ESP32_EPD_xxxxxx`（默认密码 `12345678`）
 2. 手机连接该热点，浏览器打开 `http://192.168.4.1/`
@@ -423,7 +423,8 @@ msp/
 | [ROADMAP.md](ROADMAP.md) | 开发规划与进度 | 贡献者 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新记录 | 用户 / 维护者 |
 | [docs/fonts.md](docs/fonts.md) | 字库来源、授权、生成和应用范围 | 二次开发者 |
-| [上线前检查报告.md](上线前检查报告.md) | 本地清理、上线检查和剩余风险记录 | 维护者 |
+| [上线前检查报告.md](上线前检查报告.md) | 公开发布检查清单、release 校验和剩余验证建议 | 维护者 / 复刻者 |
+| [v2.3.3优化改动说明.md](v2.3.3优化改动说明.md) | v2.3.3 正式改动说明 | 用户 / 开发者 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
 | [hardware/BOM.md](hardware/BOM.md) | 硬件与固件对齐提要（无采购表） | 复刻者 |
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |

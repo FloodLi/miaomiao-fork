@@ -6,7 +6,7 @@
 
 2026-06-24 完成上线前目录整理与静态检查：删除本地 build/缓存/临时输出，保留 release、开源字库源文件和参考素材；发布检查已覆盖 HTTP 路由、Web 嵌入资源、分区表、字库授权和 release 烧录说明；`release/README.md` 已修正 fontfs 烧录地址为 `0x940000`。
 
-2026-06-25 完成文档一致性补充：低功耗开关不关闭正常启动后台，只有 RTC 定时器唤醒才进入 quick-refresh；5.83" BWR 卖家标注兼容微雪 5.83b V2 时优先选择 `Waveshare 5.83" BWR B V2`；Web 嵌入资源为 12 个 HTML 页面 + 1 个 PNG；用户 SPIFFS 与 fontfs 分区职责分离。
+2026-06-25 完成文档一致性补充：低功耗开关不关闭正常启动后台，只有 RTC 定时器唤醒才进入 quick-refresh；5.83" BWR 供应商标注兼容微雪 5.83b V2 时优先选择 `Waveshare 5.83" BWR B V2`；Web 嵌入资源为 12 个 HTML 页面 + 1 个 PNG；用户 SPIFFS 与 fontfs 分区职责分离。
 
 建议复刻和二次开发时重点验证 OTA 成功/失败/回滚流程、低功耗唤醒、轮播与天气长时间运行、连续上传抢占场景，以及实际屏幕驱动 IC 和 BUSY 电平。发布新固件前必须在 ESP-IDF 终端重新执行完整 `idf.py build`。
 
