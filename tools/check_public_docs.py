@@ -38,26 +38,21 @@ EXPECTED_PARTITIONS = {
     "spiffs": ("0xC20000", "0x3E0000"),
 }
 
-PUBLIC_TEXT_FILES = [
-    "README.md",
-    "CHANGELOG.md",
-    "CONTRIBUTING.md",
-    "COURSE_TABLE_README.md",
-    "ENGINEERING_DOCS.md",
-    "IMPLEMENTATION.md",
-    "NOTICE.md",
-    "RELEASE.md",
-    "SECURITY.md",
-    "SUPPORT.md",
-    "ROADMAP.md",
-    "docs/fonts.md",
-    "docs/gitee-about.md",
-    "release/README.md",
-    "公开发布检查清单.md",
-    "使用说明书.md",
-    "文档索引.md",
-    "v2.3.3优化改动说明.md",
-]
+PUBLIC_TEXT_EXTENSIONS = {
+    ".csv",
+    ".html",
+    ".json",
+    ".md",
+    ".ps1",
+    ".py",
+    ".txt",
+    ".yml",
+    ".yaml",
+}
+
+FORBIDDEN_SCAN_EXCLUDES = {
+    "tools/check_public_docs.py",
+}
 
 FORBIDDEN_PATTERNS = [
     r"本次会话",
@@ -166,7 +161,7 @@ def check_release_hashes(failures: list[str]) -> None:
 
 
 def check_markdown_links(failures: list[str]) -> None:
-    tracked = {p.replace("\\", "/") for p in run_git("ls-files").splitlines()}
+    tracked = tracked_files()
     missing: list[str] = []
     for path in sorted(p for p in tracked if p.lower().endswith(".md")):
         text = read_text(path)
@@ -188,8 +183,8 @@ def check_markdown_links(failures: list[str]) -> None:
 
 def check_forbidden_text(failures: list[str]) -> None:
     hits: list[str] = []
-    for path in PUBLIC_TEXT_FILES:
-        if not (ROOT / path).exists():
+    for path in sorted(public_text_files()):
+        if path in FORBIDDEN_SCAN_EXCLUDES:
             continue
         text = read_text(path)
         for pattern in FORBIDDEN_PATTERNS:
@@ -198,6 +193,19 @@ def check_forbidden_text(failures: list[str]) -> None:
                 line = text.count("\n", 0, match.start()) + 1
                 hits.append(f"{path}:{line}:{pattern}")
     check(not hits, "public docs have no banned local/private markers", failures, "; ".join(hits[:10]))
+
+
+def tracked_files() -> set[str]:
+    return {p.replace("\\", "/") for p in run_git("ls-files").splitlines()}
+
+
+def public_text_files() -> list[str]:
+    files: list[str] = []
+    for path in tracked_files():
+        suffix = Path(path).suffix.lower()
+        if suffix in PUBLIC_TEXT_EXTENSIONS:
+            files.append(path)
+    return files
 
 
 def main() -> int:

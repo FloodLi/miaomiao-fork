@@ -16,6 +16,7 @@
 - 新增 `SECURITY.md` 与 `SUPPORT.md`，明确安全报告、密钥脱敏、支持渠道、提问信息和支持边界。
 - 新增 `RELEASE.md`，明确维护者发布新固件时的构建、整包合并、ZIP/SHA256、`firmware-download` 分支同步和回滚原则。
 - 新增 `NOTICE.md`，集中说明 ESP-IDF、LodePNG、JPEG 解码路径、OFL 字体、Web 字体渲染和文档素材等第三方来源与维护要求。
+- 增强 `tools/check_public_docs.py`，从固定文档清单改为自动扫描 Git 已追踪的公开文本文件，覆盖 `.gitee` 模板、Web 页面、硬件文档、工具脚本等更多公开内容。
 
 ## 2026-06-24
 

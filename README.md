@@ -522,7 +522,7 @@ msp/
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
 
 > **说明**：屏幕切换、ATC/Solum 与 EPD-nRF5 参考实验面板适配状态和排障步骤见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md)；若你本地另有 `docs/` 子目录教辅材料，以实际仓库文件为准。
-> 发布前可运行 `python tools/check_public_docs.py`，快速核对版本号、路由数量、Web 嵌入资源、分区表、release 校验、Markdown 本地链接和公开文档敏感词。
+> 发布前可运行 `python tools/check_public_docs.py`，快速核对版本号、路由数量、Web 嵌入资源、分区表、release 校验、Markdown 本地链接，并扫描 Git 已追踪公开文本文件中的本机路径、旧版本号和私密字段特征。
 
 ## 参与贡献
 

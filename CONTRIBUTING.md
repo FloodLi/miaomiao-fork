@@ -96,4 +96,4 @@ git diff --check
 git status --short
 ```
 
-`tools/check_public_docs.py` 会核对 `PROJECT_VER`、HTTP 路由数量、Web 嵌入资源、分区表、release SHA256、Markdown 本地链接和公开文档中的本机路径/旧版本/私密字段特征。脚本只读，不会修改仓库文件。
+`tools/check_public_docs.py` 会核对 `PROJECT_VER`、HTTP 路由数量、Web 嵌入资源、分区表、release SHA256、Markdown 本地链接，并扫描 Git 已追踪的公开文本文件中是否残留本机路径、旧版本号或私密字段特征。脚本只读，不会修改仓库文件。
