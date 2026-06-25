@@ -194,7 +194,7 @@ static void cal_layout_build(cal_layout_t *L, int w, int h)
      * grid text at 1x so the page does not become a wall of heavy pixels. */
     L->title_h = is_583 ? 70 : 28 * s;
     L->wday_h  = is_583 ? 32 : 16 * s;
-    L->footer_h = is_583 ? 40 : 26 * s;
+    L->footer_h = is_583 ? 40 : ((w == 400 && h == 300) ? 34 : 26 * s);
     L->grid_x = mx;
     L->grid_w = w - 2 * mx;
     if (L->grid_w < CAL_GRID_COLS)
@@ -393,14 +393,15 @@ static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month)
     if (is_583)
         ui_draw_text_px(fb, L->grid_x + 18, 14, title, COLOR_BLACK, 32);
     else
-        ui_draw_fixed_text(fb, L->grid_x + 8 * s, 6 * s, title,
+        ui_draw_fixed_text(fb, L->grid_x + 8 * s, 5 * s, title,
                            COLOR_BLACK, s);
     if (meta[0]) {
         int tw = ui_fixed_text_width(fb, meta, 1);
         ui_draw_fixed_text(fb, W - tw - L->grid_x,
-                           is_583 ? 24 : 10 * s, meta, COLOR_BLACK, 1);
+                           is_583 ? 24 : 5 * s, meta, COLOR_BLACK, 1);
     }
-    ui_draw_dotted_hline(fb, L->grid_x, L->title_h - 4 * s,
+    ui_draw_dotted_hline(fb, L->grid_x,
+                         is_583 ? L->title_h - 4 * s : L->title_h - 2 * s,
                          L->col_w * CAL_GRID_COLS,
                          COLOR_BLACK, 6);
 }
@@ -426,16 +427,32 @@ static void cal_draw_grid_lines(fb_t *fb, const cal_layout_t *L)
     int top = L->grid_top;
     int x0  = L->grid_x;
     int w   = L->col_w * CAL_GRID_COLS;
+    int bottom = top + CAL_GRID_ROWS * L->row_h;
+    if (bottom > H)
+        bottom = H;
+
+    const bool is_42 = ui_layout_is_42(fb);
+
+    /* 4.2" footer draws its separator at H - 34. Treat that separator as the
+     * calendar grid bottom so the last grid line and footer line do not stack. */
+    if (is_42) {
+        const int footer_line_y = H - 34;
+        if (footer_line_y > top && footer_line_y < bottom)
+            bottom = footer_line_y;
+    }
 
     /* 横线：每行上边界。1px dotted keeps the page closer to a paper planner. */
     for (int r = 0; r <= CAL_GRID_ROWS; r++) {
         int y = top + r * L->row_h;
-        if (y < H)
+        if (is_42 && y < bottom && bottom - y < 8)
+            continue;
+        if (y <= bottom)
             ui_draw_dotted_hline(fb, x0, y, w, COLOR_BLACK, 6);
     }
     /* 竖线：仅画内部分隔，不再形成厚重外框 */
-    int actual_gh = CAL_GRID_ROWS * L->row_h + 1;
-    if (top + actual_gh > H) actual_gh = H - top;
+    int actual_gh = bottom - top;
+    if (actual_gh < 1)
+        actual_gh = 1;
     for (int c = 1; c < CAL_GRID_COLS; c++) {
         int x = x0 + c * L->col_w;
         if (x < L->fb_w)
