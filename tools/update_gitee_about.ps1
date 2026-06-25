@@ -17,16 +17,39 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
 
 $AboutPath = Join-Path (Split-Path -Parent $PSScriptRoot) "docs\gitee-about.md"
 $About = Get-Content -LiteralPath $AboutPath -Encoding UTF8 -Raw
-$Matches = [regex]::Matches($About, '```text\s*(.*?)\s*```',
+
+function Get-FencedBlock {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Text,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InfoString
+    )
+
+    $Pattern = '```' + [regex]::Escape($InfoString) + '\s*(.*?)\s*```'
+    $Match = [regex]::Match($Text, $Pattern,
                             [System.Text.RegularExpressions.RegexOptions]::Singleline)
-if ($Matches.Count -lt 1) {
-    throw "Could not find description text block in docs/gitee-about.md"
+    if ($Match.Success) {
+        return $Match.Groups[1].Value.Trim()
+    }
+    return $null
 }
-$Description = $Matches[0].Groups[1].Value.Trim()
-$Homepage = if ($Matches.Count -ge 2) {
-    $Matches[1].Groups[1].Value.Trim()
-} else {
-    "https://oshwhub.com/team_voosogmo/project_fxbcjhaa"
+
+$Description = Get-FencedBlock -Text $About -InfoString "gitee-description"
+$Homepage = Get-FencedBlock -Text $About -InfoString "gitee-homepage"
+
+if ([string]::IsNullOrWhiteSpace($Description)) {
+    $Matches = [regex]::Matches($About, '```text\s*(.*?)\s*```',
+                                [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if ($Matches.Count -lt 1) {
+        throw "Could not find gitee-description block in docs/gitee-about.md"
+    }
+    $Description = $Matches[0].Groups[1].Value.Trim()
+}
+
+if ([string]::IsNullOrWhiteSpace($Homepage)) {
+    $Homepage = "https://oshwhub.com/team_voosogmo/project_fxbcjhaa"
 }
 
 $Body = @{
