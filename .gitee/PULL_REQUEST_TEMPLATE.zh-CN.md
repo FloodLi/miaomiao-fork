@@ -19,6 +19,7 @@
 - [ ] 已检查 Web 页面
 - [ ] 已更新 README / CHANGELOG / 工程文档
 - [ ] 若修改 release、分区表或 fontfs，已同步更新 `release/README.md`、`firmware-download` 分支和 SHA256
+- [ ] 文档或发布相关改动已运行 `python tools/check_public_docs.py`
 - [ ] 已运行 `git diff --check`
 
 ## 风险与兼容性

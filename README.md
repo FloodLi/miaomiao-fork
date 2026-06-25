@@ -418,6 +418,7 @@ msp/
 │   ├── gen_ext_font.py          # 外置 MEF 字库生成工具
 │   ├── preview_ext_font.py      # 外置字库预览/检查工具
 │   ├── gen_city_excel.py        # 和风天气城市码导出
+│   ├── check_public_docs.py     # 公开文档/发布口径一致性检查
 │   ├── font_extra_chars.txt     # 字库补字清单
 │   ├── unifont.hex.gz           # 字库生成输入
 │   └── update_gitee_about.ps1   # Gitee 仓库简介同步脚本
@@ -513,6 +514,7 @@ msp/
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
 
 > **说明**：屏幕切换、ATC/Solum 与 EPD-nRF5 参考实验面板适配状态和排障步骤见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md)；若你本地另有 `docs/` 子目录教辅材料，以实际仓库文件为准。
+> 发布前可运行 `python tools/check_public_docs.py`，快速核对版本号、路由数量、Web 嵌入资源、分区表、release 校验、Markdown 本地链接和公开文档敏感词。
 
 ## 参与贡献
 

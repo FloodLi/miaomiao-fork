@@ -55,6 +55,7 @@ idf.py -p COMx flash monitor
 
 - 一个 PR 只解决一类问题，避免把驱动、UI、文档和格式化混在一起。
 - 提交前运行 `idf.py build`。
+- 文档或 release 相关改动请运行 `python tools/check_public_docs.py`。
 - 前端改动请确认页面语法无误，并尽量在手机浏览器上试一次。
 - 不要提交 `build/`、`sdkconfig`、`managed_components/`、本地参考包或个人素材。
 - 不要提交真实 WiFi 密码、天气 API Key、私钥、签名证书或个人敏感信息。
@@ -83,3 +84,15 @@ idf.py -p COMx flash monitor
 - `firmware-download` 分支（用于 README 中的“下载固件烧录包”入口）
 
 更新 `firmware-download` 分支时，只保留面向下载的 `README.md` 和 `epaper_uploader_full_16MB.bin`，并确认该 bin 与 `master:release/epaper_uploader_full_16MB.bin` 为同一版本。
+
+## 发布前公开文档检查
+
+公开发布或更新 Gitee 前建议至少执行：
+
+```powershell
+python tools/check_public_docs.py
+git diff --check
+git status --short
+```
+
+`tools/check_public_docs.py` 会核对 `PROJECT_VER`、HTTP 路由数量、Web 嵌入资源、分区表、release SHA256、Markdown 本地链接和公开文档中的本机路径/旧版本/私密字段特征。脚本只读，不会修改仓库文件。
