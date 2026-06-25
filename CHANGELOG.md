@@ -15,6 +15,7 @@
 - 新增 `tools/check_public_docs.py` 只读检查脚本，用于发布前核对版本号、HTTP 路由、Web 嵌入资源、分区表、release SHA256、Markdown 链接和公开文档敏感词。
 - 新增 `SECURITY.md` 与 `SUPPORT.md`，明确安全报告、密钥脱敏、支持渠道、提问信息和支持边界。
 - 新增 `RELEASE.md`，明确维护者发布新固件时的构建、整包合并、ZIP/SHA256、`firmware-download` 分支同步和回滚原则。
+- 新增 `NOTICE.md`，集中说明 ESP-IDF、LodePNG、JPEG 解码路径、OFL 字体、Web 字体渲染和文档素材等第三方来源与维护要求。
 
 ## 2026-06-24
 

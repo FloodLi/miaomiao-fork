@@ -444,6 +444,7 @@ msp/
 ├── timetable_example.json       # 课程表示例配置
 ├── CHANGELOG.md                 # 版本更新记录
 ├── RELEASE.md                   # 发布流程与固件整包生成说明
+├── NOTICE.md                    # 第三方组件、字体和素材声明
 ├── LICENSE / COMMERCIAL_LICENSE.md
 ├── 公开发布检查清单.md
 ├── SECURITY.md
@@ -516,6 +517,7 @@ msp/
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
 | [SECURITY.md](SECURITY.md) | 安全边界、漏洞报告和密钥脱敏建议 | 用户 / 维护者 |
 | [SUPPORT.md](SUPPORT.md) | 支持渠道、提问信息和支持边界 | 用户 / 复刻者 |
+| [NOTICE.md](NOTICE.md) | 第三方源码、字体、组件和素材声明 | 用户 / 维护者 |
 | [hardware/BOM.md](hardware/BOM.md) | 硬件与固件对齐提要（无采购表） | 复刻者 |
 | [COURSE_TABLE_README.md](COURSE_TABLE_README.md) | 课程表功能说明 | 课程表用户 |
 
