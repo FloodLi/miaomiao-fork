@@ -420,7 +420,7 @@ msp/
 | otadata | data | 8 KB | OTA 状态 |
 | phy_init | data | 4 KB | PHY 初始化基线数据 |
 | factory | app | 3 MB | 出厂固件槽，保留回滚/救援入口 |
-| ota_0 / ota_1 | app | 各 3 MB | OTA 双分区，当前固件仍有约 37% app 余量 |
+| ota_0 / ota_1 | app | 各 3 MB | OTA 双分区，具体 app 余量以发布前 `idf.py build` 的 size 输出为准 |
 | coredump | data | 128 KB | panic / watchdog 崩溃转储，便于售后排障 |
 | fontfs | data | 2.875 MB | 内置 16/24/32px 字库资源分区 |
 | spiffs | data | 3.875 MB | 用户图片、画布素材和运行时文件 |
