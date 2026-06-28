@@ -18,12 +18,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED = {
-    "project_version": "2.3.3",
+    "project_version": "2.3.4",
     "http_routes": 73,
     "web_html": 12,
     "web_png": 1,
-    "release_bin_sha256": "8C6BD90515F991CC6F5A64E8A87B22465C8DB651DE6F0235B88ED5CABD1D52AD",
-    "release_zip_sha256": "0C990B212F85ACD24EA7840321EE5AC7783308618EB820F909526E81CC4B751B",
+    "release_bin_sha256": "48693EA305FC65EC4BC1ACE59E4DCCB6E0380281F7D39BBCB842EEBCC4566F30",
+    "release_zip_sha256": "1B2BEA964E5211E0ACAE5880730BF6104C95EAB72083C3B9E3D8225E8AA7D8BC",
 }
 
 EXPECTED_PARTITIONS = {
@@ -112,7 +112,7 @@ def check_project_version(failures: list[str]) -> None:
     cmake = read_text("CMakeLists.txt")
     match = re.search(r'set\(PROJECT_VER\s+"([^"]+)"\)', cmake)
     version = match.group(1) if match else None
-    check(version == EXPECTED["project_version"], "PROJECT_VER is 2.3.3", failures, str(version))
+    check(version == EXPECTED["project_version"], f"PROJECT_VER is {EXPECTED['project_version']}", failures, str(version))
 
 
 def check_web_embed(failures: list[str]) -> None:

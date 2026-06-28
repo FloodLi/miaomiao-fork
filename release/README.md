@@ -11,7 +11,7 @@ Gitee 固件仓库:       https://gitee.com/gxp666111/miaomiao
 
 ## 固件文件
 
-> **发布状态说明（2026-06-26）**：本目录已按当前源码重新构建并合并 `epaper_uploader_full_16MB.bin`。若源码、分区表或 fontfs 字库在此后继续变化，发布前必须在 ESP-IDF 终端重新 `idf.py build` 并重新合并整包。
+> **发布状态说明（2026-06-28）**：本目录已按 v2.3.4 当前源码重新构建并合并 `epaper_uploader_full_16MB.bin`。若源码、分区表或 fontfs 字库在此后继续变化，发布前必须在 ESP-IDF 终端重新 `idf.py build` 并重新合并整包。
 
 推荐下载入口：
 
@@ -37,7 +37,7 @@ ZIP 内只包含上述整包固件文件；解压后的 bin 校验信息以本�
 
 ```text
 Size:   12713984 bytes
-SHA256: 8C6BD90515F991CC6F5A64E8A87B22465C8DB651DE6F0235B88ED5CABD1D52AD
+SHA256: 48693EA305FC65EC4BC1ACE59E4DCCB6E0380281F7D39BBCB842EEBCC4566F30
 ```
 
 说明：推荐入口中的 `firmware-download.zip` 是 Gitee 按 `firmware-download` 分支动态打包生成的下载文件，不建议固定校验 ZIP 本身；请以解压后的 `epaper_uploader_full_16MB.bin` SHA256 为准。
@@ -46,7 +46,19 @@ SHA256: 8C6BD90515F991CC6F5A64E8A87B22465C8DB651DE6F0235B88ED5CABD1D52AD
 
 ```text
 Size:   2212015 bytes
-SHA256: 0C990B212F85ACD24EA7840321EE5AC7783308618EB820F909526E81CC4B751B
+SHA256: 1B2BEA964E5211E0ACAE5880730BF6104C95EAB72083C3B9E3D8225E8AA7D8BC
+```
+
+同时保留带版本后缀的归档文件，便于人工核对具体发布版本：
+
+```text
+release/epaper_uploader_full_16MB_v2.3.4.bin
+Size:   12713984 bytes
+SHA256: 48693EA305FC65EC4BC1ACE59E4DCCB6E0380281F7D39BBCB842EEBCC4566F30
+
+release/epaper_uploader_full_16MB_v2.3.4.zip
+Size:   2208657 bytes
+SHA256: 7D93D4A59E230A11FC0BE654D960BB792D65A78CBC284EBF524B105FF025B14B
 ```
 
 如果手动点 raw 下载后文件名带了单引号，例如：
