@@ -199,7 +199,6 @@ void power_mgr_note_epd_refresh_complete(void)
 {
     int64_t now = esp_timer_get_time();
     portENTER_CRITICAL(&s_activity_mux);
-    s_last_activity_us = now;
     s_last_epd_refresh_us = now;
     portEXIT_CRITICAL(&s_activity_mux);
 }
@@ -289,7 +288,6 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
     /* Do not sleep while an EPD transfer/refresh still owns the display mutex. */
     if (epd_is_ready() && !epd_wait_idle(70000)) {
         ESP_LOGW(TAG, "EPD still busy, postponing deep sleep");
-        power_mgr_reset_activity();
         return;
     }
 
@@ -309,6 +307,11 @@ static void enter_sleep_internal(bool from_idle, int64_t idle_snapshot_us)
             ESP_LOGI(TAG, "Waiting %d ms after EPD refresh before deep sleep", wait_ms);
             vTaskDelay(pdMS_TO_TICKS(wait_ms));
         }
+    }
+
+    if (from_idle && activity_after(sleep_request_us)) {
+        ESP_LOGI(TAG, "Sleep postponed: activity while waiting for EPD settle");
+        return;
     }
 
     uint64_t sleep_us = next_timer_wakeup_us(&cfg);

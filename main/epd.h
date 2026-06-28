@@ -28,7 +28,7 @@ typedef enum {
 
     /* Experimental reference drivers reimplemented from EPD-nRF5 command models. */
     EPD_PANEL_REF_UC8176_42_BW       = 26, /* 4.2" 400x300 BW, UC8176 */
-    EPD_PANEL_REF_UC8176_42_BWR      = 27, /* 4.2" 400x300 BW+Red, UC8176 */
+    EPD_PANEL_REF_UC8176_42_BWR      = 27, /* 4.2" 400x300 BW+Red, UC81xx reference */
     EPD_PANEL_REF_UC8179_75_BW       = 28, /* 7.5" 800x480 BW, UC8179 */
     EPD_PANEL_REF_UC8179_75_BWR      = 29, /* 7.5" 800x480 BW+Red, UC8179 */
     EPD_PANEL_REF_UC8159_583_BW      = 30, /* 5.83" 600x448 BW, UC8159 */
@@ -36,7 +36,7 @@ typedef enum {
     EPD_PANEL_REF_SSD1677_75_HD_BW   = 32, /* 7.5" 880x528 BW HD, SSD1677 */
     EPD_PANEL_REF_SSD1677_75_HD_BWR  = 33, /* 7.5" 880x528 BW+Red HD, SSD1677 */
     EPD_PANEL_REF_JD79665_75_BWRY    = 34, /* 7.5" 800x480 BWRY, JD79665; native 2bpp red/yellow */
-    EPD_PANEL_REF_SSD1619_42_BW      = 35, /* 4.2" 400x300 BW, SSD1619 */
+    EPD_PANEL_REF_SSD1619_42_BW      = 35, /* 4.2" 400x300 BW, SSD1619/SSD1619A reference */
     EPD_PANEL_REF_SSD1619_42_BWR     = 36, /* 4.2" 400x300 BW+Red, SSD1619 */
     EPD_PANEL_REF_JD79668_42_BWRY    = 37, /* 4.2" 400x300 BWRY, JD79668; native 2bpp red/yellow */
     EPD_PANEL_REF_SSD1683_42_BWR     = 38, /* 4.2" 400x300 BW+Red, SSD1683 */
