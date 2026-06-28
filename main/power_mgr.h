@@ -21,7 +21,10 @@ esp_err_t power_mgr_set_config(const power_config_t *cfg);
 /** Reset inactivity timer (call from button press, HTTP request, etc.) */
 void power_mgr_reset_activity(void);
 
-/** Mark that an EPD refresh completed; deep sleep will wait for panel settle. */
+/** Mark that an EPD refresh completed; deep sleep will wait for panel settle.
+ * This does not reset the inactivity timer: automatic refreshes should not keep
+ * the device awake forever. User actions must call power_mgr_reset_activity().
+ */
 void power_mgr_note_epd_refresh_complete(void);
 
 /** Start the inactivity-check timer (call after full boot completes) */

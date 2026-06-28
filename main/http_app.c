@@ -89,7 +89,11 @@ bool http_auth_is_enabled(void)
 
 bool http_check_basic_auth(httpd_req_t *req)
 {
-    if (!http_auth_is_enabled()) return true;
+    if (!http_auth_is_enabled()) {
+        if (req && req->method != HTTP_GET)
+            http_note_user_activity(req);
+        return true;
+    }
 
     char hdr[160] = {0};
     if (httpd_req_get_hdr_value_str(req, "Authorization", hdr, sizeof(hdr)) != ESP_OK) {
@@ -124,7 +128,15 @@ bool http_check_basic_auth(httpd_req_t *req)
         httpd_resp_send(req, "Wrong credentials", HTTPD_RESP_USE_STRLEN);
         return false;
     }
+    if (req && req->method != HTTP_GET)
+        http_note_user_activity(req);
     return true;
+}
+
+void http_note_user_activity(httpd_req_t *req)
+{
+    (void)req;
+    power_mgr_reset_activity();
 }
 
 static esp_err_t auth_config_get_handler(httpd_req_t *req)
@@ -288,7 +300,7 @@ static const char *http_panel_name(epd_panel_t panel)
     case EPD_PANEL_ATC_SSD_97_BWR: return "ATC/Solum 9.7 BWR SSD";
     case EPD_PANEL_ATC_PEGHOOK_13_BWR: return "ATC/Solum 1.3 peghook BWR SSD";
     case EPD_PANEL_REF_UC8176_42_BW: return "UC8176 4.2 BW";
-    case EPD_PANEL_REF_UC8176_42_BWR: return "UC8176 4.2 BWR";
+    case EPD_PANEL_REF_UC8176_42_BWR: return "UC 4.2 BWR reference";
     case EPD_PANEL_REF_UC8179_75_BW: return "UC8179 7.5 BW";
     case EPD_PANEL_REF_UC8179_75_BWR: return "UC8179 7.5 BWR";
     case EPD_PANEL_REF_UC8159_583_BW: return "UC8159 5.83 BW";
@@ -296,7 +308,7 @@ static const char *http_panel_name(epd_panel_t panel)
     case EPD_PANEL_REF_SSD1677_75_HD_BW: return "SSD1677 7.5 HD BW";
     case EPD_PANEL_REF_SSD1677_75_HD_BWR: return "SSD1677 7.5 HD BWR";
     case EPD_PANEL_REF_JD79665_75_BWRY: return "JD79665 7.5 BWRY";
-    case EPD_PANEL_REF_SSD1619_42_BW: return "SSD1619 4.2 BW";
+    case EPD_PANEL_REF_SSD1619_42_BW: return "SSD1619A 4.2 BW reference";
     case EPD_PANEL_REF_SSD1619_42_BWR: return "SSD1619 4.2 BWR";
     case EPD_PANEL_REF_JD79668_42_BWRY: return "JD79668 4.2 BWRY";
     case EPD_PANEL_REF_SSD1683_42_BWR: return "SSD1683 4.2 BWR";
@@ -1461,12 +1473,6 @@ static esp_err_t power_config_post_handler(httpd_req_t *req)
 
 /* ── session open hook (reset inactivity timer) ───────────────────── */
 
-static esp_err_t http_session_open_hook(httpd_handle_t hd, int sockfd)
-{
-    (void)hd; (void)sockfd;
-    power_mgr_reset_activity();
-    return ESP_OK;
-}
 
 /* ── server start ──────────────────────────────────────────────────── */
 
@@ -1726,7 +1732,6 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.stack_size         = 16384;
     config.lru_purge_enable   = true;
     config.max_open_sockets   = 7;
-    config.open_fn            = http_session_open_hook;
 
     http_auth_load_from_nvs();
 
