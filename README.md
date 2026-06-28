@@ -6,7 +6,7 @@
 [![JLC Hardware](https://img.shields.io/badge/JLCEDA-%E5%98%89%E7%AB%8B%E5%88%9B%E5%BC%80%E6%BA%90%E7%A1%AC%E4%BB%B6-red)](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)
 
 > 一款基于 ESP32-S3 的三色墨水屏智能终端固件与 Web 管理端，支持图片展示、天气、时钟、日历、课程表、待办、倒计时、留言画板、OTA 和低功耗。固件与仓库代号为 `epaper_uploader`，release 固件文件名沿用该代号。<br>
-> **发布版本：v2.3.3**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
+> **发布版本：v2.3.4**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 > **构建环境**：**ESP-IDF 最低要求 v5.5.1**；同大版本内更高发行版（如 5.5.4）一般可直接使用，若遇兼容问题以 5.5.1 为对照。
 
 ## 一分钟了解项目
@@ -15,7 +15,7 @@
 
 | 项目 | 当前状态 |
 |------|----------|
-| 当前版本 | v2.3.3，源码版本与 `CMakeLists.txt` 的 `PROJECT_VER` 一致 |
+| 当前版本 | v2.3.4，源码版本与 `CMakeLists.txt` 的 `PROJECT_VER` 一致 |
 | 主控平台 | ESP32-S3，推荐 16MB Flash；N16 / N16R8 均可，PSRAM 可提升图片转换余量 |
 | 主测屏幕 | 4.2" SSD1619 BWR 400×300、5.83" UC8179 / 微雪 BWR B V2 648×480 |
 | 使用方式 | 可直接刷 release 整包，也可用 ESP-IDF v5.5.x 自行编译 |
@@ -42,9 +42,9 @@
 | [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa) | 配套 4.2" SSD1619 PCB、外壳附件与硬件结构 |
 | [文档索引.md](文档索引.md) | 所有用户文档、工程文档、发布文档和支持文档入口 |
 
-## 当前发布状态（v2.3.3 / 2026-06-25）
+## 当前发布状态（v2.3.4 / 2026-06-28）
 
-当前版本已完成公开发布整理，适合复刻用户下载烧录，也适合二次开发者继续改功能、改 UI、适配屏幕。v2.3.3 的重点是把日历准确性、低功耗策略、5.83" 页面适配、字库显示、Web 画板渲染、分区文档和 release 固件状态统一到同一套公开资料里。
+当前版本已完成公开发布整理，适合复刻用户下载烧录，也适合二次开发者继续改功能、改 UI、适配屏幕。v2.3.4 在 v2.3.3 的日历、低功耗、5.83" 页面适配、字库显示、Web 画板渲染和分区文档基础上，补充 4.2" 参考驱动选项，并修复后台轮询和自动刷屏影响深睡闲置计时的问题。
 
 ### 交付物
 
@@ -57,7 +57,7 @@
 | 分区表 | factory + 双 OTA + coredump + fontfs + SPIFFS，面向 16MB Flash 固件发布 |
 
 > 首次源码编译会下载开源字体生成 `fontfs`。若日志停在 `fetch_open_fonts.py` 并提示 read timeout，通常是 GitHub 原始文件访问超时；可重试，或把 `LXGW975YuanSC-400W.ttf`、`NotoSansMono-Regular.ttf` 放入 `tools/fonts/noto/` 后重新执行 `idf.py build`。也可设置 `MIAOO_FONT_SOURCE_DIR` 指向本地开源字体缓存目录。
-| 发布包 | `release/epaper_uploader_full_16MB.bin` 与 ZIP 已按 v2.3.3 当前源码重新构建并记录 SHA256 |
+| 发布包 | `release/epaper_uploader_full_16MB.bin` 与 ZIP 已按 v2.3.4 当前源码重新构建并记录 SHA256 |
 | 文档 | README、使用说明、工程文档、实现说明、字库说明、发布流程、安全支持、公开发布检查清单和更新日志 |
 
 ### 功能范围
@@ -96,7 +96,7 @@
 | fontfs | `0x940000` 起，2.875MB，放固件随附 24/32px 外置字库资源；16px 小字走内置清晰位图 |
 | 用户 SPIFFS | `0xC20000` 起，3.875MB，放图片、画布素材、运行时文件和用户数据 |
 | Web 字体渲染 | 留言/画板页面可调用浏览器本机字体渲染为图片后推屏，不需要把所有字体都塞进固件 |
-| release 固件 | 当前 `release/` 已按 v2.3.3 重新构建并记录 SHA256；后续修改源码、分区表或字库后必须重新构建 |
+| release 固件 | 当前 `release/` 已按 v2.3.4 重新构建并记录 SHA256；后续修改源码、分区表或字库后必须重新构建 |
 
 ### 低功耗边界
 
@@ -466,6 +466,7 @@ msp/
 ├── 公开发布检查清单.md
 ├── SECURITY.md
 ├── SUPPORT.md
+├── v2.3.4优化改动说明.md
 ├── v2.3.3优化改动说明.md
 └── CMakeLists.txt               # 顶层构建脚本
 ```
@@ -530,7 +531,8 @@ msp/
 | [RELEASE.md](RELEASE.md) | 维护者发布流程、整包合并、校验和分支同步 | 维护者 |
 | [docs/fonts.md](docs/fonts.md) | 字库来源、授权、生成和应用范围 | 二次开发者 |
 | [公开发布检查清单.md](公开发布检查清单.md) | 公开发布检查清单、release 校验和剩余验证建议 | 维护者 / 复刻者 |
-| [v2.3.3优化改动说明.md](v2.3.3优化改动说明.md) | v2.3.3 正式改动说明 | 用户 / 开发者 |
+| [v2.3.4优化改动说明.md](v2.3.4优化改动说明.md) | v2.3.4 正式改动说明 | 用户 / 开发者 |
+| [v2.3.3优化改动说明.md](v2.3.3优化改动说明.md) | v2.3.3 历史版本说明 | 用户 / 开发者 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区行为规范、日志脱敏和协作边界 | 所有参与者 |
 | [SECURITY.md](SECURITY.md) | 安全边界、漏洞报告和密钥脱敏建议 | 用户 / 维护者 |
