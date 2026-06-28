@@ -42,10 +42,16 @@ static inline char *json_escape(char *dst, size_t dst_len, const char *src)
 
 #define HTTP_HTML_CACHE_CONTROL "private, max-age=300"
 
+/** Mark a real user-facing HTTP action. Silent polling endpoints should not
+ * reset the low-power inactivity timer.
+ */
+void http_note_user_activity(httpd_req_t *req);
+
 static inline esp_err_t http_send_embedded_html(httpd_req_t *req,
                                                 const uint8_t *start,
                                                 const uint8_t *end)
 {
+    http_note_user_activity(req);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_set_hdr(req, "Cache-Control", HTTP_HTML_CACHE_CONTROL);
     return httpd_resp_send(req, (const char *)start, (ssize_t)(end - start));
