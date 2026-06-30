@@ -42,9 +42,12 @@
 #define EPD_SPI_MAX_TX    16384
 #define EPD_FILL_CHUNK    4096
 #define EPD_BUSY_TIMEOUT_MS  60000
+#define EPD_BUSY_UPDATE_TIMEOUT_MS  12000
 #define EPD_ATC29_BUSY_TIMEOUT_MS  2500
 #define EPD_ATC29_SAFE_REFRESH_MS  12000
 #define HINK29_REFRESH_MS          15000
+#define EPD_BUSY_FALLBACK_REFRESH_MS  14000
+#define EPD_BUSY_TIMEOUT_FALLBACK_THRESHOLD  1
 #define HINK29_LOGICAL_W 128
 #define HINK29_LOGICAL_H 296
 #define EPD_REPAIR_MAX_CYCLES      8
@@ -62,6 +65,7 @@ static bool s_panel_seq_done;
 static bool s_epd_ready;
 
 static atomic_bool s_force_full_refresh_next = ATOMIC_VAR_INIT(false);
+static atomic_int s_busy_timeout_streak = ATOMIC_VAR_INIT(0);
 
 /**
  * NVS 键 busy_idle：0 = 空闲时 BUSY 为低；1 = 空闲时为高。
@@ -496,13 +500,22 @@ static void epd_hw_reset_waveshare_v2(void)
  * after_update_cmd：发完 0x20（SSD1619）/0x12（UC8179 等）刷新命令后须置 true。
  * 否则 BUSY 可能仍短暂保持“空闲”电平（上拉），会误判为已就绪（仅 ~10ms 就返回）。
  */
-static void epd_wait_ready(bool after_update_cmd)
+static bool epd_wait_ready(bool after_update_cmd)
 {
     delay_ms(10);
     const bool probe_0x71 = panel_desc()->busy_probe_0x71;
     int idle = busy_idle_effective();
     const bool flexible_busy = panel_is_atc_29_flexible();
-    const int timeout_ms = flexible_busy ? EPD_ATC29_BUSY_TIMEOUT_MS : EPD_BUSY_TIMEOUT_MS;
+    const int timeout_ms = flexible_busy ? EPD_ATC29_BUSY_TIMEOUT_MS :
+                           (after_update_cmd ? EPD_BUSY_UPDATE_TIMEOUT_MS : EPD_BUSY_TIMEOUT_MS);
+
+    if (after_update_cmd &&
+        atomic_load(&s_busy_timeout_streak) >= EPD_BUSY_TIMEOUT_FALLBACK_THRESHOLD) {
+        ESP_LOGW(TAG, "BUSY fallback: skip polling after previous timeout, wait %d ms",
+                 EPD_BUSY_FALLBACK_REFRESH_MS);
+        delay_ms(EPD_BUSY_FALLBACK_REFRESH_MS);
+        return false;
+    }
 
     if (probe_0x71)
         epd_cmd(0x71);
@@ -535,7 +548,6 @@ static void epd_wait_ready(bool after_update_cmd)
     }
 
     int waited = 0;
-    bool timed_out = false;
     while (gpio_get_level(PIN_EPD_BUSY) != idle) {
         if (probe_0x71)
             epd_cmd(0x71);
@@ -546,12 +558,16 @@ static void epd_wait_ready(bool after_update_cmd)
                           "Try NVS key busy_idle=0 or 1 on namespace 'epd'. "
                           "Display may continue with conservative fixed waits.",
                      waited, idle, (int)gpio_get_level(PIN_EPD_BUSY));
-            timed_out = true;
-            break;
+            if (after_update_cmd)
+                atomic_fetch_add(&s_busy_timeout_streak, 1);
+            return false;
         }
     }
-    if (!timed_out && waited > 200)
+    if (after_update_cmd)
+        atomic_store(&s_busy_timeout_streak, 0);
+    if (waited > 200)
         ESP_LOGI(TAG, "ready after %d ms", waited);
+    return true;
 }
 
 /* ── Waveshare-style helpers ───────────────────────────────────────── */
@@ -862,10 +878,13 @@ static uint32_t ref_ssd1683_update_once(uint8_t ctrl2, const char *label)
     epd_cmd(0x20);
 
     TickType_t t0 = xTaskGetTickCount();
-    epd_wait_ready(true);
+    bool busy_ok = epd_wait_ready(true);
     uint32_t elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - t0);
 
-    if (elapsed_ms < 100) {
+    if (!busy_ok) {
+        ESP_LOGW(TAG, "SSD1683 %s BUSY invalid after %u ms, using fixed wait fallback",
+                 label, (unsigned)elapsed_ms);
+    } else if (elapsed_ms < 100) {
         ESP_LOGW(TAG, "SSD1683 %s BUSY only %u ms, waiting 2s safety",
                  label, (unsigned)elapsed_ms);
         delay_ms(2000);
@@ -1976,15 +1995,18 @@ static void ssd1619_refresh(void)
     epd_cmd(0x20);
 
     TickType_t t0 = xTaskGetTickCount();
-    epd_wait_ready(true);
+    bool busy_ok = epd_wait_ready(true);
     uint32_t elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - t0);
 
     /* BUSY 未接或恒为高时：wait_ready 几毫秒内就“就绪”，全刷实际未完成，屏不更新 */
-    if (elapsed_ms < 250) {
-        ESP_LOGW(TAG, "SSD1619: refresh BUSY only %u ms — likely BUSY floating/wrong. "
-                      "Waiting 14s for full e-paper update (check GPIO4 BUSY).",
+    if (!busy_ok) {
+        ESP_LOGW(TAG, "SSD1619: refresh BUSY invalid after %u ms, used fallback wait",
                  (unsigned)elapsed_ms);
-        delay_ms(14000);
+    } else if (elapsed_ms < 250) {
+        ESP_LOGW(TAG, "SSD1619: refresh BUSY only %u ms — likely BUSY floating/wrong. "
+                      "Using fixed %d ms full-refresh wait (check GPIO%d BUSY).",
+                 (unsigned)elapsed_ms, EPD_BUSY_FALLBACK_REFRESH_MS, PIN_EPD_BUSY);
+        delay_ms(EPD_BUSY_FALLBACK_REFRESH_MS);
     } else {
         delay_ms(500);
     }
