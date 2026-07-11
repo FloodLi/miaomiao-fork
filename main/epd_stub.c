@@ -406,9 +406,12 @@ void epd_load_panel_from_nvs(void)
 
 static int busy_idle_effective(void)
 {
+    const epd_panel_desc_t *d = panel_desc();
+    if (d->data_mode == EPD_CMD_DATA_E6_3IN7_6C)
+        return d->default_busy_idle; /* E6 reference driver uses BUSY ready = HIGH. */
     if (s_busy_idle_level == 0 || s_busy_idle_level == 1)
         return s_busy_idle_level;
-    return panel_desc()->default_busy_idle;
+    return d->default_busy_idle;
 }
 
 /* ── 延时 / SPI 底层 ──────────────────────────────────────────────── */
@@ -1231,8 +1234,13 @@ static bool e6_37_wait_ready(const char *stage)
     }
 
     if (elapsed >= EPD_E6_BUSY_TIMEOUT_MS) {
-        ESP_LOGW(TAG, "E6 3.7: BUSY timeout at %s", stage ? stage : "?");
+        ESP_LOGW(TAG, "E6 3.7: BUSY timeout at %s (expect idle=%d, gpio=%d)",
+                 stage ? stage : "?", idle, (int)gpio_get_level(PIN_EPD_BUSY));
         return false;
+    }
+    if (elapsed >= 1000) {
+        ESP_LOGI(TAG, "E6 3.7: %s ready after %d ms",
+                 stage ? stage : "?", elapsed);
     }
     return true;
 }
