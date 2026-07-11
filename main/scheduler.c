@@ -116,6 +116,25 @@ static int list_images(char out[][64], int max)
     return count;
 }
 
+static bool slideshow_image_compatible_for_panel(const char *path, const char *name)
+{
+    image_panel_compat_t info;
+    esp_err_t err = image_file_check_panel_compat(path, &info);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Compat check failed for '%s': %s; falling back to converter",
+                 name ? name : path, esp_err_to_name(err));
+        return true;
+    }
+    if (info.known && !info.compatible) {
+        ESP_LOGW(TAG,
+                 "Skip slideshow image '%s': image colors=%d mask=0x%02lx exceed panel colors=%d mask=0x%02lx",
+                 name ? name : path, info.image_colors, (unsigned long)info.image_mask,
+                 info.panel_colors, (unsigned long)info.panel_mask);
+        return false;
+    }
+    return true;
+}
+
 /* ── show next image ──────────────────────────────────────────────── */
 
 static void show_next_image(void)
@@ -147,20 +166,32 @@ static void show_next_image(void)
         return;
     }
 
-    int idx;
-    if (mode == SLIDESHOW_RANDOM) {
-        idx = (int)(esp_random() % (uint32_t)count);
-    } else {
-        portENTER_CRITICAL(&s_cfg_mux);
-        idx = s_current_index % count;
-        portEXIT_CRITICAL(&s_cfg_mux);
-    }
-
     char path[160];
     char picked[64];
-    strncpy(picked, names[idx], sizeof(picked) - 1);
-    picked[sizeof(picked) - 1] = '\0';
-    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, picked);
+    int idx = -1;
+    int start_idx;
+    if (mode == SLIDESHOW_RANDOM) {
+        start_idx = (int)(esp_random() % (uint32_t)count);
+    } else {
+        portENTER_CRITICAL(&s_cfg_mux);
+        start_idx = s_current_index % count;
+        portEXIT_CRITICAL(&s_cfg_mux);
+    }
+    for (int attempt = 0; attempt < count; attempt++) {
+        int cand = (start_idx + attempt) % count;
+        strncpy(picked, names[cand], sizeof(picked) - 1);
+        picked[sizeof(picked) - 1] = '\0';
+        snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, picked);
+        if (slideshow_image_compatible_for_panel(path, picked)) {
+            idx = cand;
+            break;
+        }
+    }
+    if (idx < 0) {
+        free(names);
+        ESP_LOGW(TAG, "No gallery image compatible with current panel, skipping cycle");
+        return;
+    }
     ESP_LOGI(TAG, "Slideshow: '%s' (%d/%d)", picked, idx + 1, count);
 
     free(names);
@@ -494,20 +525,32 @@ esp_err_t scheduler_show_next_image(void)
         return ESP_ERR_NOT_FOUND;
     }
 
-    int idx;
-    if (mode == SLIDESHOW_RANDOM) {
-        idx = (int)(esp_random() % (uint32_t)count);
-    } else {
-        portENTER_CRITICAL(&s_cfg_mux);
-        idx = s_current_index % count;
-        portEXIT_CRITICAL(&s_cfg_mux);
-    }
-
     char path[160];
     char picked[64];
-    strncpy(picked, names[idx], sizeof(picked) - 1);
-    picked[sizeof(picked) - 1] = '\0';
-    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, picked);
+    int idx = -1;
+    int start_idx;
+    if (mode == SLIDESHOW_RANDOM) {
+        start_idx = (int)(esp_random() % (uint32_t)count);
+    } else {
+        portENTER_CRITICAL(&s_cfg_mux);
+        start_idx = s_current_index % count;
+        portEXIT_CRITICAL(&s_cfg_mux);
+    }
+    for (int attempt = 0; attempt < count; attempt++) {
+        int cand = (start_idx + attempt) % count;
+        strncpy(picked, names[cand], sizeof(picked) - 1);
+        picked[sizeof(picked) - 1] = '\0';
+        snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, picked);
+        if (slideshow_image_compatible_for_panel(path, picked)) {
+            idx = cand;
+            break;
+        }
+    }
+    if (idx < 0) {
+        free(names);
+        ESP_LOGW(TAG, "No gallery image compatible with current panel");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     ESP_LOGI(TAG, "Manual show: '%s' (%d/%d)", picked, idx + 1, count);
 
     free(names);

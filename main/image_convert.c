@@ -517,6 +517,13 @@ typedef enum {
     PQ_OTHER,
 } prequantized_color_t;
 
+#define IMG_MASK_BLACK  (1u << 0)
+#define IMG_MASK_WHITE  (1u << 1)
+#define IMG_MASK_RED    (1u << 2)
+#define IMG_MASK_YELLOW (1u << 3)
+#define IMG_MASK_BLUE   (1u << 4)
+#define IMG_MASK_GREEN  (1u << 5)
+
 typedef struct {
     uint32_t key;
     uint8_t cls;
@@ -643,6 +650,151 @@ static bool bw_or_color_quantized_pixel_cached(uint8_t r, uint8_t g,
     if (ok)
         *out = cls;
     return ok;
+}
+
+static uint32_t image_panel_color_mask(void)
+{
+    uint32_t mask = IMG_MASK_BLACK | IMG_MASK_WHITE;
+    if (epd_has_red())
+        mask |= IMG_MASK_RED;
+    if (epd_has_yellow())
+        mask |= IMG_MASK_YELLOW;
+    if (image_panel_is_e6_6c())
+        mask |= IMG_MASK_RED | IMG_MASK_YELLOW | IMG_MASK_BLUE | IMG_MASK_GREEN;
+    return mask;
+}
+
+static int image_color_mask_count(uint32_t mask)
+{
+    int n = 0;
+    while (mask) {
+        n += (int)(mask & 1u);
+        mask >>= 1;
+    }
+    return n;
+}
+
+static uint32_t image_color_class_mask(prequantized_color_t cls)
+{
+    switch (cls) {
+    case PQ_BLACK:  return IMG_MASK_BLACK;
+    case PQ_WHITE:  return IMG_MASK_WHITE;
+    case PQ_RED:    return IMG_MASK_RED;
+    case PQ_YELLOW: return IMG_MASK_YELLOW;
+    case PQ_BLUE:   return IMG_MASK_BLUE;
+    case PQ_GREEN:  return IMG_MASK_GREEN;
+    case PQ_OTHER:
+    default:
+        return 0;
+    }
+}
+
+esp_err_t image_file_check_panel_compat(const char *input_path,
+                                        image_panel_compat_t *out)
+{
+    if (!input_path || !out)
+        return ESP_ERR_INVALID_ARG;
+
+    memset(out, 0, sizeof(*out));
+    out->panel_mask = image_panel_color_mask();
+    out->panel_colors = image_color_mask_count(out->panel_mask);
+    out->compatible = true;
+
+    uint8_t magic[4] = {0};
+    FILE *mf = fopen(input_path, "rb");
+    if (!mf)
+        return ESP_FAIL;
+    size_t mr = fread(magic, 1, sizeof(magic), mf);
+    fclose(mf);
+
+    if (mr < 4 || magic[0] != 0x89 || magic[1] != 0x50 ||
+        magic[2] != 0x4E || magic[3] != 0x47) {
+        return ESP_OK;
+    }
+
+    struct stat st;
+    if (stat(input_path, &st) != 0 || st.st_size <= 0)
+        return ESP_FAIL;
+    if (st.st_size > PNG_MAX_FILE_BYTES) {
+        ESP_LOGI(TAG, "compat check skipped for large PNG: %s (%ld bytes)",
+                 input_path, (long)st.st_size);
+        return ESP_OK;
+    }
+
+    uint8_t *buf = (uint8_t *)img_alloc((size_t)st.st_size, "compat png buffer");
+    if (!buf)
+        return ESP_ERR_NO_MEM;
+
+    FILE *pf = fopen(input_path, "rb");
+    if (!pf) {
+        free(buf);
+        return ESP_FAIL;
+    }
+    size_t got = fread(buf, 1, (size_t)st.st_size, pf);
+    fclose(pf);
+    if (got != (size_t)st.st_size) {
+        free(buf);
+        return ESP_FAIL;
+    }
+
+    unsigned char *rgba = NULL;
+    unsigned pw = 0, ph = 0;
+    unsigned perr = lodepng_decode32(&rgba, &pw, &ph, buf, got);
+    free(buf);
+    if (perr || !rgba) {
+        ESP_LOGW(TAG, "compat PNG decode error %u: %s",
+                 perr, lodepng_error_text(perr));
+        free(rgba);
+        return ESP_FAIL;
+    }
+
+    uint64_t total64 = (uint64_t)pw * (uint64_t)ph;
+    if (pw == 0 || ph == 0 || total64 > PNG_MAX_DECODE_PIXELS) {
+        free(rgba);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    uint32_t image_mask = 0;
+    unsigned total = (unsigned)total64;
+    unsigned other = 0;
+    unsigned other_limit = total / 1000u;
+    if (other_limit < 16u)
+        other_limit = 16u;
+
+    for (unsigned i = 0; i < total; i++) {
+        const uint8_t *p = rgba + (size_t)i * 4u;
+        prequantized_color_t cls = prequantized_pixel_class(p[0], p[1], p[2], p[3],
+                                                            true, true, true, true);
+        uint32_t bit = image_color_class_mask(cls);
+        if (!bit) {
+            other++;
+            if (other > other_limit) {
+                free(rgba);
+                ESP_LOGI(TAG,
+                         "compat check unknown PNG palette: %s (%ux%u, other>%u)",
+                         input_path, pw, ph, other_limit);
+                return ESP_OK;
+            }
+            continue;
+        }
+        image_mask |= bit;
+    }
+
+    free(rgba);
+    if (!image_mask)
+        image_mask = IMG_MASK_WHITE;
+
+    out->known = true;
+    out->image_mask = image_mask;
+    out->image_colors = image_color_mask_count(image_mask);
+    out->compatible = (image_mask & ~out->panel_mask) == 0;
+
+    ESP_LOGI(TAG,
+             "compat PNG palette: %s colors=%d mask=0x%02lx, panel_colors=%d mask=0x%02lx, ok=%d",
+             input_path, out->image_colors, (unsigned long)out->image_mask,
+             out->panel_colors, (unsigned long)out->panel_mask,
+             out->compatible ? 1 : 0);
+    return ESP_OK;
 }
 
 static esp_err_t png_pack_prequantized_planes(const unsigned char *rgba,
