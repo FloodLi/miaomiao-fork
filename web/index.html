@@ -342,6 +342,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
                     <button type="button" data-preset="anime">动漫</button>
                     <button type="button" data-preset="text">纯黑白</button>
                     <button type="button" data-preset="soft">柔和</button>
+                    <button type="button" data-preset="e6fs">E6 FS</button>
                   </span>
                 </div>
                 <div class="ctrl-line">
@@ -422,13 +423,6 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
                 <div class="ctrl-line">
                   <label>阈值 <span id="thrVal">96</span></label>
                   <input type="range" id="thr" min="40" max="210" value="96">
-                </div>
-                <div class="ctrl-line" id="e6DitherCtrl" style="display:none">
-                  <label>E6 抖动算法</label>
-                  <select id="e6DitherMode">
-                    <option value="six" selected>六色 FS</option>
-                    <option value="tri">三色抖动</option>
-                  </select>
                 </div>
                 <div class="ctrl-line">
                   <label>抖动强度 <span id="ditherVal">1.00×</span></label>
@@ -524,6 +518,7 @@ let epdPanelW=128, epdPanelH=296, epdPanelHasRed=true, epdPanelHasYellow=false, 
 let previewImg=null, previewUrl=null;
 let previewRot=0;
 let previewPreset='photo';
+let previewE6FsMode=false;
 function weatherLabel(s){
   if(!s.weather_configured) return '未配置';
   if(!s.weather_enabled) return '已暂停';
@@ -595,7 +590,7 @@ function previewOpts(){
     redSensitivity: (+(document.getElementById('redSens')?.value || 35)) / 100,
     yellowSensitivity: (+(document.getElementById('yellowSens')?.value || 35)) / 100,
     dither: (+(document.getElementById('dither')?.value || 100)) / 100,
-    e6DitherMode: document.getElementById('e6DitherMode')?.value || 'six',
+    e6DitherMode: previewE6FsMode ? 'six' : 'tri',
     invert: !!document.getElementById('invertImg')?.checked
   };
 }
@@ -604,12 +599,14 @@ const PRESET_VALUES={
   photo:{threshold:108,brightness:4,contrast:130,gamma:92,sharp:12,red:32,yellow:32,dither:70,redMode:'normal',fit:'cover'},
   anime:{threshold:116,brightness:0,contrast:170,gamma:90,sharp:32,red:42,yellow:38,dither:20,redMode:'strong',fit:'cover'},
   text:{threshold:128,brightness:0,contrast:190,gamma:100,sharp:0,red:0,yellow:0,dither:0,redMode:'off',fit:'contain'},
-  soft:{threshold:104,brightness:8,contrast:110,gamma:108,sharp:0,red:20,yellow:20,dither:90,redMode:'safe',fit:'contain'}
+  soft:{threshold:104,brightness:8,contrast:110,gamma:108,sharp:0,red:20,yellow:20,dither:90,redMode:'safe',fit:'contain'},
+  e6fs:{threshold:108,brightness:4,contrast:130,gamma:92,sharp:12,red:32,yellow:32,dither:100,redMode:'normal',fit:'cover'}
 };
 
 function applyPreset(name, save){
   const p=PRESET_VALUES[name]||PRESET_VALUES.photo;
   previewPreset=name;
+  previewE6FsMode=(name==='e6fs');
   document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('on',b.dataset.preset===name));
   if(document.getElementById('thr')) document.getElementById('thr').value=p.threshold;
   if(document.getElementById('brightness')) document.getElementById('brightness').value=p.brightness;
@@ -621,6 +618,7 @@ function applyPreset(name, save){
   if(document.getElementById('dither')) document.getElementById('dither').value=p.dither;
   if(document.getElementById('redMode')) document.getElementById('redMode').value=p.redMode;
   if(document.getElementById('fitMode')) document.getElementById('fitMode').value=p.fit;
+  updateColorControls();
   if(save) saveUploadPreviewOptions();
 }
 
@@ -642,7 +640,7 @@ function saveUploadPreviewOptions(){
       red:document.getElementById('redSens')?.value || '35',
       yellow:document.getElementById('yellowSens')?.value || '35',
       dither:document.getElementById('dither')?.value || '100',
-      e6DitherMode:document.getElementById('e6DitherMode')?.value || 'six',
+      e6FsMode:!!previewE6FsMode,
       fit:document.getElementById('fitMode')?.value || 'cover',
       invert:!!document.getElementById('invertImg')?.checked,
       flipX:!!document.getElementById('flipX')?.checked,
@@ -656,6 +654,7 @@ function loadUploadPreviewOptions(){
   try{
     const opt=JSON.parse(localStorage.getItem('upload_img_opts')||'{}');
     if(opt.preset!=null) previewPreset=opt.preset;
+    previewE6FsMode=(opt.e6FsMode!=null)?!!opt.e6FsMode:(previewPreset==='e6fs');
     if(opt.threshold!=null) document.getElementById('thr').value=opt.threshold;
     if(opt.brightness!=null) document.getElementById('brightness').value=opt.brightness;
     if(opt.contrast!=null) document.getElementById('contrast').value=opt.contrast;
@@ -665,7 +664,6 @@ function loadUploadPreviewOptions(){
     if(opt.red!=null) document.getElementById('redSens').value=opt.red;
     if(opt.yellow!=null) document.getElementById('yellowSens').value=opt.yellow;
     if(opt.dither!=null) document.getElementById('dither').value=opt.dither;
-    if(opt.e6DitherMode!=null) document.getElementById('e6DitherMode').value=opt.e6DitherMode;
     if(opt.fit!=null) document.getElementById('fitMode').value=opt.fit;
     if(opt.invert!=null) document.getElementById('invertImg').checked=!!opt.invert;
     if(opt.flipX!=null) document.getElementById('flipX').checked=!!opt.flipX;
@@ -691,15 +689,13 @@ function updatePreviewControlLabels(opt){
 
 function updateColorControls(){
   const redOff=!epdPanelHasRed;
-  const yellowOff=!epdPanelHasYellow;
+  const yellowOff=!epdPanelHasYellow || (isE6PreviewPanel()&&!previewE6FsMode);
   ['redCtrl','redSensCtrl'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.classList.toggle('color-unsupported',redOff);
   });
   const yel=document.getElementById('yellowSensCtrl');
   if(yel) yel.classList.toggle('color-unsupported',yellowOff);
-  const e6=document.getElementById('e6DitherCtrl');
-  if(e6) e6.style.display=isE6PreviewPanel()?'':'none';
 }
 
 function updatePreviewStageSize(){
@@ -1087,7 +1083,7 @@ function initUploadPreview(){
       renderPreview();
     });
   });
-  ['flipX','flipY','fitMode','thr','brightness','contrast','gamma','sharp','redMode','redSens','yellowSens','dither','e6DitherMode','invertImg'].forEach(id=>{
+  ['flipX','flipY','fitMode','thr','brightness','contrast','gamma','sharp','redMode','redSens','yellowSens','dither','invertImg'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('input',()=>{markPresetCustom();saveUploadPreviewOptions();renderPreview();});
     if(el) el.addEventListener('change',()=>{markPresetCustom();saveUploadPreviewOptions();renderPreview();});
