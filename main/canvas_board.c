@@ -280,7 +280,7 @@ static fb_color_t json_color(int v)
     switch (v) {
     case 1:  return COLOR_RED;
     case 2:  return COLOR_WHITE;
-    case 3:  return is_e6 ? COLOR_YELLOW : COLOR_RED;
+    case 3:  return epd_has_yellow() ? COLOR_YELLOW : COLOR_RED;
     case 4:  return is_e6 ? COLOR_BLUE : COLOR_BLACK;
     case 5:  return is_e6 ? COLOR_GREEN : COLOR_BLACK;
     default: return COLOR_BLACK;
@@ -484,6 +484,7 @@ static void render_element(fb_t *fb, cJSON *el)
         int stride = (img_w + 7) / 8;
         size_t bitmap_len = (size_t)stride * img_h;
         bool has_red_plane = false;
+        bool has_yellow_plane = false;
         long data_start = 4;
         long file_size = 0;
         if (fseek(f, 0, SEEK_END) == 0) {
@@ -492,17 +493,25 @@ static void render_element(fb_t *fb, cJSON *el)
         fseek(f, 4, SEEK_SET);
         uint8_t hdr[4];
         if (fread(hdr, 1, sizeof(hdr), f) == sizeof(hdr)) {
-            if (hdr[0] == 'B' && hdr[1] == 'W' && (hdr[2] & 0x01) &&
-                file_size >= 8 + (long)bitmap_len * 2) {
-                has_red_plane = true;
-                data_start = 8;
+            if (hdr[0] == 'B' && hdr[1] == 'W') {
+                uint8_t flags = hdr[2];
+                int plane_count = 1 + ((flags & 0x01) ? 1 : 0) +
+                                  ((flags & 0x02) ? 1 : 0);
+                if (file_size >= 8 + (long)bitmap_len * plane_count) {
+                    has_red_plane = (flags & 0x01) != 0;
+                    has_yellow_plane = (flags & 0x02) != 0;
+                    data_start = 8;
+                } else {
+                    fseek(f, 4, SEEK_SET);
+                }
             } else {
                 fseek(f, 4, SEEK_SET);
             }
         } else {
             fseek(f, 4, SEEK_SET);
         }
-        size_t planes_len = bitmap_len * (has_red_plane ? 2 : 1);
+        size_t planes_len = bitmap_len * (1 + (has_red_plane ? 1 : 0) +
+                                          (has_yellow_plane ? 1 : 0));
         uint8_t *bitmap = heap_caps_malloc(planes_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!bitmap)
             bitmap = heap_caps_malloc(planes_len, MALLOC_CAP_8BIT);
@@ -510,17 +519,22 @@ static void render_element(fb_t *fb, cJSON *el)
         if (bitmap) {
             if (fread(bitmap, 1, planes_len, f) == planes_len) {
                 const uint8_t *red_plane = has_red_plane ? bitmap + bitmap_len : NULL;
+                const uint8_t *yellow_plane = has_yellow_plane ?
+                    bitmap + bitmap_len * (1 + (has_red_plane ? 1 : 0)) : NULL;
                 for (int ty = 0; ty < dh; ty++) {
                     int sy = ty * img_h / dh;
                     const uint8_t *row = bitmap + (size_t)sy * stride;
                     const uint8_t *red_row = red_plane ? red_plane + (size_t)sy * stride : NULL;
+                    const uint8_t *yellow_row = yellow_plane ? yellow_plane + (size_t)sy * stride : NULL;
                     for (int tx = 0; tx < dw; tx++) {
                         int sx = tx * img_w / dw;
                         int bit = (row[sx / 8] >> (7 - sx % 8)) & 1;
                         int red_bit = red_row ? ((red_row[sx / 8] >> (7 - sx % 8)) & 1) : 0;
-                        if (red_bit) fb_pixel(fb, x + tx, y + ty, COLOR_RED);
+                        int yellow_bit = yellow_row ? ((yellow_row[sx / 8] >> (7 - sx % 8)) & 1) : 0;
+                        if (yellow_bit) fb_pixel(fb, x + tx, y + ty, COLOR_YELLOW);
+                        else if (red_bit) fb_pixel(fb, x + tx, y + ty, COLOR_RED);
                         else if (bit) fb_pixel(fb, x + tx, y + ty,
-                                               has_red_plane ? COLOR_BLACK : color);
+                                               (has_red_plane || has_yellow_plane) ? COLOR_BLACK : color);
                     }
                     if ((ty & (CANVAS_RENDER_YIELD_ROWS - 1)) == 0)
                         vTaskDelay(1);
@@ -548,7 +562,7 @@ static void render_element(fb_t *fb, cJSON *el)
                     int sx = tx * img_w / dw;
                     int bit = (row_buf[sx / 8] >> (7 - sx % 8)) & 1;
                     if (bit) fb_pixel(fb, x + tx, y + ty,
-                                      has_red_plane ? COLOR_BLACK : color);
+                                      (has_red_plane || has_yellow_plane) ? COLOR_BLACK : color);
                 }
                 if ((ty & (CANVAS_RENDER_YIELD_ROWS - 1)) == 0)
                     vTaskDelay(1);

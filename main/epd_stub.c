@@ -3141,6 +3141,10 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
         panel_write_e6_37_6c(fb->black, fb->red, fb->yellow, fb->blue, fb->green,
                              0xFF, 0x00, 0x00, 0x00, 0x00);
         panel_desc()->refresh();
+    } else if (panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP && epd_has_yellow()) {
+        panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
+                                 0xFF, 0x00, 0x00);
+        panel_desc()->refresh();
     } else {
         panel_write_bw_red(fb->black, fb->red, pb);
     }
@@ -3178,6 +3182,10 @@ esp_err_t epd_display_fb_free(fb_t *fb)
     if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
         panel_write_e6_37_6c(fb->black, fb->red, fb->yellow, fb->blue, fb->green,
                              0xFF, 0x00, 0x00, 0x00, 0x00);
+        panel_desc()->refresh();
+    } else if (panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP && epd_has_yellow()) {
+        panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
+                                 0xFF, 0x00, 0x00);
         panel_desc()->refresh();
     } else {
         panel_write_bw_red_data(fb->black, fb->red, pb);
