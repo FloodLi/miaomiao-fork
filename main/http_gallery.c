@@ -161,6 +161,44 @@ static esp_err_t gallery_display_raw_like_canvas(const char *raw_path)
     return epd_display_fb_free(fb);
 }
 
+static bool gallery_image_compatible_for_panel(const char *path, const char *name,
+                                               image_panel_compat_t *info_out)
+{
+    image_panel_compat_t info;
+    esp_err_t err = image_file_check_panel_compat(path, &info);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Gallery compat check failed for '%s': %s; falling back to converter",
+                 name ? name : path, esp_err_to_name(err));
+        if (info_out)
+            memset(info_out, 0, sizeof(*info_out));
+        return true;
+    }
+    if (info_out)
+        *info_out = info;
+    if (info.known && !info.compatible) {
+        ESP_LOGW(TAG,
+                 "Gallery image '%s' skipped: image colors=%d mask=0x%02lx exceed panel colors=%d mask=0x%02lx",
+                 name ? name : path, info.image_colors, (unsigned long)info.image_mask,
+                 info.panel_colors, (unsigned long)info.panel_mask);
+        return false;
+    }
+    return true;
+}
+
+static esp_err_t gallery_send_incompatible_response(httpd_req_t *req,
+                                                    const image_panel_compat_t *info)
+{
+    char json[160];
+    snprintf(json, sizeof(json),
+             "{\"ok\":false,\"err\":\"image_colors_exceed_panel\",\"image_colors\":%d,\"panel_colors\":%d}",
+             info ? info->image_colors : 0,
+             info ? info->panel_colors : 0);
+    httpd_resp_set_status(req, "409 Conflict");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    return ESP_OK;
+}
+
 static bool gallery_show_begin(unsigned *epoch_out)
 {
     bool expected = false;
@@ -206,6 +244,13 @@ static void gallery_show_task(void *arg)
     if (!gallery_show_job_current(job)) {
         skipped = true;
         ESP_LOGI(TAG, "Gallery show '%s' skipped before convert: newer request owns display",
+                 job->name);
+    }
+
+    if (!skipped && !gallery_image_compatible_for_panel(job->path, job->name, NULL)) {
+        skipped = true;
+        cerr = ESP_ERR_NOT_SUPPORTED;
+        ESP_LOGW(TAG, "Gallery show '%s' skipped before convert: incompatible colors",
                  job->name);
     }
 
@@ -443,6 +488,11 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     if (sz <= 0) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "文件未找到");
         return ESP_OK;
+    }
+
+    image_panel_compat_t compat;
+    if (!gallery_image_compatible_for_panel(jpeg_path, name, &compat)) {
+        return gallery_send_incompatible_response(req, &compat);
     }
 
     unsigned show_epoch = 0;
@@ -740,6 +790,13 @@ esp_err_t gallery_upload_post_handler(httpd_req_t *req)
         gallery_upload_end(upload_epoch);
         gallery_restore_manual_if_current(was_manual, display_epoch);
         return ESP_OK;
+    }
+
+    image_panel_compat_t upload_compat;
+    if (!gallery_image_compatible_for_panel(final_path, name, &upload_compat)) {
+        gallery_upload_end(upload_epoch);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
+        return gallery_send_incompatible_response(req, &upload_compat);
     }
 
     const char *raw_path = "/spiffs/image.bin";
