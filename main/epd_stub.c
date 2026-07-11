@@ -1306,9 +1306,9 @@ static uint8_t e6_37_pixel_code(uint8_t bw, uint8_t red, uint8_t yellow,
     if (plane_bit_set(red, bit))
         return 3; /* red */
     if (plane_bit_set(blue, bit))
-        return 4; /* blue */
+        return 5; /* logical blue: physical E6 code pair that renders blue */
     if (plane_bit_set(green, bit))
-        return 5; /* green */
+        return 4; /* logical green: physical E6 code pair that renders green */
     return 1;     /* white */
 }
 
