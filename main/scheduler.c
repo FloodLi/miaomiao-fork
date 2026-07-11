@@ -11,6 +11,7 @@
 #include "nvs.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 
 #include "image_convert.h"
 #include "epd.h"
@@ -164,6 +165,7 @@ static void show_next_image(void)
 
     free(names);
 
+    int64_t t0 = esp_timer_get_time();
     int prev_mode = display_mode_active();
     display_mode_set_active(DISPLAY_MODE_SLIDESHOW);
     display_policy_bump_display_epoch();
@@ -177,6 +179,7 @@ static void show_next_image(void)
         ESP_LOGI(TAG, "Slideshow skipped after lock: manual screen active");
         return;
     }
+    ESP_LOGI(TAG, "Slideshow convert begin");
     esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
     if (err != ESP_OK) {
         fb_raw_file_unlock();
@@ -185,6 +188,9 @@ static void show_next_image(void)
         ESP_LOGW(TAG, "Convert failed: %s", esp_err_to_name(err));
         return;
     }
+    int64_t t_convert = esp_timer_get_time();
+    ESP_LOGI(TAG, "Slideshow convert done in %lld ms, display begin",
+             (long long)((t_convert - t0) / 1000LL));
 
     if (clock_ovl && time_sync_is_synced()) {
         fb_t *fb = fb_create();
@@ -218,6 +224,10 @@ static void show_next_image(void)
         ESP_LOGW(TAG, "Display failed: %s", esp_err_to_name(err));
         return;
     }
+    int64_t t_display = esp_timer_get_time();
+    ESP_LOGI(TAG, "Slideshow display done in %lld ms, total %lld ms",
+             (long long)((t_display - t_convert) / 1000LL),
+             (long long)((t_display - t0) / 1000LL));
 
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
 
@@ -246,7 +256,19 @@ static void slideshow_task(void *arg)
                                   pdMS_TO_TICKS(60000));
     }
 
-    bool shorten_first_interval = true;
+    slideshow_config_t boot_snap;
+    portENTER_CRITICAL(&s_cfg_mux);
+    boot_snap = s_config;
+    bool already_showed_image = s_current_image[0] != '\0';
+    portEXIT_CRITICAL(&s_cfg_mux);
+    if (boot_snap.enabled && !already_showed_image &&
+        !display_policy_manual_screen_active()) {
+        ESP_LOGI(TAG, "Boot complete, showing first slideshow image now");
+        show_next_image();
+        already_showed_image = s_current_image[0] != '\0';
+    }
+
+    bool shorten_first_interval = !already_showed_image;
 
     for (;;) {
         slideshow_config_t snap;
