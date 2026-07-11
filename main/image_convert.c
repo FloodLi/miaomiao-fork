@@ -509,6 +509,12 @@ typedef enum {
     PQ_OTHER,
 } prequantized_color_t;
 
+typedef struct {
+    uint32_t key;
+    uint8_t cls;
+    bool valid;
+} pq_cache_entry_t;
+
 static void rgba_on_white(uint8_t *r, uint8_t *g, uint8_t *b, uint8_t a)
 {
     if (a >= 255)
@@ -593,6 +599,35 @@ static bool bw_or_color_quantized_pixel(uint8_t r, uint8_t g, uint8_t b, uint8_t
     return false;
 }
 
+static bool bw_or_color_quantized_pixel_cached(uint8_t r, uint8_t g,
+                                               uint8_t b, uint8_t a,
+                                               bool has_red,
+                                               bool has_yellow,
+                                               bool has_blue,
+                                               bool has_green,
+                                               pq_cache_entry_t *cache,
+                                               prequantized_color_t *out)
+{
+    uint32_t key = ((uint32_t)a << 24) | ((uint32_t)r << 16) |
+                   ((uint32_t)g << 8) | (uint32_t)b;
+    unsigned idx = ((key * 2654435761u) >> 25) & 0x7Fu;
+    pq_cache_entry_t *e = &cache[idx];
+    if (e->valid && e->key == key) {
+        *out = (prequantized_color_t)e->cls;
+        return e->cls != PQ_OTHER;
+    }
+
+    prequantized_color_t cls = PQ_OTHER;
+    bool ok = bw_or_color_quantized_pixel(r, g, b, a, has_red, has_yellow,
+                                          has_blue, has_green, &cls);
+    e->valid = true;
+    e->key = key;
+    e->cls = ok ? (uint8_t)cls : (uint8_t)PQ_OTHER;
+    if (ok)
+        *out = cls;
+    return ok;
+}
+
 static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
                                                   unsigned pw, unsigned ph,
                                                   const char *out_path)
@@ -609,30 +644,6 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
     if (!rgba || !out_path || pw != (unsigned)EW || ph != (unsigned)EH)
         return ESP_ERR_NOT_SUPPORTED;
 
-    unsigned black_count = 0;
-    unsigned red_count = 0;
-    unsigned yellow_count = 0;
-    unsigned blue_count = 0;
-    unsigned green_count = 0;
-    unsigned white_count = 0;
-    for (unsigned i = 0; i < pw * ph; i++) {
-        const uint8_t *p = rgba + (size_t)i * 4u;
-        prequantized_color_t cls;
-        if (!bw_or_color_quantized_pixel(p[0], p[1], p[2], p[3],
-                                         has_red, has_yellow, has_blue,
-                                         has_green, &cls))
-            return ESP_ERR_NOT_SUPPORTED;
-        switch (cls) {
-        case PQ_WHITE:  white_count++; break;
-        case PQ_BLACK:  black_count++; break;
-        case PQ_RED:    red_count++; break;
-        case PQ_YELLOW: yellow_count++; break;
-        case PQ_BLUE:   blue_count++; break;
-        case PQ_GREEN:  green_count++; break;
-        case PQ_OTHER:  return ESP_ERR_NOT_SUPPORTED;
-        }
-    }
-
     uint8_t *black = (uint8_t *)img_alloc(EC, "png passthrough black");
     uint8_t *red = has_red ? (uint8_t *)img_alloc(EC, "png passthrough red") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png passthrough yellow") : NULL;
@@ -647,51 +658,83 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
         free(green);
         return ESP_ERR_NO_MEM;
     }
-    memset(black, 0xFF, EC);
-    if (red)
-        memset(red, 0x00, EC);
-    if (yellow)
-        memset(yellow, 0x00, EC);
-    if (blue)
-        memset(blue, 0x00, EC);
-    if (green)
-        memset(green, 0x00, EC);
+
+    unsigned black_count = 0;
+    unsigned red_count = 0;
+    unsigned yellow_count = 0;
+    unsigned blue_count = 0;
+    unsigned green_count = 0;
+    unsigned white_count = 0;
+    pq_cache_entry_t cache[128] = { 0 };
 
     for (int y = 0; y < EH; y++) {
-        for (int x = 0; x < EW; x++) {
-            const uint8_t *p = rgba + ((size_t)y * (size_t)EW + (size_t)x) * 4u;
-            size_t bp = (size_t)y * (size_t)RB + (size_t)(x >> 3);
-            uint8_t bit = (uint8_t)(0x80u >> (x & 7));
-            prequantized_color_t cls = PQ_WHITE;
-            (void)bw_or_color_quantized_pixel(p[0], p[1], p[2], p[3],
-                                              has_red, has_yellow,
-                                              has_blue, has_green, &cls);
-            switch (cls) {
-            case PQ_BLACK:
-                black[bp] &= (uint8_t)~bit;
-                break;
-            case PQ_RED:
-                red[bp] |= bit;
-                black[bp] |= bit;
-                break;
-            case PQ_YELLOW:
-                yellow[bp] |= bit;
-                black[bp] |= bit;
-                break;
-            case PQ_BLUE:
-                blue[bp] |= bit;
-                black[bp] |= bit;
-                break;
-            case PQ_GREEN:
-                green[bp] |= bit;
-                black[bp] |= bit;
-                break;
-            case PQ_WHITE:
-            case PQ_OTHER:
-                break;
-            default:
-                break;
+        const uint8_t *src = rgba + (size_t)y * (size_t)EW * 4u;
+        size_t row = (size_t)y * (size_t)RB;
+        for (int bx = 0; bx < RB; bx++) {
+            uint8_t black_byte = 0xFF;
+            uint8_t red_byte = 0x00;
+            uint8_t yellow_byte = 0x00;
+            uint8_t blue_byte = 0x00;
+            uint8_t green_byte = 0x00;
+
+            for (int bi = 0; bi < 8; bi++, src += 4) {
+                uint8_t bit = (uint8_t)(0x80u >> bi);
+                prequantized_color_t cls = PQ_WHITE;
+                if (!bw_or_color_quantized_pixel_cached(src[0], src[1], src[2], src[3],
+                                                        has_red, has_yellow,
+                                                        has_blue, has_green,
+                                                        cache, &cls)) {
+                    free(black);
+                    free(red);
+                    free(yellow);
+                    free(blue);
+                    free(green);
+                    return ESP_ERR_NOT_SUPPORTED;
+                }
+                switch (cls) {
+                case PQ_WHITE:
+                    white_count++;
+                    break;
+                case PQ_BLACK:
+                    black_byte &= (uint8_t)~bit;
+                    black_count++;
+                    break;
+                case PQ_RED:
+                    red_byte |= bit;
+                    red_count++;
+                    break;
+                case PQ_YELLOW:
+                    yellow_byte |= bit;
+                    yellow_count++;
+                    break;
+                case PQ_BLUE:
+                    blue_byte |= bit;
+                    blue_count++;
+                    break;
+                case PQ_GREEN:
+                    green_byte |= bit;
+                    green_count++;
+                    break;
+                case PQ_OTHER:
+                default:
+                    free(black);
+                    free(red);
+                    free(yellow);
+                    free(blue);
+                    free(green);
+                    return ESP_ERR_NOT_SUPPORTED;
+                }
             }
+            size_t bp = row + (size_t)bx;
+            black[bp] = black_byte;
+            if (red)
+                red[bp] = red_byte;
+            if (yellow)
+                yellow[bp] = yellow_byte;
+            if (blue)
+                blue[bp] = blue_byte;
+            if (green)
+                green[bp] = green_byte;
         }
     }
 
