@@ -135,6 +135,23 @@ static int msg_font_px_for_scale(int scale)
     return 16 * scale;
 }
 
+static fb_color_t msg_color_from_config(uint8_t color)
+{
+    switch (color) {
+    case 1:
+        return COLOR_RED;
+    case 2:
+        return epd_get_panel() == EPD_PANEL_E6_37_6C ? COLOR_YELLOW : COLOR_RED;
+    case 3:
+        return epd_get_panel() == EPD_PANEL_E6_37_6C ? COLOR_BLUE : COLOR_BLACK;
+    case 4:
+        return epd_get_panel() == EPD_PANEL_E6_37_6C ? COLOR_GREEN : COLOR_BLACK;
+    case 0:
+    default:
+        return COLOR_BLACK;
+    }
+}
+
 static int utf8_char_width_px(int cp, int target_px)
 {
     char one[5];
@@ -173,7 +190,7 @@ static void render_message(unsigned epoch)
     int char_h = target_px;
     int line_h = char_h + 2 * scale;
     int max_w  = fb->width - 2 * MARGIN_X - 16;
-    fb_color_t color = (cfg.color == 1) ? COLOR_RED : COLOR_BLACK;
+    fb_color_t color = msg_color_from_config(cfg.color);
     int page_s = ui_scale_for(fb);
     int content_top = 34 * page_s;
     int content_bottom = fb->height - 30 * page_s;

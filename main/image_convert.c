@@ -117,7 +117,9 @@ static bool write_all_chunked(FILE *f, const uint8_t *data, size_t len)
 
 static bool write_raw_planes(const char *out_path, const uint8_t *black,
                              const uint8_t *red, const uint8_t *yellow,
-                             int plane_bytes, bool has_red, bool has_yellow)
+                             const uint8_t *blue, const uint8_t *green,
+                             int plane_bytes, bool has_red, bool has_yellow,
+                             bool has_blue, bool has_green)
 {
     FILE *f = fopen(out_path, "wb");
     if (!f) {
@@ -130,6 +132,10 @@ static bool write_raw_planes(const char *out_path, const uint8_t *black,
         ok = write_all_chunked(f, red, (size_t)plane_bytes);
     if (ok && has_yellow)
         ok = write_all_chunked(f, yellow, (size_t)plane_bytes);
+    if (ok && has_blue)
+        ok = write_all_chunked(f, blue, (size_t)plane_bytes);
+    if (ok && has_green)
+        ok = write_all_chunked(f, green, (size_t)plane_bytes);
     if (fclose(f) != 0)
         ok = false;
 
@@ -160,8 +166,11 @@ static void flip_plane_rows(uint8_t *plane, int row_bytes, int height)
 }
 
 static void compensate_panel_image_orientation(uint8_t *black, uint8_t *red,
-                                               uint8_t *yellow, int plane_bytes,
-                                               bool has_red, bool has_yellow)
+                                               uint8_t *yellow,
+                                               uint8_t *blue, uint8_t *green,
+                                               int plane_bytes,
+                                               bool has_red, bool has_yellow,
+                                               bool has_blue, bool has_green)
 {
     if (epd_get_panel() != EPD_PANEL_HINK_SSD1619_29_BWR)
         return;
@@ -177,6 +186,10 @@ static void compensate_panel_image_orientation(uint8_t *black, uint8_t *red,
         flip_plane_rows(red, row_bytes, h);
     if (has_yellow)
         flip_plane_rows(yellow, row_bytes, h);
+    if (has_blue)
+        flip_plane_rows(blue, row_bytes, h);
+    if (has_green)
+        flip_plane_rows(green, row_bytes, h);
     ESP_LOGI(TAG, "HINK 2.9 image orientation compensation: flip Y");
 }
 
@@ -321,12 +334,25 @@ static uint8_t yellow_ink_strength(uint8_t r, uint8_t g, uint8_t b)
 
 /* ── Bayer dithered pixel write (fallback) ────────────────────────── */
 
+static void e6_37_nearest_pixel(uint8_t *black, uint8_t *red,
+                                uint8_t *yellow, uint8_t *blue,
+                                uint8_t *green, int x, int y, int w,
+                                uint8_t r, uint8_t g, uint8_t b);
+
 static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
-                                      uint8_t *yellow,
+                                      uint8_t *yellow, uint8_t *blue,
+                                      uint8_t *green,
                                       int x, int y, int w,
                                       uint8_t r, uint8_t g, uint8_t b,
-                                      bool has_red, bool has_yellow)
+                                      bool has_red, bool has_yellow,
+                                      bool has_blue, bool has_green)
 {
+    if (has_blue && has_green) {
+        e6_37_nearest_pixel(black, red, yellow, blue, green,
+                            x, y, w, r, g, b);
+        return;
+    }
+
     size_t bp = (size_t)y * (w / 8) + (size_t)(x >> 3);
     uint8_t bit = (uint8_t)(0x80u >> (x & 7));
     uint8_t threshold = bayer8[y & 7][x & 7];
@@ -385,11 +411,101 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
 
 typedef struct { int16_t r, g, b; } fs_err_t;
 
+typedef struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+} e6_rgb_t;
+
+static bool image_panel_is_e6_6c(void)
+{
+    return epd_get_panel() == EPD_PANEL_E6_37_6C;
+}
+
+/* Same measured palette as refdoc/E6_3inch7_wifi_Display:
+ * 0 black, 1 white, 2 yellow, 3 red, 4 blue, 5 green.
+ */
+static const e6_rgb_t e6_37_fs_palette[6] = {
+    {   2,   2,   2 },
+    { 190, 200, 200 },
+    { 205, 202,   0 },
+    { 135,  19,   0 },
+    {   5,  64, 158 },
+    {  39, 102,  60 },
+};
+
+static uint8_t e6_37_nearest_color(int r, int g, int b)
+{
+    if (r < 0) r = 0; else if (r > 255) r = 255;
+    if (g < 0) g = 0; else if (g > 255) g = 255;
+    if (b < 0) b = 0; else if (b > 255) b = 255;
+
+    uint8_t best = 0;
+    int best_err = INT32_MAX;
+    for (uint8_t i = 0; i < 6; i++) {
+        int dr = r - (int)e6_37_fs_palette[i].r;
+        int dg = g - (int)e6_37_fs_palette[i].g;
+        int db = b - (int)e6_37_fs_palette[i].b;
+        int err = dr * dr + dg * dg + db * db;
+        if (err < best_err) {
+            best_err = err;
+            best = i;
+        }
+    }
+    return best;
+}
+
+static void e6_37_set_plane_pixel(uint8_t *black, uint8_t *red,
+                                  uint8_t *yellow, uint8_t *blue,
+                                  uint8_t *green, size_t bp,
+                                  uint8_t bit, uint8_t color)
+{
+    black[bp] |= bit;
+    red[bp] &= (uint8_t)~bit;
+    yellow[bp] &= (uint8_t)~bit;
+    blue[bp] &= (uint8_t)~bit;
+    green[bp] &= (uint8_t)~bit;
+
+    switch (color) {
+    case 0:
+        black[bp] &= (uint8_t)~bit;
+        break;
+    case 2:
+        yellow[bp] |= bit;
+        break;
+    case 3:
+        red[bp] |= bit;
+        break;
+    case 4:
+        blue[bp] |= bit;
+        break;
+    case 5:
+        green[bp] |= bit;
+        break;
+    case 1:
+    default:
+        break;
+    }
+}
+
+static void e6_37_nearest_pixel(uint8_t *black, uint8_t *red,
+                                uint8_t *yellow, uint8_t *blue,
+                                uint8_t *green, int x, int y, int w,
+                                uint8_t r, uint8_t g, uint8_t b)
+{
+    size_t bp = (size_t)y * (size_t)(w >> 3) + (size_t)(x >> 3);
+    uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+    e6_37_set_plane_pixel(black, red, yellow, blue, green, bp, bit,
+                          e6_37_nearest_color(r, g, b));
+}
+
 typedef enum {
     PQ_WHITE = 0,
     PQ_BLACK,
     PQ_RED,
     PQ_YELLOW,
+    PQ_BLUE,
+    PQ_GREEN,
     PQ_OTHER,
 } prequantized_color_t;
 
@@ -405,7 +521,9 @@ static void rgba_on_white(uint8_t *r, uint8_t *g, uint8_t *b, uint8_t a)
 static prequantized_color_t prequantized_pixel_class(uint8_t r, uint8_t g,
                                                      uint8_t b, uint8_t a,
                                                      bool has_red,
-                                                     bool has_yellow)
+                                                     bool has_yellow,
+                                                     bool has_blue,
+                                                     bool has_green)
 {
     rgba_on_white(&r, &g, &b, a);
 
@@ -424,15 +542,27 @@ static prequantized_color_t prequantized_pixel_class(uint8_t r, uint8_t g,
     if (yellow_like)
         return has_yellow ? PQ_YELLOW : PQ_BLACK;
 
+    bool blue_like = b >= 120 && r <= 110 && g <= 150 &&
+                     b >= r + 45 && b >= g + 25;
+    if (blue_like)
+        return has_blue ? PQ_BLUE : PQ_BLACK;
+
+    bool green_like = g >= 105 && r <= 130 && b <= 150 &&
+                      g >= r + 30 && g >= b + 18;
+    if (green_like)
+        return has_green ? PQ_GREEN : PQ_BLACK;
+
     return PQ_OTHER;
 }
 
 static bool bw_or_color_quantized_pixel(uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                                         bool has_red, bool has_yellow,
+                                        bool has_blue, bool has_green,
                                         prequantized_color_t *out)
 {
     prequantized_color_t cls = prequantized_pixel_class(r, g, b, a,
-                                                        has_red, has_yellow);
+                                                        has_red, has_yellow,
+                                                        has_blue, has_green);
     if (cls != PQ_OTHER) {
         if (out)
             *out = cls;
@@ -473,6 +603,8 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
     const int RB = EW / 8;
     bool has_red = epd_has_red();
     bool has_yellow = epd_has_yellow();
+    bool has_blue = image_panel_is_e6_6c();
+    bool has_green = image_panel_is_e6_6c();
 
     if (!rgba || !out_path || pw != (unsigned)EW || ph != (unsigned)EH)
         return ESP_ERR_NOT_SUPPORTED;
@@ -480,18 +612,23 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
     unsigned black_count = 0;
     unsigned red_count = 0;
     unsigned yellow_count = 0;
+    unsigned blue_count = 0;
+    unsigned green_count = 0;
     unsigned white_count = 0;
     for (unsigned i = 0; i < pw * ph; i++) {
         const uint8_t *p = rgba + (size_t)i * 4u;
         prequantized_color_t cls;
         if (!bw_or_color_quantized_pixel(p[0], p[1], p[2], p[3],
-                                         has_red, has_yellow, &cls))
+                                         has_red, has_yellow, has_blue,
+                                         has_green, &cls))
             return ESP_ERR_NOT_SUPPORTED;
         switch (cls) {
         case PQ_WHITE:  white_count++; break;
         case PQ_BLACK:  black_count++; break;
         case PQ_RED:    red_count++; break;
         case PQ_YELLOW: yellow_count++; break;
+        case PQ_BLUE:   blue_count++; break;
+        case PQ_GREEN:  green_count++; break;
         case PQ_OTHER:  return ESP_ERR_NOT_SUPPORTED;
         }
     }
@@ -499,10 +636,15 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
     uint8_t *black = (uint8_t *)img_alloc(EC, "png passthrough black");
     uint8_t *red = has_red ? (uint8_t *)img_alloc(EC, "png passthrough red") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png passthrough yellow") : NULL;
-    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
+    uint8_t *blue = has_blue ? (uint8_t *)img_alloc(EC, "png passthrough blue") : NULL;
+    uint8_t *green = has_green ? (uint8_t *)img_alloc(EC, "png passthrough green") : NULL;
+    if (!black || (has_red && !red) || (has_yellow && !yellow) ||
+        (has_blue && !blue) || (has_green && !green)) {
         free(black);
         free(red);
         free(yellow);
+        free(blue);
+        free(green);
         return ESP_ERR_NO_MEM;
     }
     memset(black, 0xFF, EC);
@@ -510,6 +652,10 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
         memset(red, 0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
+    if (blue)
+        memset(blue, 0x00, EC);
+    if (green)
+        memset(green, 0x00, EC);
 
     for (int y = 0; y < EH; y++) {
         for (int x = 0; x < EW; x++) {
@@ -518,7 +664,8 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
             uint8_t bit = (uint8_t)(0x80u >> (x & 7));
             prequantized_color_t cls = PQ_WHITE;
             (void)bw_or_color_quantized_pixel(p[0], p[1], p[2], p[3],
-                                              has_red, has_yellow, &cls);
+                                              has_red, has_yellow,
+                                              has_blue, has_green, &cls);
             switch (cls) {
             case PQ_BLACK:
                 black[bp] &= (uint8_t)~bit;
@@ -531,6 +678,14 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
                 yellow[bp] |= bit;
                 black[bp] |= bit;
                 break;
+            case PQ_BLUE:
+                blue[bp] |= bit;
+                black[bp] |= bit;
+                break;
+            case PQ_GREEN:
+                green[bp] |= bit;
+                black[bp] |= bit;
+                break;
             case PQ_WHITE:
             case PQ_OTHER:
                 break;
@@ -540,21 +695,27 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
         }
     }
 
-    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
-    if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
+    compensate_panel_image_orientation(black, red, yellow, blue, green, EC,
+                                       has_red, has_yellow, has_blue, has_green);
+    if (!write_raw_planes(out_path, black, red, yellow, blue, green, EC,
+                          has_red, has_yellow, has_blue, has_green)) {
         free(black);
         free(red);
         free(yellow);
+        free(blue);
+        free(green);
         return ESP_FAIL;
     }
 
     ESP_LOGI(TAG,
-             "PNG prequantized passthrough: %ux%u -> %s (%u bytes/plane, white=%u black=%u red=%u yellow=%u)",
+             "PNG prequantized passthrough: %ux%u -> %s (%u bytes/plane, white=%u black=%u red=%u yellow=%u blue=%u green=%u)",
              pw, ph, out_path, (unsigned)EC, white_count, black_count,
-             red_count, yellow_count);
+             red_count, yellow_count, blue_count, green_count);
     free(black);
     free(red);
     free(yellow);
+    free(blue);
+    free(green);
     return ESP_OK;
 }
 
@@ -634,6 +795,8 @@ static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
     const int RB = EW / 8;
     bool has_red = epd_has_red();
     bool has_yellow = epd_has_yellow();
+    bool has_blue = image_panel_is_e6_6c();
+    bool has_green = image_panel_is_e6_6c();
 
     if (!png_looks_bw_preprocessed(rgba, pw, ph))
         return ESP_ERR_NOT_SUPPORTED;
@@ -641,10 +804,15 @@ static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
     uint8_t *black = (uint8_t *)img_alloc(EC, "png bw black");
     uint8_t *red = has_red ? (uint8_t *)img_alloc(EC, "png bw red clear") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png bw yellow clear") : NULL;
-    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
+    uint8_t *blue = has_blue ? (uint8_t *)img_alloc(EC, "png bw blue clear") : NULL;
+    uint8_t *green = has_green ? (uint8_t *)img_alloc(EC, "png bw green clear") : NULL;
+    if (!black || (has_red && !red) || (has_yellow && !yellow) ||
+        (has_blue && !blue) || (has_green && !green)) {
         free(black);
         free(red);
         free(yellow);
+        free(blue);
+        free(green);
         return ESP_ERR_NO_MEM;
     }
 
@@ -653,6 +821,10 @@ static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
         memset(red, 0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
+    if (blue)
+        memset(blue, 0x00, EC);
+    if (green)
+        memset(green, 0x00, EC);
 
     image_fit_rect_t fit = image_fit_contain_rect((int)pw, (int)ph, EW, EH);
     for (int ey = fit.y; ey < fit.y + fit.h; ey++) {
@@ -670,11 +842,15 @@ static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
         }
     }
 
-    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
-    if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
+    compensate_panel_image_orientation(black, red, yellow, blue, green, EC,
+                                       has_red, has_yellow, has_blue, has_green);
+    if (!write_raw_planes(out_path, black, red, yellow, blue, green, EC,
+                          has_red, has_yellow, has_blue, has_green)) {
         free(black);
         free(red);
         free(yellow);
+        free(blue);
+        free(green);
         return ESP_FAIL;
     }
     ESP_LOGI(TAG,
@@ -683,6 +859,8 @@ static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
     free(black);
     free(red);
     free(yellow);
+    free(blue);
+    free(green);
     return ESP_OK;
 }
 
@@ -782,6 +960,49 @@ static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
     }
 }
 
+static void e6_37_fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
+                                uint8_t *black, uint8_t *red,
+                                uint8_t *yellow, uint8_t *blue,
+                                uint8_t *green, int y, int w)
+{
+    int rb = w >> 3;
+    for (int x = 0; x < w; x++) {
+        int ex = x + 1;
+        int r = (int)rgb[x * 3]     + ec[ex].r;
+        int g = (int)rgb[x * 3 + 1] + ec[ex].g;
+        int b = (int)rgb[x * 3 + 2] + ec[ex].b;
+        if (r < 0) r = 0; else if (r > 255) r = 255;
+        if (g < 0) g = 0; else if (g > 255) g = 255;
+        if (b < 0) b = 0; else if (b > 255) b = 255;
+        uint8_t c = e6_37_nearest_color(r, g, b);
+        const e6_rgb_t *std = &e6_37_fs_palette[c];
+
+        size_t bp = (size_t)y * (size_t)rb + (size_t)(x >> 3);
+        uint8_t bit = (uint8_t)(0x80u >> (x & 7));
+        e6_37_set_plane_pixel(black, red, yellow, blue, green, bp, bit, c);
+
+        int er = r - (int)std->r;
+        int eg = g - (int)std->g;
+        int eb = b - (int)std->b;
+
+        ec[ex + 1].r += er * 7 / 16;
+        ec[ex + 1].g += eg * 7 / 16;
+        ec[ex + 1].b += eb * 7 / 16;
+
+        en[ex - 1].r += er * 3 / 16;
+        en[ex - 1].g += eg * 3 / 16;
+        en[ex - 1].b += eb * 3 / 16;
+
+        en[ex].r += er * 5 / 16;
+        en[ex].g += eg * 5 / 16;
+        en[ex].b += eb * 5 / 16;
+
+        en[ex + 1].r += er * 1 / 16;
+        en[ex + 1].g += eg * 1 / 16;
+        en[ex + 1].b += eb * 1 / 16;
+    }
+}
+
 /* ── JPEG decode context ──────────────────────────────────────────── */
 
 typedef struct {
@@ -794,6 +1015,8 @@ typedef struct {
     uint8_t *black;
     uint8_t *red;
     uint8_t *yellow;
+    uint8_t *blue;
+    uint8_t *green;
     int w, h;               /* EPD screen size */
     int sw, sh;             /* decoded image size */
     image_fit_rect_t fit;   /* target area for aspect-ratio preserving display */
@@ -807,6 +1030,8 @@ typedef struct {
     fs_err_t *ec, *en;
     bool      has_red;
     bool      has_yellow;
+    bool      has_blue;
+    bool      has_green;
 } epd_out_t;
 
 typedef struct {
@@ -869,9 +1094,11 @@ static UINT jpeg_outfunc_bayer(JDEC *jd, void *bitmap, JRECT *rect)
             if (ex1 > fit_right) ex1 = fit_right;
             for (int ey = ey0; ey < ey1; ey++)
                 for (int ex = ex0; ex < ex1; ex++)
-                    dither_pixel_bayer(o->black, o->red, o->yellow, ex, ey,
+                    dither_pixel_bayer(o->black, o->red, o->yellow,
+                                       o->blue, o->green, ex, ey,
                                        o->w, r, g, b,
-                                       o->has_red, o->has_yellow);
+                                       o->has_red, o->has_yellow,
+                                       o->has_blue, o->has_green);
         }
     }
     return 1;
@@ -914,8 +1141,15 @@ static void fs_flush_band(epd_out_t *o)
         }
 
         memset(o->en, 0, ((size_t)o->w + 2) * sizeof(fs_err_t));
-        fs_dither_row(o->rgb_row, o->ec, o->en, o->black, o->red, o->yellow,
-                      ey, o->w, o->has_red, o->has_yellow);
+        if (o->has_blue && o->has_green) {
+            e6_37_fs_dither_row(o->rgb_row, o->ec, o->en,
+                                o->black, o->red, o->yellow,
+                                o->blue, o->green, ey, o->w);
+        } else {
+            fs_dither_row(o->rgb_row, o->ec, o->en,
+                          o->black, o->red, o->yellow,
+                          ey, o->w, o->has_red, o->has_yellow);
+        }
         fs_err_t *tmp = o->ec; o->ec = o->en; o->en = tmp;
     }
 }
@@ -1029,13 +1263,19 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
 
     bool has_red = epd_has_red();
     bool has_yellow = epd_has_yellow();
+    bool has_blue = image_panel_is_e6_6c();
+    bool has_green = image_panel_is_e6_6c();
     uint8_t *black = (uint8_t *)img_alloc(EC, "jpeg black plane");
     uint8_t *red   = has_red ? (uint8_t *)img_alloc(EC, "jpeg red plane") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "jpeg yellow plane") : NULL;
-    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
-        ESP_LOGE(TAG, "jpeg plane alloc failed: plane=%u bytes, panel=%dx%d, red=%d yellow=%d",
-                 (unsigned)EC, EW, EH, has_red ? 1 : 0, has_yellow ? 1 : 0);
-        free(pool); free(black); free(red); free(yellow);
+    uint8_t *blue = has_blue ? (uint8_t *)img_alloc(EC, "jpeg blue plane") : NULL;
+    uint8_t *green = has_green ? (uint8_t *)img_alloc(EC, "jpeg green plane") : NULL;
+    if (!black || (has_red && !red) || (has_yellow && !yellow) ||
+        (has_blue && !blue) || (has_green && !green)) {
+        ESP_LOGE(TAG, "jpeg plane alloc failed: plane=%u bytes, panel=%dx%d red=%d yellow=%d blue=%d green=%d",
+                 (unsigned)EC, EW, EH, has_red ? 1 : 0, has_yellow ? 1 : 0,
+                 has_blue ? 1 : 0, has_green ? 1 : 0);
+        free(pool); free(black); free(red); free(yellow); free(blue); free(green);
         return ESP_ERR_NO_MEM;
     }
     memset(black, 0xFF, EC);
@@ -1043,6 +1283,10 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         memset(red,   0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
+    if (blue)
+        memset(blue, 0x00, EC);
+    if (green)
+        memset(green, 0x00, EC);
 
     int decoded_w = 0, decoded_h = 0;
     uint8_t scale = choose_scale(jd.width, jd.height, EW, EH,
@@ -1056,11 +1300,14 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
 
     ctx->out = (epd_out_t){
         .black = black, .red = red, .yellow = yellow,
+        .blue = blue, .green = green,
         .w = EW, .h = EH,
         .sw = decoded_w, .sh = decoded_h,
         .fit = fit,
         .has_red = has_red,
-        .has_yellow = has_yellow
+        .has_yellow = has_yellow,
+        .has_blue = has_blue,
+        .has_green = has_green
     };
 
     /* Try color-first Floyd-Steinberg; fall back to Bayer if OOM */
@@ -1080,7 +1327,8 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         ctx->out.band_top  = -1;
         ctx->out.band_rows = 0;
         ESP_LOGI(TAG, "%s F-S (band=%u bytes)",
-                 has_yellow ? "yellow/red-first" : "red-first",
+                 has_blue && has_green ? "E6 six-color" :
+                 (has_yellow ? "yellow/red-first" : "red-first"),
                  (unsigned)bsz);
     } else {
         free(ctx->out.band); free(ctx->out.rgb_row);
@@ -1101,23 +1349,30 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
 
     if (r != JDR_OK) {
         ESP_LOGE(TAG, "jd_decomp failed: %d", (int)r);
-        free(black); free(red); free(yellow);
+        free(black); free(red); free(yellow); free(blue); free(green);
         return ESP_FAIL;
     }
 
-    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
-    if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
-        free(black); free(red); free(yellow);
+    compensate_panel_image_orientation(black, red, yellow, blue, green, EC,
+                                       has_red, has_yellow, has_blue, has_green);
+    if (!write_raw_planes(out_path, black, red, yellow, blue, green, EC,
+                          has_red, has_yellow, has_blue, has_green)) {
+        free(black); free(red); free(yellow); free(blue); free(green);
         return ESP_FAIL;
     }
 
     ESP_LOGI(TAG, "Converted JPEG -> %s (%u bytes/plane, %s%s, contain)",
-             out_path, (unsigned)EC, use_fs ? (has_yellow ? "yellow/red-first F-S" : "red-first F-S") : "Bayer",
-             has_yellow ? ", BWRY" : "");
+             out_path, (unsigned)EC,
+             use_fs ? (has_blue && has_green ? "E6 six-color F-S" :
+                      (has_yellow ? "yellow/red-first F-S" : "red-first F-S"))
+                    : (has_blue && has_green ? "E6 nearest" : "Bayer"),
+             has_blue && has_green ? ", E6" : (has_yellow ? ", BWRY" : ""));
 
     free(black);
     free(red);
     free(yellow);
+    free(blue);
+    free(green);
     return ESP_OK;
 }
 
@@ -1174,19 +1429,30 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
 
     bool has_red = epd_has_red();
     bool has_yellow = epd_has_yellow();
+    bool has_blue = image_panel_is_e6_6c();
+    bool has_green = image_panel_is_e6_6c();
     uint8_t *black = (uint8_t *)img_alloc(EC, "png black plane");
     uint8_t *red   = has_red ? (uint8_t *)img_alloc(EC, "png red plane") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png yellow plane") : NULL;
-    if (!black || (has_red && !red) || (has_yellow && !yellow)) {
-        ESP_LOGE(TAG, "png plane alloc failed: plane=%u bytes, panel=%dx%d, red=%d yellow=%d",
-                 (unsigned)EC, EW, EH, has_red ? 1 : 0, has_yellow ? 1 : 0);
-        free(black); free(red); free(yellow); free(rgba); return ESP_ERR_NO_MEM;
+    uint8_t *blue = has_blue ? (uint8_t *)img_alloc(EC, "png blue plane") : NULL;
+    uint8_t *green = has_green ? (uint8_t *)img_alloc(EC, "png green plane") : NULL;
+    if (!black || (has_red && !red) || (has_yellow && !yellow) ||
+        (has_blue && !blue) || (has_green && !green)) {
+        ESP_LOGE(TAG, "png plane alloc failed: plane=%u bytes, panel=%dx%d red=%d yellow=%d blue=%d green=%d",
+                 (unsigned)EC, EW, EH, has_red ? 1 : 0, has_yellow ? 1 : 0,
+                 has_blue ? 1 : 0, has_green ? 1 : 0);
+        free(black); free(red); free(yellow); free(blue); free(green); free(rgba);
+        return ESP_ERR_NO_MEM;
     }
     memset(black, 0xFF, EC);
     if (red)
         memset(red,   0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
+    if (blue)
+        memset(blue, 0x00, EC);
+    if (green)
+        memset(green, 0x00, EC);
 
     image_fit_rect_t fit = image_fit_contain_rect((int)pw, (int)ph, EW, EH);
     ESP_LOGI(TAG, "PNG %ux%u -> contain %dx%d at %d,%d on %dx%d",
@@ -1223,8 +1489,13 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
                 rgb_row[ex * 3 + 2] = b;
             }
             memset(en, 0, ((size_t)EW + 2) * sizeof(fs_err_t));
-            fs_dither_row(rgb_row, ec, en, black, red, yellow, ey, EW,
-                          has_red, has_yellow);
+            if (has_blue && has_green) {
+                e6_37_fs_dither_row(rgb_row, ec, en,
+                                    black, red, yellow, blue, green, ey, EW);
+            } else {
+                fs_dither_row(rgb_row, ec, en, black, red, yellow, ey, EW,
+                              has_red, has_yellow);
+            }
             fs_err_t *tmp = ec; ec = en; en = tmp;
         }
     } else {
@@ -1251,8 +1522,9 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
                     g = (uint8_t)((g * a + 255u * (255u - a)) / 255u);
                     b = (uint8_t)((b * a + 255u * (255u - a)) / 255u);
                 }
-                dither_pixel_bayer(black, red, yellow, ex, ey, EW, r, g, b,
-                                   has_red, has_yellow);
+                dither_pixel_bayer(black, red, yellow, blue, green,
+                                   ex, ey, EW, r, g, b,
+                                   has_red, has_yellow, has_blue, has_green);
             }
         }
     }
@@ -1260,20 +1532,29 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
     free(rgba);
     free(rgb_row); free(ec); free(en);
 
-    compensate_panel_image_orientation(black, red, yellow, EC, has_red, has_yellow);
-    if (!write_raw_planes(out_path, black, red, yellow, EC, has_red, has_yellow)) {
+    compensate_panel_image_orientation(black, red, yellow, blue, green, EC,
+                                       has_red, has_yellow, has_blue, has_green);
+    if (!write_raw_planes(out_path, black, red, yellow, blue, green, EC,
+                          has_red, has_yellow, has_blue, has_green)) {
         free(black);
         free(red);
         free(yellow);
+        free(blue);
+        free(green);
         return ESP_FAIL;
     }
 
     ESP_LOGI(TAG, "Converted PNG -> %s (%u bytes/plane, %s%s, contain)",
-             out_path, (unsigned)EC, use_fs ? (has_yellow ? "yellow/red-first F-S" : "red-first F-S") : "Bayer",
-             has_yellow ? ", BWRY" : "");
+             out_path, (unsigned)EC,
+             use_fs ? (has_blue && has_green ? "E6 six-color F-S" :
+                      (has_yellow ? "yellow/red-first F-S" : "red-first F-S"))
+                    : (has_blue && has_green ? "E6 nearest" : "Bayer"),
+             has_blue && has_green ? ", E6" : (has_yellow ? ", BWRY" : ""));
     free(black);
     free(red);
     free(yellow);
+    free(blue);
+    free(green);
     return ESP_OK;
 }
 
@@ -1368,15 +1649,21 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
 
     bool has_red_bmp = epd_has_red();
     bool has_yellow_bmp = epd_has_yellow();
+    bool has_blue_bmp = image_panel_is_e6_6c();
+    bool has_green_bmp = image_panel_is_e6_6c();
     uint8_t *black = (uint8_t *)img_alloc(EC, "bmp black plane");
     uint8_t *red   = has_red_bmp ? (uint8_t *)img_alloc(EC, "bmp red plane") : NULL;
     uint8_t *yellow = has_yellow_bmp ? (uint8_t *)img_alloc(EC, "bmp yellow plane") : NULL;
+    uint8_t *blue = has_blue_bmp ? (uint8_t *)img_alloc(EC, "bmp blue plane") : NULL;
+    uint8_t *green = has_green_bmp ? (uint8_t *)img_alloc(EC, "bmp green plane") : NULL;
     uint8_t *row   = (uint8_t *)img_alloc((size_t)row_stride, "bmp input row");
-    if (!black || (has_red_bmp && !red) || (has_yellow_bmp && !yellow) || !row) {
-        ESP_LOGE(TAG, "bmp alloc failed: plane=%u row=%u panel=%dx%d red=%d yellow=%d",
+    if (!black || (has_red_bmp && !red) || (has_yellow_bmp && !yellow) ||
+        (has_blue_bmp && !blue) || (has_green_bmp && !green) || !row) {
+        ESP_LOGE(TAG, "bmp alloc failed: plane=%u row=%u panel=%dx%d red=%d yellow=%d blue=%d green=%d",
                  (unsigned)EC, (unsigned)row_stride, EW, EH,
-                 has_red_bmp ? 1 : 0, has_yellow_bmp ? 1 : 0);
-        free(black); free(red); free(yellow); free(row);
+                 has_red_bmp ? 1 : 0, has_yellow_bmp ? 1 : 0,
+                 has_blue_bmp ? 1 : 0, has_green_bmp ? 1 : 0);
+        free(black); free(red); free(yellow); free(blue); free(green); free(row);
         return ESP_ERR_NO_MEM;
     }
     memset(black, 0xFF, EC);
@@ -1384,6 +1671,10 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
         memset(red,   0x00, EC);
     if (yellow)
         memset(yellow, 0x00, EC);
+    if (blue)
+        memset(blue, 0x00, EC);
+    if (green)
+        memset(green, 0x00, EC);
 
     image_fit_rect_t fit = image_fit_contain_rect(w, h, EW, EH);
     ESP_LOGI(TAG, "BMP %dx%d %u-bit -> contain %dx%d at %d,%d on %dx%d",
@@ -1433,8 +1724,13 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                 }
             }
             memset(en_b, 0, ((size_t)EW + 2) * sizeof(fs_err_t));
-            fs_dither_row(rgb_row, ec_b, en_b, black, red, yellow, ey, EW,
-                          has_red_bmp, has_yellow_bmp);
+            if (has_blue_bmp && has_green_bmp) {
+                e6_37_fs_dither_row(rgb_row, ec_b, en_b,
+                                    black, red, yellow, blue, green, ey, EW);
+            } else {
+                fs_dither_row(rgb_row, ec_b, en_b, black, red, yellow, ey, EW,
+                              has_red_bmp, has_yellow_bmp);
+            }
             fs_err_t *tmp = ec_b; ec_b = en_b; en_b = tmp;
         }
     } else {
@@ -1469,8 +1765,10 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                     g = row[pi + 1];
                     b = row[pi + 0];
                 }
-                dither_pixel_bayer(black, red, yellow, ex, ey, EW, r, g, b,
-                                   has_red_bmp, has_yellow_bmp);
+                dither_pixel_bayer(black, red, yellow, blue, green,
+                                   ex, ey, EW, r, g, b,
+                                   has_red_bmp, has_yellow_bmp,
+                                   has_blue_bmp, has_green_bmp);
             }
         }
     }
@@ -1478,22 +1776,31 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     free(row);
     free(rgb_row); free(ec_b); free(en_b);
 
-    compensate_panel_image_orientation(black, red, yellow, EC,
-                                       has_red_bmp, has_yellow_bmp);
-    if (!write_raw_planes(out_path, black, red, yellow, EC,
-                          has_red_bmp, has_yellow_bmp)) {
+    compensate_panel_image_orientation(black, red, yellow, blue, green, EC,
+                                       has_red_bmp, has_yellow_bmp,
+                                       has_blue_bmp, has_green_bmp);
+    if (!write_raw_planes(out_path, black, red, yellow, blue, green, EC,
+                          has_red_bmp, has_yellow_bmp,
+                          has_blue_bmp, has_green_bmp)) {
         free(black);
         free(red);
         free(yellow);
+        free(blue);
+        free(green);
         return ESP_FAIL;
     }
 
     ESP_LOGI(TAG, "Converted BMP -> %s (%u bytes/plane, %s%s, contain)",
-             out_path, (unsigned)EC, use_fs ? (has_yellow_bmp ? "yellow/red-first F-S" : "red-first F-S") : "Bayer",
-             has_yellow_bmp ? ", BWRY" : "");
+             out_path, (unsigned)EC,
+             use_fs ? (has_blue_bmp && has_green_bmp ? "E6 six-color F-S" :
+                      (has_yellow_bmp ? "yellow/red-first F-S" : "red-first F-S"))
+                    : (has_blue_bmp && has_green_bmp ? "E6 nearest" : "Bayer"),
+             has_blue_bmp && has_green_bmp ? ", E6" : (has_yellow_bmp ? ", BWRY" : ""));
     free(black);
     free(red);
     free(yellow);
+    free(blue);
+    free(green);
     return ESP_OK;
 }
 

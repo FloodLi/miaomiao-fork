@@ -22,7 +22,7 @@
  *   "line"    — 直线（Bresenham）
  *   "icon"    — 内置或用户上传的 16×16 1-bit 图标，scale=1..4
  *
- * color: 0=黑, 1=红, 2=白
+ * color: 0=黑, 1=红, 2=白, 3=黄, 4=蓝, 5=绿
  */
 
 #include "esp_err.h"

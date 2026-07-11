@@ -15,7 +15,7 @@ typedef struct {
     char        text[MSG_MAX_LEN + 1];
     uint8_t     font_size;     /* 0=1x(16px), 1=2x(32px), 2=3x(48px), 3=4x(64px), 4=5x(80px) */
     msg_align_t align;
-    uint8_t     color;         /* 0 = black, 1 = red */
+    uint8_t     color;         /* 0 black, 1 red, 2 yellow, 3 blue, 4 green */
     int16_t     x_offset;     /* pixel offset from computed position */
     int16_t     y_offset;
 } msg_config_t;
