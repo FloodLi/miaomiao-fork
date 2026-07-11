@@ -876,10 +876,9 @@ function ditherPreview(canvas,opt){
       const idx=y*w+x;
       const p=idx*4;
       const old=Math.max(0,Math.min(255,gray[idx]));
-      const strongYellow=yellowScore[idx]>yellowGate+45;
-      const isYellow=useYellow&&yellowScore[idx]>yellowGate&&(old<yellowLightGate||strongYellow)&&yellowScore[idx]>=redScore[idx]-8;
+      const isYellow=useYellow&&yellowScore[idx]>yellowGate&&old<yellowLightGate&&yellowScore[idx]>=redScore[idx]-8;
       if(isYellow){
-        d[p]=255;d[p+1]=232;d[p+2]=0;d[p+3]=255;
+        d[p]=210;d[p+1]=165;d[p+2]=24;d[p+3]=255;
         gray[idx]=255;
         continue;
       }
