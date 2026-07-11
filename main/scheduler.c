@@ -180,7 +180,16 @@ static void show_next_image(void)
         return;
     }
     ESP_LOGI(TAG, "Slideshow convert begin");
-    esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
+    fb_t *fast_fb = NULL;
+    esp_err_t err = image_convert_file_to_epd_fb(path, &fast_fb);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Slideshow fast framebuffer convert selected");
+    } else {
+        if (err != ESP_ERR_NOT_SUPPORTED)
+            ESP_LOGI(TAG, "Slideshow fast framebuffer convert unavailable: %s",
+                     esp_err_to_name(err));
+        err = image_convert_file_to_epd_raw(path, raw_path);
+    }
     if (err != ESP_OK) {
         fb_raw_file_unlock();
         if (display_policy_display_epoch() == epoch)
@@ -193,9 +202,10 @@ static void show_next_image(void)
              (long long)((t_convert - t0) / 1000LL));
 
     if (clock_ovl && time_sync_is_synced()) {
-        fb_t *fb = fb_create();
+        fb_t *fb = fast_fb ? fast_fb : fb_create();
         if (fb) {
-            fb_import(fb, raw_path);
+            if (!fast_fb)
+                fb_import(fb, raw_path);
             struct tm tm;
             if (time_sync_get_local(&tm)) {
                 char ts[8];
@@ -205,18 +215,27 @@ static void show_next_image(void)
                 fb_fill_rect(fb, tx - 4, 2, 8 * 2 * 5 + 12, 22, COLOR_WHITE);
                 ui_draw_fixed_text(fb, tx, 4, ts, COLOR_BLACK, 2);
             }
-            fb_export(fb, raw_path);
-            fb_destroy(fb);
+            if (!fast_fb) {
+                fb_export(fb, raw_path);
+                fb_destroy(fb);
+            }
         }
     }
 
     if (display_policy_manual_screen_active() ||
         display_policy_display_epoch() != epoch) {
+        if (fast_fb)
+            fb_destroy(fast_fb);
         fb_raw_file_unlock();
         ESP_LOGI(TAG, "Slideshow display canceled by newer request");
         return;
     }
-    err = epd_display_from_file(raw_path);
+    if (fast_fb) {
+        err = epd_display_fb_free(fast_fb);
+        fast_fb = NULL;
+    } else {
+        err = epd_display_from_file(raw_path);
+    }
     fb_raw_file_unlock();
     if (err != ESP_OK) {
         if (display_policy_display_epoch() == epoch)
@@ -495,14 +514,25 @@ esp_err_t scheduler_show_next_image(void)
 
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
-    esp_err_t err = image_convert_file_to_epd_raw(path, raw_path);
+    fb_t *fast_fb = NULL;
+    esp_err_t err = image_convert_file_to_epd_fb(path, &fast_fb);
+    if (err != ESP_OK)
+        err = image_convert_file_to_epd_raw(path, raw_path);
     if (err == ESP_OK) {
         if (display_policy_display_epoch() != epoch) {
+            if (fast_fb)
+                fb_destroy(fast_fb);
             fb_raw_file_unlock();
             ESP_LOGI(TAG, "Manual slideshow display canceled by newer request");
             return ESP_ERR_INVALID_STATE;
         }
-        err = epd_display_from_file(raw_path);
+        if (fast_fb) {
+            ESP_LOGI(TAG, "Manual slideshow fast framebuffer display");
+            err = epd_display_fb_free(fast_fb);
+            fast_fb = NULL;
+        } else {
+            err = epd_display_from_file(raw_path);
+        }
     }
     fb_raw_file_unlock();
     if (err != ESP_OK)
