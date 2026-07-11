@@ -14,6 +14,9 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "clock_display.h"
 #include "display_policy.h"
@@ -29,6 +32,18 @@
 
 static const char *TAG = "http_gal";
 static atomic_bool s_upload_active;
+static atomic_bool s_show_active;
+static atomic_uint s_show_epoch;
+
+typedef struct {
+    char name[64];
+    char path[160];
+    int size;
+    unsigned upload_epoch;
+    unsigned display_epoch;
+    unsigned show_epoch;
+    bool was_manual;
+} gallery_show_job_t;
 
 static esp_err_t gallery_send_empty(httpd_req_t *req, bool spiffs_ok)
 {
@@ -144,6 +159,128 @@ static esp_err_t gallery_display_raw_like_canvas(const char *raw_path)
         return err;
     }
     return epd_display_fb_free(fb);
+}
+
+static bool gallery_show_begin(unsigned *epoch_out)
+{
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&s_show_active, &expected, true))
+        return false;
+    *epoch_out = atomic_fetch_add(&s_show_epoch, 1) + 1;
+    return true;
+}
+
+static void gallery_show_end(unsigned epoch)
+{
+    if (atomic_load(&s_show_epoch) == epoch)
+        atomic_store(&s_show_active, false);
+}
+
+static bool gallery_show_job_current(const gallery_show_job_t *job)
+{
+    return atomic_load(&s_show_epoch) == job->show_epoch &&
+           gallery_upload_epoch() == job->upload_epoch &&
+           !gallery_upload_busy() &&
+           display_policy_epoch_is_current(job->display_epoch);
+}
+
+static void gallery_show_task(void *arg)
+{
+    gallery_show_job_t *job = (gallery_show_job_t *)arg;
+    const char *raw_path = "/spiffs/image.bin";
+    int64_t t0 = esp_timer_get_time();
+    esp_err_t cerr = ESP_OK;
+    esp_err_t perr = ESP_OK;
+    esp_err_t derr = ESP_OK;
+    bool skipped = false;
+
+    ESP_LOGI(TAG, "Gallery show task start: '%s', bytes=%d, show_epoch=%u, display_epoch=%u, upload_epoch=%u",
+             job->name, job->size, job->show_epoch, job->display_epoch, job->upload_epoch);
+
+    fb_raw_file_lock();
+    int64_t t_lock = esp_timer_get_time();
+    ESP_LOGI(TAG, "Gallery show raw-file lock acquired in %lld ms",
+             (long long)((t_lock - t0) / 1000LL));
+
+    if (!gallery_show_job_current(job)) {
+        skipped = true;
+        ESP_LOGI(TAG, "Gallery show '%s' skipped before convert: newer request owns display",
+                 job->name);
+    }
+
+    if (!skipped) {
+        ESP_LOGI(TAG, "Gallery show convert begin: %s", job->path);
+        cerr = image_convert_file_to_epd_raw(job->path, raw_path);
+        int64_t t_convert = esp_timer_get_time();
+        if (cerr == ESP_OK) {
+            ESP_LOGI(TAG, "Gallery show convert done in %lld ms",
+                     (long long)((t_convert - t_lock) / 1000LL));
+        } else {
+            ESP_LOGW(TAG, "Gallery show convert failed after %lld ms: %s",
+                     (long long)((t_convert - t_lock) / 1000LL), esp_err_to_name(cerr));
+        }
+    }
+
+    if (!skipped && cerr == ESP_OK) {
+        if (!gallery_show_job_current(job)) {
+            skipped = true;
+            ESP_LOGI(TAG, "Gallery show '%s' skipped after convert: newer request owns display",
+                     job->name);
+        } else {
+            int64_t t_prepare0 = esp_timer_get_time();
+            ESP_LOGI(TAG, "Gallery show prepare refresh begin");
+            perr = gallery_prepare_image_refresh("gallery show async");
+            int64_t t_prepare1 = esp_timer_get_time();
+            if (perr == ESP_OK) {
+                ESP_LOGI(TAG, "Gallery show prepare refresh done in %lld ms",
+                         (long long)((t_prepare1 - t_prepare0) / 1000LL));
+            } else {
+                ESP_LOGW(TAG, "Gallery show prepare refresh failed after %lld ms: %s",
+                         (long long)((t_prepare1 - t_prepare0) / 1000LL), esp_err_to_name(perr));
+            }
+        }
+    }
+
+    if (!skipped && cerr == ESP_OK && perr == ESP_OK) {
+        if (!gallery_show_job_current(job)) {
+            skipped = true;
+            ESP_LOGI(TAG, "Gallery show '%s' skipped before display: newer request owns display",
+                     job->name);
+        } else {
+            int64_t t_display0 = esp_timer_get_time();
+            ESP_LOGI(TAG, "Gallery show display begin from raw file");
+            derr = epd_display_from_file(raw_path);
+            int64_t t_display1 = esp_timer_get_time();
+            if (derr == ESP_OK) {
+                ESP_LOGI(TAG, "Gallery show display done in %lld ms, total %lld ms",
+                         (long long)((t_display1 - t_display0) / 1000LL),
+                         (long long)((t_display1 - t0) / 1000LL));
+            } else {
+                ESP_LOGW(TAG, "Gallery show display failed after %lld ms: %s",
+                         (long long)((t_display1 - t_display0) / 1000LL), esp_err_to_name(derr));
+            }
+        }
+    }
+
+    fb_raw_file_unlock();
+
+    if (cerr != ESP_OK || perr != ESP_OK || derr != ESP_OK) {
+        gallery_restore_manual_if_current(job->was_manual, job->display_epoch);
+    } else if (!skipped && gallery_show_job_current(job)) {
+        scheduler_set_current_image_name(job->name);
+        weather_disable_if_enabled_for_image_focus();
+        scheduler_notify_manual_show();
+        button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
+        power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
+    } else if (!skipped) {
+        ESP_LOGI(TAG, "Gallery show '%s' completed but was superseded", job->name);
+    }
+
+    ESP_LOGI(TAG, "Gallery show task finish: '%s', result convert=%s prepare=%s display=%s",
+             job->name, esp_err_to_name(cerr), esp_err_to_name(perr), esp_err_to_name(derr));
+    gallery_show_end(job->show_epoch);
+    free(job);
+    vTaskDelete(NULL);
 }
 
 esp_err_t gallery_images_get_handler(httpd_req_t *req)
@@ -289,8 +426,47 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    unsigned show_epoch = 0;
+    if (!gallery_show_begin(&show_epoch)) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "gallery show already running");
+        return ESP_OK;
+    }
+
+    gallery_show_job_t *job = calloc(1, sizeof(*job));
+    if (!job) {
+        gallery_show_end(show_epoch);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory for gallery show job");
+        return ESP_OK;
+    }
+
     bool was_manual = display_policy_manual_screen_active();
     unsigned display_epoch = display_policy_begin_manual_display();
+
+    strncpy(job->name, name, sizeof(job->name) - 1);
+    strncpy(job->path, jpeg_path, sizeof(job->path) - 1);
+    job->size = sz;
+    job->upload_epoch = upload_epoch;
+    job->display_epoch = display_epoch;
+    job->show_epoch = show_epoch;
+    job->was_manual = was_manual;
+
+    BaseType_t ok = xTaskCreate(gallery_show_task, "gal_show", 10240, job, 4, NULL);
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create gallery show task for '%s'", name);
+        gallery_restore_manual_if_current(was_manual, display_epoch);
+        gallery_show_end(show_epoch);
+        free(job);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "failed to start gallery show task");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Gallery show queued: '%s', bytes=%d, show_epoch=%u", name, sz, show_epoch);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":true,\"queued\":true}");
+    return ESP_OK;
+
+#if 0
 
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
@@ -351,6 +527,7 @@ esp_err_t gallery_show_post_handler(httpd_req_t *req)
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
     power_mgr_save_mode(DISPLAY_MODE_SLIDESHOW);
     httpd_resp_sendstr(req, "OK");
+#endif
     return ESP_OK;
 }
 

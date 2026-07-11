@@ -21,6 +21,7 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -1205,10 +1206,17 @@ static const uint8_t e6_37_color_map_pass2[16] = {
     1, 1, 1, 1, 1, 1, 1, 1
 };
 
+static void e6_37_log_elapsed(const char *stage, int64_t start_us)
+{
+    ESP_LOGI(TAG, "E6 3.7: %s done in %lld ms",
+             stage ? stage : "?", (long long)((esp_timer_get_time() - start_us) / 1000LL));
+}
+
 static bool e6_37_wait_ready(const char *stage)
 {
     const int idle = busy_idle_effective();
     int elapsed = 0;
+    int64_t start_us = esp_timer_get_time();
 
     while (gpio_get_level(PIN_EPD_BUSY) != idle && elapsed < EPD_E6_BUSY_TIMEOUT_MS) {
         delay_ms(10);
@@ -1221,8 +1229,9 @@ static bool e6_37_wait_ready(const char *stage)
         return false;
     }
     if (elapsed >= 1000) {
-        ESP_LOGI(TAG, "E6 3.7: %s ready after %d ms",
-                 stage ? stage : "?", elapsed);
+        ESP_LOGI(TAG, "E6 3.7: %s ready after %d ms (wall %lld ms)",
+                 stage ? stage : "?", elapsed,
+                 (long long)((esp_timer_get_time() - start_us) / 1000LL));
     }
     return true;
 }
@@ -1240,22 +1249,33 @@ static void e6_37_hw_reset(void)
 
 static void e6_37_set_temperature_waveform(uint8_t value)
 {
+    int64_t start_us = esp_timer_get_time();
+    ESP_LOGI(TAG, "E6 3.7: set temperature waveform %u begin", (unsigned)value);
     cmd1(0xE0, 0x02);
     cmd1(0xE6, value);
     e6_37_wait_ready("temperature waveform");
+    e6_37_log_elapsed("set temperature waveform", start_us);
 }
 
-static void e6_37_refresh_once(void)
+static void e6_37_refresh_once(const char *stage)
 {
+    int64_t start_us = esp_timer_get_time();
+    ESP_LOGI(TAG, "E6 3.7: %s refresh begin", stage ? stage : "?");
     cmd1(0x17, 0xA5);
-    e6_37_wait_ready("refresh");
+    e6_37_wait_ready(stage ? stage : "refresh");
+    ESP_LOGI(TAG, "E6 3.7: %s refresh done in %lld ms",
+             stage ? stage : "?",
+             (long long)((esp_timer_get_time() - start_us) / 1000LL));
 }
 
 static void e6_37_sleep(void)
 {
+    int64_t start_us = esp_timer_get_time();
+    ESP_LOGI(TAG, "E6 3.7: sleep begin");
     e6_37_wait_ready("sleep");
     cmd1(0x07, 0xA5);
     s_panel_seq_done = false;
+    e6_37_log_elapsed("sleep", start_us);
 }
 
 static uint8_t e6_37_pixel_code(uint8_t bw, uint8_t red, uint8_t yellow,
@@ -1296,16 +1316,20 @@ static void e6_37_write_pass_from_planes(const uint8_t *bw, const uint8_t *red,
                                          uint8_t yellow_fill,
                                          uint8_t blue_fill,
                                          uint8_t green_fill,
-                                         const uint8_t color_map[16])
+                                         const uint8_t color_map[16],
+                                         const char *stage)
 {
     int rb = epd_width() / 8;
     int H = epd_height();
+    int64_t start_us = esp_timer_get_time();
     uint8_t *line = heap_caps_malloc((size_t)rb * 2u, MALLOC_CAP_DMA);
     if (!line) {
         ESP_LOGE(TAG, "E6 3.7 line DMA malloc failed");
         return;
     }
 
+    ESP_LOGI(TAG, "E6 3.7: %s data write begin (%dx%d, rb=%d)",
+             stage ? stage : "?", epd_width(), H, rb);
     epd_cmd(0x10);
     for (int y = 0; y < H; y++) {
         const size_t row = (size_t)y * (size_t)rb;
@@ -1319,9 +1343,17 @@ static void e6_37_write_pass_from_planes(const uint8_t *bw, const uint8_t *red,
             line[(size_t)x * 2u + 1u] = e6_37_pack4(b, r, yel, blu, grn, 4, color_map);
         }
         epd_bulk(line, (size_t)rb * 2u);
+        if (((y + 1) % (H / 4 ? H / 4 : 1)) == 0 || y + 1 == H) {
+            ESP_LOGI(TAG, "E6 3.7: %s data row %d/%d after %lld ms",
+                     stage ? stage : "?", y + 1, H,
+                     (long long)((esp_timer_get_time() - start_us) / 1000LL));
+        }
     }
 
     free(line);
+    ESP_LOGI(TAG, "E6 3.7: %s data write done in %lld ms",
+             stage ? stage : "?",
+             (long long)((esp_timer_get_time() - start_us) / 1000LL));
 }
 
 static void panel_write_e6_37_6c(const uint8_t *bw, const uint8_t *red,
@@ -1333,20 +1365,24 @@ static void panel_write_e6_37_6c(const uint8_t *bw, const uint8_t *red,
                                  uint8_t blue_fill,
                                  uint8_t green_fill)
 {
+    int64_t start_us = esp_timer_get_time();
+    ESP_LOGI(TAG, "E6 3.7: framebuffer display begin");
     e6_37_set_temperature_waveform(32);
     e6_37_write_pass_from_planes(bw, red, yellow, blue, green,
                                  bw_fill, red_fill, yellow_fill,
                                  blue_fill, green_fill,
-                                 e6_37_color_map_pass1);
-    e6_37_refresh_once();
+                                 e6_37_color_map_pass1, "pass1");
+    e6_37_refresh_once("pass1");
 
     e6_37_set_temperature_waveform(37);
     e6_37_write_pass_from_planes(bw, red, yellow, blue, green,
                                  bw_fill, red_fill, yellow_fill,
                                  blue_fill, green_fill,
-                                 e6_37_color_map_pass2);
-    e6_37_refresh_once();
+                                 e6_37_color_map_pass2, "pass2");
+    e6_37_refresh_once("pass2");
     e6_37_sleep();
+    ESP_LOGI(TAG, "E6 3.7: framebuffer display done in %lld ms",
+             (long long)((esp_timer_get_time() - start_us) / 1000LL));
 }
 
 static void panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, int pb)
@@ -1621,10 +1657,12 @@ static esp_err_t e6_37_write_pass_from_file(FILE *f, int pb, bool has_red_file,
                                             bool has_yellow_file,
                                             bool has_blue_file,
                                             bool has_green_file,
-                                            const uint8_t color_map[16])
+                                            const uint8_t color_map[16],
+                                            const char *stage)
 {
     int rb = epd_width() / 8;
     int H = epd_height();
+    int64_t start_us = esp_timer_get_time();
     uint8_t *bw = heap_caps_malloc((size_t)rb, MALLOC_CAP_8BIT);
     uint8_t *red = heap_caps_malloc((size_t)rb, MALLOC_CAP_8BIT);
     uint8_t *yellow = heap_caps_malloc((size_t)rb, MALLOC_CAP_8BIT);
@@ -1645,6 +1683,10 @@ static esp_err_t e6_37_write_pass_from_file(FILE *f, int pb, bool has_red_file,
     long yellow_base = has_yellow_file ? (long)pb * 2L : -1;
     long blue_base = has_blue_file ? (long)pb * 3L : -1;
     long green_base = has_green_file ? (long)pb * 4L : -1;
+    ESP_LOGI(TAG, "E6 3.7: %s file data write begin (%dx%d, rb=%d, planes R/Y/B/G=%d/%d/%d/%d)",
+             stage ? stage : "?", epd_width(), H, rb,
+             has_red_file ? 1 : 0, has_yellow_file ? 1 : 0,
+             has_blue_file ? 1 : 0, has_green_file ? 1 : 0);
     epd_cmd(0x10);
     esp_err_t ret = ESP_OK;
     for (int y = 0; y < H; y++) {
@@ -1670,6 +1712,11 @@ static esp_err_t e6_37_write_pass_from_file(FILE *f, int pb, bool has_red_file,
                                                    blue[x], green[x], 4, color_map);
         }
         epd_bulk(out, (size_t)rb * 2u);
+        if (((y + 1) % (H / 4 ? H / 4 : 1)) == 0 || y + 1 == H) {
+            ESP_LOGI(TAG, "E6 3.7: %s file data row %d/%d after %lld ms",
+                     stage ? stage : "?", y + 1, H,
+                     (long long)((esp_timer_get_time() - start_us) / 1000LL));
+        }
     }
 
     free(bw);
@@ -1678,6 +1725,16 @@ static esp_err_t e6_37_write_pass_from_file(FILE *f, int pb, bool has_red_file,
     free(blue);
     free(green);
     free(out);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "E6 3.7: %s file data write done in %lld ms",
+                 stage ? stage : "?",
+                 (long long)((esp_timer_get_time() - start_us) / 1000LL));
+    } else {
+        ESP_LOGW(TAG, "E6 3.7: %s file data write failed after %lld ms: %s",
+                 stage ? stage : "?",
+                 (long long)((esp_timer_get_time() - start_us) / 1000LL),
+                 esp_err_to_name(ret));
+    }
     return ret;
 }
 
@@ -1686,22 +1743,26 @@ static esp_err_t file_send_e6_37_6c(FILE *f, int pb, bool has_red_file,
                                     bool has_blue_file,
                                     bool has_green_file)
 {
+    int64_t start_us = esp_timer_get_time();
+    ESP_LOGI(TAG, "E6 3.7: file display begin (pb=%d)", pb);
     e6_37_set_temperature_waveform(32);
     esp_err_t ret = e6_37_write_pass_from_file(f, pb, has_red_file, has_yellow_file,
                                                has_blue_file, has_green_file,
-                                               e6_37_color_map_pass1);
+                                               e6_37_color_map_pass1, "pass1");
     if (ret != ESP_OK)
         return ret;
-    e6_37_refresh_once();
+    e6_37_refresh_once("pass1");
 
     e6_37_set_temperature_waveform(37);
     ret = e6_37_write_pass_from_file(f, pb, has_red_file, has_yellow_file,
                                      has_blue_file, has_green_file,
-                                     e6_37_color_map_pass2);
+                                     e6_37_color_map_pass2, "pass2");
     if (ret != ESP_OK)
         return ret;
-    e6_37_refresh_once();
+    e6_37_refresh_once("pass2");
     e6_37_sleep();
+    ESP_LOGI(TAG, "E6 3.7: file display done in %lld ms",
+             (long long)((esp_timer_get_time() - start_us) / 1000LL));
     return ESP_OK;
 }
 
