@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "sdkconfig.h"
 
 #include "rom/tjpgd.h"
@@ -21,7 +22,7 @@ static const char *TAG = "img";
 #define PNG_MAX_FILE_BYTES      (1024u * 1024u)
 #define PNG_MAX_DECODE_PIXELS   (1000u * 1000u)
 #define PNG_MAX_SIDE_PIXELS     4096u
-#define RAW_WRITE_CHUNK         4096u
+#define RAW_WRITE_CHUNK         16384u
 
 typedef struct {
     int x;
@@ -121,6 +122,7 @@ static bool write_raw_planes(const char *out_path, const uint8_t *black,
                              int plane_bytes, bool has_red, bool has_yellow,
                              bool has_blue, bool has_green)
 {
+    int64_t t0 = esp_timer_get_time();
     FILE *f = fopen(out_path, "wb");
     if (!f) {
         ESP_LOGE(TAG, "open out failed: %s", out_path);
@@ -142,6 +144,12 @@ static bool write_raw_planes(const char *out_path, const uint8_t *black,
     if (!ok) {
         ESP_LOGE(TAG, "write raw failed: %s", out_path);
         remove(out_path);
+    } else {
+        int planes = 1 + (has_red ? 1 : 0) + (has_yellow ? 1 : 0) +
+                     (has_blue ? 1 : 0) + (has_green ? 1 : 0);
+        ESP_LOGI(TAG, "raw write done in %lld ms: %s (%d planes, %u bytes/plane)",
+                 (long long)((esp_timer_get_time() - t0) / 1000LL),
+                 out_path, planes, (unsigned)plane_bytes);
     }
     return ok;
 }
@@ -644,6 +652,7 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
     if (!rgba || !out_path || pw != (unsigned)EW || ph != (unsigned)EH)
         return ESP_ERR_NOT_SUPPORTED;
 
+    int64_t t0 = esp_timer_get_time();
     uint8_t *black = (uint8_t *)img_alloc(EC, "png passthrough black");
     uint8_t *red = has_red ? (uint8_t *)img_alloc(EC, "png passthrough red") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png passthrough yellow") : NULL;
@@ -737,6 +746,9 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
                 green[bp] = green_byte;
         }
     }
+    int64_t t_pack = esp_timer_get_time();
+    ESP_LOGI(TAG, "PNG prequantized pack done in %lld ms",
+             (long long)((t_pack - t0) / 1000LL));
 
     compensate_panel_image_orientation(black, red, yellow, blue, green, EC,
                                        has_red, has_yellow, has_blue, has_green);
@@ -884,7 +896,6 @@ static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
             }
         }
     }
-
     compensate_panel_image_orientation(black, red, yellow, blue, green, EC,
                                        has_red, has_yellow, has_blue, has_green);
     if (!write_raw_planes(out_path, black, red, yellow, blue, green, EC,
