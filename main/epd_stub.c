@@ -2665,7 +2665,11 @@ esp_err_t epd_init(void)
               s_specs[s_panel].name, epd_width(), epd_height(), busy_idle_effective());
 
     panel_run_full_init();
-    epd_clear_to_white_locked();
+    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
+        ESP_LOGI(TAG, "E6 3.7: skip startup white clear; first full content refresh overwrites panel");
+    } else {
+        epd_clear_to_white_locked();
+    }
 
     s_epd_ready = true;
     xSemaphoreGive(s_epd_mutex);
@@ -3006,6 +3010,29 @@ esp_err_t epd_display_from_file(const char *path)
     if (!path) return ESP_ERR_INVALID_ARG;
     if (!s_epd_mutex || !s_epd_ready)
         return ESP_ERR_INVALID_STATE;
+
+    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
+        int64_t t0 = esp_timer_get_time();
+        ESP_LOGI(TAG, "E6 3.7: import raw file to framebuffer begin: %s", path);
+        fb_t *fb = fb_create();
+        if (!fb)
+            return ESP_ERR_NO_MEM;
+        esp_err_t err = fb_import(fb, path);
+        int64_t t_import = esp_timer_get_time();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "E6 3.7: import raw file failed after %lld ms: %s",
+                     (long long)((t_import - t0) / 1000LL), esp_err_to_name(err));
+            fb_destroy(fb);
+            return err;
+        }
+        ESP_LOGI(TAG, "E6 3.7: import raw file done in %lld ms, framebuffer display begin",
+                 (long long)((t_import - t0) / 1000LL));
+        err = epd_display_fb_free(fb);
+        ESP_LOGI(TAG, "E6 3.7: framebuffer display from file finished in %lld ms: %s",
+                 (long long)((esp_timer_get_time() - t0) / 1000LL),
+                 esp_err_to_name(err));
+        return err;
+    }
 
     int pb = epd_plane_bytes();
 
