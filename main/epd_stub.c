@@ -133,7 +133,8 @@ static void fpc194_ssd1683_init(void);
 static void ref_ssd1677_init(void);
 static void ref_ssd1667_102_init(void);
 static void e6_37_init(void);
-static void ref_jd796xx_init(void);
+static void ref_jd79665_init(void);
+static void ref_jd79668_init(void);
 static void refresh_22_f7_20(void);
 static void refresh_12(void);
 static void refresh_power_on_12(void);
@@ -182,10 +183,10 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_REF_UC8159_75_LOW_BWR] = { 640, 384, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "UC8159 7.5\" low BWR", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BW]  = { 880, 528, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BW", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BWR] = { 880, 528, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BWR", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
-    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd79665_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
     [EPD_PANEL_REF_SSD1619_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619A 4.2\" BW reference", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
     [EPD_PANEL_REF_SSD1619_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619 4.2\" BWR", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
-    [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79668 4.2\" BWRY", ref_jd796xx_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+    [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79668 4.2\" BWRY", ref_jd79668_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
     [EPD_PANEL_REF_SSD1683_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BWR", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
     [EPD_PANEL_REF_SSD1683_42_LEGACY] = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BWR", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
     [EPD_PANEL_REF_SSD1683_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BW", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
@@ -976,6 +977,7 @@ static void ref_jd796xx_refresh(void)
 {
     ref_jd796xx_full_window();
     epd_cmd(0x12);
+    epd_dat(0x00);
     delay_ms(100);
     epd_wait_ready(true);
     delay_ms(200);
@@ -2327,7 +2329,35 @@ static void ref_ssd1677_init(void)
     ESP_LOGI(TAG, "%s init OK", d->name);
 }
 
-static void ref_jd796xx_init(void)
+static void ref_jd79665_init(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    epd_hw_reset();
+    delay_ms(50);
+    epd_wait_ready(false);
+
+    cmd1(0x4D, 0x78);
+    cmd2(0x00, 0x2F, 0x29);
+    cmd4(0x06, 0x0F, 0x8B, 0x93, 0xA1);
+    cmd1(0x41, 0x00);
+    cmd1(0x50, 0x37);
+    cmd2(0x60, 0x02, 0x02);
+    ref_send_tres();
+    epd_cmd(0x62);
+    epd_dat(0x98); epd_dat(0x98); epd_dat(0x98); epd_dat(0x75);
+    epd_dat(0xCA); epd_dat(0xB2); epd_dat(0x98); epd_dat(0x7E);
+    cmd4(0x65, 0x00, 0x00, 0x00, 0x00);
+    cmd1(0xE7, 0x1C);
+    cmd1(0xE3, 0x00);
+    cmd1(0xE9, 0x01);
+    cmd1(0x30, 0x08);
+    ref_jd796xx_full_window();
+    epd_cmd(0x04);
+    epd_wait_ready(false);
+    ESP_LOGI(TAG, "%s init OK (JD79665 800x480 BWRY 2bpp)", d->name);
+}
+
+static void ref_jd79668_init(void)
 {
     const epd_panel_desc_t *d = panel_desc();
     epd_hw_reset();
@@ -2348,7 +2378,7 @@ static void ref_jd796xx_init(void)
     ref_jd796xx_full_window();
     epd_cmd(0x04);
     epd_wait_ready(false);
-    ESP_LOGW(TAG, "%s init OK (BWRY 2bpp)", d->name);
+    ESP_LOGW(TAG, "%s init OK (JD79668 BWRY 2bpp)", d->name);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
