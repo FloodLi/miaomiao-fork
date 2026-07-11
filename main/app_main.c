@@ -39,6 +39,8 @@
 
 static const char *TAG = "app";
 
+#define BOOT_WELCOME_HOLD_MS 1000
+
 static int welcome_draw_text(fb_t *fb, int x, int y, const char *text,
                              fb_color_t color, int scale)
 {
@@ -339,8 +341,9 @@ static void boot_display_route(void)
 
     ESP_LOGI(TAG, "boot_display_route: showing welcome screen");
     render_welcome_screen();
-    ESP_LOGI(TAG, "boot_display_route: welcome screen done, delaying 10s");
-    vTaskDelay(pdMS_TO_TICKS(10000));
+    ESP_LOGI(TAG, "boot_display_route: welcome screen done, delaying %d ms",
+             BOOT_WELCOME_HOLD_MS);
+    vTaskDelay(pdMS_TO_TICKS(BOOT_WELCOME_HOLD_MS));
 
     if (display_policy_display_epoch() != boot_epoch) {
         ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");

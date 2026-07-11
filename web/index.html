@@ -513,7 +513,7 @@ function fmt(n){if(n==null||n<0) return '-'; if(n<1024) return n+' B'; if(n<1024
 function fmtStorage(n){n=Number(n)||0; if(n>=1024*1024) return (n/1024/1024).toFixed(n>=10*1024*1024?1:2).replace(/\.0$/,'')+' MB'; if(n>=1024) return (n/1024).toFixed(n>=10*1024?1:2).replace(/\.0$/,'')+' KB'; return n+' B';}
 function fmtVolt(mv){return mv>0?(mv/1000).toFixed(2)+'V':'--';}
 function compactPanel(s){return s&&s.panel_width?s.panel_width+'×'+s.panel_height:'-';}
-let epdPanelW=128, epdPanelH=296, epdPanelHasRed=true, epdPanelHasYellow=false;
+let epdPanelW=128, epdPanelH=296, epdPanelHasRed=true, epdPanelHasYellow=false, epdPanelIsE6=false;
 let previewImg=null, previewUrl=null;
 let previewRot=0;
 let previewPreset='photo';
@@ -556,6 +556,7 @@ async function refresh(){
       epdPanelW=j.panel_width; epdPanelH=j.panel_height;
       epdPanelHasRed=!!j.panel_has_red;
       epdPanelHasYellow=!!j.panel_has_yellow;
+      epdPanelIsE6=(j.panel===43)||(epdPanelW===792&&epdPanelH===528&&epdPanelHasYellow);
       updateColorControls();
       renderPreview();
     }
@@ -757,11 +758,68 @@ function correctedChannel(v,opt){
   return Math.pow(v/255,1/gamma)*255;
 }
 
+const E6_FS_NEAR_PALETTE = [[2,2,2],[190,200,200],[205,202,0],[135,19,0],[5,64,158],[39,102,60]];
+const E6_FS_OUT_PALETTE = [[0,0,0],[255,255,255],[255,232,0],[196,36,28],[20,80,185],[40,150,90]];
+
+function clamp255(v){return Math.max(0,Math.min(255,v));}
+function isE6PreviewPanel(){return epdPanelIsE6||(epdPanelW===792&&epdPanelH===528&&epdPanelHasYellow);}
+function nearestE6FsColor(r,g,b){
+  let best=0,bestErr=Infinity;
+  for(let i=0;i<E6_FS_NEAR_PALETTE.length;i++){
+    const p=E6_FS_NEAR_PALETTE[i];
+    const dr=r-p[0],dg=g-p[1],db=b-p[2];
+    const err=dr*dr+dg*dg+db*db;
+    if(err<bestErr){bestErr=err;best=i;}
+  }
+  return best;
+}
+
+function ditherPreviewE6SixColor(ctx,im,opt){
+  const d=im.data,w=im.width,h=im.height;
+  const contrast=Math.max(0.2,Math.min(3,opt.contrast));
+  const strength=Math.max(0,Math.min(2,opt.dither));
+  const rb=new Float32Array(w*h);
+  const gb=new Float32Array(w*h);
+  const bb=new Float32Array(w*h);
+  for(let i=0;i<w*h;i++){
+    let r=d[i*4],g=d[i*4+1],b=d[i*4+2],a=d[i*4+3];
+    if(a<128){r=255;g=255;b=255;}
+    if(opt.invert){r=255-r;g=255-g;b=255-b;}
+    rb[i]=clamp255((correctedChannel(r,opt)-128)*contrast+128);
+    gb[i]=clamp255((correctedChannel(g,opt)-128)*contrast+128);
+    bb[i]=clamp255((correctedChannel(b,opt)-128)*contrast+128);
+  }
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const idx=y*w+x,p=idx*4;
+      const r=clamp255(rb[idx]),g=clamp255(gb[idx]),b=clamp255(bb[idx]);
+      const c=nearestE6FsColor(r,g,b);
+      const out=E6_FS_OUT_PALETTE[c];
+      d[p]=out[0];d[p+1]=out[1];d[p+2]=out[2];d[p+3]=255;
+      if(strength<=0.001) continue;
+      const near=E6_FS_NEAR_PALETTE[c];
+      const er=(r-near[0])*strength,eg=(g-near[1])*strength,eb=(b-near[2])*strength;
+      const add=(ni,wgt)=>{rb[ni]+=er*wgt/16;gb[ni]+=eg*wgt/16;bb[ni]+=eb*wgt/16;};
+      if(x+1<w)add(idx+1,7);
+      if(y+1<h){
+        if(x>0)add(idx+w-1,3);
+        add(idx+w,5);
+        if(x+1<w)add(idx+w+1,1);
+      }
+    }
+  }
+  ctx.putImageData(im,0,0);
+}
+
 function ditherPreview(canvas,opt){
   const ctx=canvas.getContext('2d');
   const im=ctx.getImageData(0,0,canvas.width,canvas.height);
   const d=im.data,w=canvas.width,h=canvas.height;
   applySharpen(d,w,h,opt.sharpness);
+  if(isE6PreviewPanel()){
+    ditherPreviewE6SixColor(ctx,im,opt);
+    return;
+  }
   const threshold=Math.max(0,Math.min(255,opt.threshold));
   const contrast=Math.max(0.2,Math.min(3,opt.contrast));
   const redSensitivity=Math.max(0,Math.min(1,opt.redSensitivity));
