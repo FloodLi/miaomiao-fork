@@ -99,6 +99,7 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
 .color-btn.blue{background:#1450b9;color:#fff}
 .color-btn.green{background:#28965a;color:#fff}
 .color-btn.sel{border-color:var(--ac);transform:scale(1.06);box-shadow:0 2px 8px var(--ag)}
+.color-btn.unsupported{display:none}
 
 /* 图标网格 */
 #icon-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;max-height:240px;overflow-y:auto;margin-bottom:6px;background:var(--sf);padding:4px;border-radius:8px;border:1px solid var(--sb)}
@@ -343,6 +344,10 @@ body .epd-credit a:hover{text-decoration:underline}
     <input type="range" id="img-contrast" min="50" max="220" value="120">
     <label>红色敏感度 <b id="img-red-lbl" style="color:#e94560">0.35</b></label>
     <input type="range" id="img-red" min="0" max="100" value="35">
+    <div id="img-yellow-row">
+      <label>黄色敏感度 <b id="img-yellow-lbl" style="color:#c9a400">0.35</b></label>
+      <input type="range" id="img-yellow" min="0" max="100" value="35">
+    </div>
     <label>抖动强度 <b id="img-dither-lbl" style="color:#e94560">1.00×</b></label>
     <input type="range" id="img-dither" min="0" max="160" value="100">
     <label>适配方式</label>
@@ -523,6 +528,7 @@ function drawBmpOnCtx(ctx2d, data, x, y, scale, fgR, fgG, fgB) {
    全局状态
 ═══════════════════════════════════════════════ */
 let EPD_W = 400, EPD_H = 300, SCALE = 2;
+let EPD_HAS_RED = true, EPD_HAS_YELLOW = false, EPD_IS_E6 = false;
 let elements = [];
 let selected = -1;
 let tool = 'select';
@@ -762,8 +768,32 @@ const CSS_COLORS = ['#1e1e1e','#c4241c','#ffffff','#ffe800','#1450b9','#28965a']
 const E6_NEAR_PALETTE = [[2,2,2],[190,200,200],[205,202,0],[135,19,0],[5,64,158],[39,102,60]];
 const E6_EXACT_PALETTE = [[0,0,0],[255,255,255],[255,232,0],[196,36,28],[20,80,185],[40,150,90]];
 
-function isE6Panel() {
-    return EPD_W === 792 && EPD_H === 528;
+function isE6Panel() { return EPD_IS_E6; }
+
+function panelSupportsColor(c) {
+    c = +c || 0;
+    if (c === 0 || c === 2) return true;
+    if (c === 1) return EPD_HAS_RED;
+    if (c === 3) return EPD_HAS_YELLOW;
+    if (c === 4 || c === 5) return EPD_IS_E6;
+    return false;
+}
+
+function panelColorIndex(c) {
+    c = +c || 0;
+    if (panelSupportsColor(c)) return c;
+    if (c === 3) return EPD_HAS_RED ? 1 : 0;
+    return 0;
+}
+
+function applyPanelColorCapabilities() {
+    document.querySelectorAll('.color-btn').forEach(btn => {
+        const c = parseInt(btn.dataset.color || '0', 10);
+        btn.classList.toggle('unsupported', !panelSupportsColor(c));
+    });
+    const yellowRow = document.getElementById('img-yellow-row');
+    if (yellowRow) yellowRow.style.display = EPD_HAS_YELLOW ? '' : 'none';
+    if (!panelSupportsColor(color)) color = panelColorIndex(color);
 }
 
 function fgRgbFromCss(c) {
@@ -971,7 +1001,11 @@ async function init() {
         const d = await r.json();
         EPD_W = d.width  || 400;
         EPD_H = d.height || 300;
+        EPD_HAS_RED = d.has_red !== false;
+        EPD_HAS_YELLOW = !!d.has_yellow;
+        EPD_IS_E6 = (d.active_panel === 43 || d.panel === 43 || (EPD_W === 792 && EPD_H === 528 && EPD_HAS_YELLOW));
     } catch(e) {}
+    applyPanelColorCapabilities();
 
     SCALE = Math.max(1, Math.min(3, Math.floor(880 / EPD_W)));
 
@@ -1151,9 +1185,11 @@ function quantizeBwrFromImageData(id, w, h, opts) {
     const strength = Math.max(0, Math.min(2, opts.strength ?? 1));
     const contrast = Math.max(0.2, Math.min(3, opts.contrast ?? 1.2));
     const redSensitivity = Math.max(0, Math.min(1, opts.redSensitivity ?? 0.35));
+    const yellowSensitivity = Math.max(0, Math.min(1, opts.yellowSensitivity ?? 0.35));
     const invert = !!opts.invert;
     const gray = new Float32Array(w * h);
     const redScore = new Float32Array(w * h);
+    const yellowScore = new Float32Array(w * h);
     for (let i = 0; i < w * h; i++) {
         let r = id.data[i*4], g = id.data[i*4+1], b = id.data[i*4+2];
         if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
@@ -1163,20 +1199,35 @@ function quantizeBwrFromImageData(id, w, h, opts) {
         const warm = r - Math.max(g, b) * (0.72 + redSensitivity * 0.18);
         const saturation = r - Math.min(g, b);
         redScore[i] = warm + saturation * 0.35;
+        const yellowBase = Math.min(r, g) - b * (0.72 + yellowSensitivity * 0.18);
+        const yellowSat = Math.min(r, g) - Math.min(r, g, b);
+        yellowScore[i] = yellowBase + yellowSat * 0.30;
     }
 
     const blackMask = new Uint8Array(w * h);
     const redMask = new Uint8Array(w * h);
+    const yellowMask = new Uint8Array(w * h);
     const redGate = 80 - redSensitivity * 55;
     const redLightGate = 230 - redSensitivity * 80;
+    const yellowGate = 86 - yellowSensitivity * 58;
+    const yellowLightGate = 238 - yellowSensitivity * 72;
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const idx = y * w + x;
             const old = Math.max(0, Math.min(255, gray[idx]));
-            const isRed = redScore[idx] > redGate && old < redLightGate;
+            const isYellow = EPD_HAS_YELLOW &&
+                yellowScore[idx] > yellowGate &&
+                old < yellowLightGate &&
+                yellowScore[idx] >= redScore[idx] - 8;
+            if (isYellow) {
+                yellowMask[idx] = 1;
+                gray[idx] = 255;
+                continue;
+            }
+            const isRed = EPD_HAS_RED && redScore[idx] > redGate && old < redLightGate;
             if (isRed) {
                 redMask[idx] = 1;
-                gray[idx] = 255; // 红色区域不再参与黑色抖动，避免红黑混杂。
+                gray[idx] = 255;
                 continue;
             }
             const nv = old < threshold ? 0 : 255;
@@ -1191,7 +1242,10 @@ function quantizeBwrFromImageData(id, w, h, opts) {
             }
         }
     }
-    return { black:packPlane(blackMask, w, h), red:packPlane(redMask, w, h) };
+    const out = { black:packPlane(blackMask, w, h) };
+    if (EPD_HAS_RED) out.red = packPlane(redMask, w, h);
+    if (EPD_HAS_YELLOW) out.yellow = packPlane(yellowMask, w, h);
+    return out;
 }
 
 function getImageConvertOptions() {
@@ -1199,9 +1253,10 @@ function getImageConvertOptions() {
     const contrast = (+(document.getElementById('img-contrast')?.value || 120)) / 100;
     const strength = (+(document.getElementById('img-dither')?.value || 100)) / 100;
     const redSensitivity = (+(document.getElementById('img-red')?.value || 35)) / 100;
+    const yellowSensitivity = (+(document.getElementById('img-yellow')?.value || 35)) / 100;
     const fit = document.getElementById('img-fit')?.value || 'contain';
     const invert = !!document.getElementById('img-invert')?.checked;
-    return { threshold, contrast, strength, redSensitivity, fit, invert };
+    return { threshold, contrast, strength, redSensitivity, yellowSensitivity, fit, invert };
 }
 
 function saveImageConvertOptions() {
@@ -1210,6 +1265,7 @@ function saveImageConvertOptions() {
             threshold: document.getElementById('img-threshold')?.value || '128',
             contrast: document.getElementById('img-contrast')?.value || '120',
             red: document.getElementById('img-red')?.value || '35',
+            yellow: document.getElementById('img-yellow')?.value || '35',
             dither: document.getElementById('img-dither')?.value || '100',
             fit: document.getElementById('img-fit')?.value || 'contain',
             invert: !!document.getElementById('img-invert')?.checked
@@ -1223,6 +1279,7 @@ function loadImageConvertOptions() {
         if (opt.threshold != null) document.getElementById('img-threshold').value = opt.threshold;
         if (opt.contrast != null) document.getElementById('img-contrast').value = opt.contrast;
         if (opt.red != null) document.getElementById('img-red').value = opt.red;
+        if (opt.yellow != null) document.getElementById('img-yellow').value = opt.yellow;
         if (opt.dither != null) document.getElementById('img-dither').value = opt.dither;
         if (opt.fit != null) document.getElementById('img-fit').value = opt.fit;
         if (opt.invert != null) document.getElementById('img-invert').checked = !!opt.invert;
@@ -1268,7 +1325,7 @@ async function imageFileTo1bit(file, maxW, maxH) {
             cx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
             const id = cx.getImageData(0, 0, w, h);
             const planes = quantizeBwrFromImageData(id, w, h, opt);
-            resolve({ w, h, data: planes.black, red: planes.red, bwr: true });
+            resolve({ w, h, data: planes.black, red: planes.red || null, yellow: planes.yellow || null, bwr: !!(planes.red || planes.yellow) });
         };
         img.onerror = reject;
         img.src = url;
@@ -1277,9 +1334,9 @@ async function imageFileTo1bit(file, maxW, maxH) {
 
 function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
     if (!imgData) return;
-    const {w, h, data, red, _cacheKey} = imgData;
+    const {w, h, data, red, yellow, _cacheKey} = imgData;
     const fg = fgColor || '#000';
-    const key = (_cacheKey || (w + 'x' + h)) + '_' + fg + '_' + (red ? 'bwr' : 'bw');
+    const key = (_cacheKey || (w + 'x' + h)) + '_' + fg + '_' + (red ? 'r' : '') + (yellow ? 'y' : '') + 'w';
     let oc = BMP_CACHE[key];
     if (!oc) {
         const fgRgb = fgRgbFromCss(fg);
@@ -1295,8 +1352,10 @@ function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
                 const bitMask = 7 - (col & 7);
                 const on = (data[byteIdx] >> bitMask) & 1;
                 const isRed = red ? ((red[byteIdx] >> bitMask) & 1) : 0;
+                const isYellow = yellow ? ((yellow[byteIdx] >> bitMask) & 1) : 0;
                 const i = (row * w + col) * 4;
-                if (isRed) { id.data[i]=196; id.data[i+1]=36; id.data[i+2]=28; id.data[i+3]=255; }
+                if (isYellow && EPD_HAS_YELLOW) { id.data[i]=255; id.data[i+1]=232; id.data[i+2]=0; id.data[i+3]=255; }
+                else if (isRed && EPD_HAS_RED) { id.data[i]=196; id.data[i+1]=36; id.data[i+2]=28; id.data[i+3]=255; }
                 else if (on) { id.data[i]=fr; id.data[i+1]=fg2; id.data[i+2]=fb2; id.data[i+3]=255; }
                 else    { id.data[i]=255; id.data[i+1]=255; id.data[i+2]=255; id.data[i+3]=255; }
             }
@@ -1325,9 +1384,13 @@ function quantizeBoardSnapshotCanvas(c) {
             d[i] = p[0]; d[i + 1] = p[1]; d[i + 2] = p[2]; d[i + 3] = 255;
             continue;
         }
-        const redLike = r > 130 && r > g * 1.25 && r > b * 1.25;
+        const yellowLike = EPD_HAS_YELLOW && r > 150 && g > 120 && b < 130 &&
+                           r > b * 1.25 && g > b * 1.20;
+        const redLike = EPD_HAS_RED && r > 130 && r > g * 1.25 && r > b * 1.25;
         const gray = (r * 30 + g * 59 + b * 11) / 100;
-        if (redLike) {
+        if (yellowLike) {
+            d[i] = 255; d[i + 1] = 232; d[i + 2] = 0; d[i + 3] = 255;
+        } else if (redLike) {
             d[i] = 192; d[i + 1] = 57; d[i + 2] = 43; d[i + 3] = 255;
         } else if (gray < 190) {
             d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = 255;
@@ -1382,14 +1445,20 @@ async function loadImageData(name) {
         const stride = Math.ceil(w / 8);
         const planeLen = stride * h;
         let flags = 0, off = 4;
-        if (buf.length >= 8 + planeLen * 2 &&
-            buf[4] === 0x42 && buf[5] === 0x57 && (buf[6] & 1)) {
-            flags = buf[6];
-            off = 8;
+        if (buf.length >= 8 && buf[4] === 0x42 && buf[5] === 0x57) {
+            const hdrFlags = buf[6] & 0x03;
+            const planeCount = 1 + ((hdrFlags & 1) ? 1 : 0) + ((hdrFlags & 2) ? 1 : 0);
+            if (hdrFlags && buf.length >= 8 + planeLen * planeCount) {
+                flags = hdrFlags;
+                off = 8;
+            }
         }
+        if (buf.length < off + planeLen) return null;
         const data = buf.slice(off, off + planeLen);
-        const red = (flags & 1) ? buf.slice(off + planeLen, off + planeLen * 2) : null;
-        CANVAS_IMAGES[name] = {w, h, data, red, bwr:!!red, _cacheKey: name};
+        let planeOff = off + planeLen;
+        const red = (flags & 1) ? buf.slice(planeOff, planeOff += planeLen) : null;
+        const yellow = (flags & 2) ? buf.slice(planeOff, planeOff += planeLen) : null;
+        CANVAS_IMAGES[name] = {w, h, data, red, yellow, bwr:!!(red || yellow), _cacheKey: name};
         Object.keys(BMP_CACHE).filter(k=>k.startsWith(name+'_')||k===name).forEach(k=>delete BMP_CACHE[k]);
         return CANVAS_IMAGES[name];
     } catch(e) { return null; }
@@ -1522,13 +1591,17 @@ function encodeCanvasImageBody(imgData) {
     const stride = Math.ceil(imgData.w / 8);
     const planeLen = stride * imgData.h;
     const hasRed = !!imgData.red;
-    const body = new Uint8Array((hasRed ? 8 : 4) + planeLen * (hasRed ? 2 : 1));
+    const hasYellow = !!imgData.yellow;
+    const hasColor = hasRed || hasYellow;
+    const body = new Uint8Array((hasColor ? 8 : 4) + planeLen * (1 + (hasRed ? 1 : 0) + (hasYellow ? 1 : 0)));
     body[0] = imgData.w & 0xff; body[1] = (imgData.w >> 8) & 0xff;
     body[2] = imgData.h & 0xff; body[3] = (imgData.h >> 8) & 0xff;
-    if (hasRed) {
-        body[4] = 0x42; body[5] = 0x57; body[6] = 1; body[7] = 0;
+    if (hasColor) {
+        body[4] = 0x42; body[5] = 0x57; body[6] = (hasRed ? 1 : 0) | (hasYellow ? 2 : 0); body[7] = 0;
         body.set(imgData.data, 8);
-        body.set(imgData.red, 8 + planeLen);
+        let planeOff = 8 + planeLen;
+        if (hasRed) { body.set(imgData.red, planeOff); planeOff += planeLen; }
+        if (hasYellow) body.set(imgData.yellow, planeOff);
     } else {
         body.set(imgData.data, 4);
     }
@@ -1572,8 +1645,8 @@ async function deleteSelectedImage() {
 /* ═══════════════════════════════════════════════
    颜色工具
 ═══════════════════════════════════════════════ */
-function elCssColor(el) { return CSS_COLORS[el.color] || CSS_COLORS[0]; }
-function elFgRGB(el)    { return FG_COLORS[el.color]  || FG_COLORS[0];  }
+function elCssColor(el) { return CSS_COLORS[panelColorIndex(el.color)] || CSS_COLORS[0]; }
+function elFgRGB(el)    { return FG_COLORS[panelColorIndex(el.color)]  || FG_COLORS[0];  }
 
 /* ═══════════════════════════════════════════════
    渲染
@@ -1934,7 +2007,9 @@ function bindEvents() {
     });
     document.querySelectorAll('.color-btn').forEach(btn => {
         btn.onclick = () => {
-            color = parseInt(btn.dataset.color);
+            const nextColor = parseInt(btn.dataset.color);
+            if (!panelSupportsColor(nextColor)) return;
+            color = nextColor;
             document.querySelectorAll('.color-btn').forEach(b=>b.classList.remove('sel'));
             btn.classList.add('sel');
             if (selected>=0) { elements[selected].color=color; render(); snapshot(); }
@@ -2035,6 +2110,7 @@ function bindEvents() {
     bindImgRange('img-threshold', 'img-threshold-lbl', v => String(v));
     bindImgRange('img-contrast', 'img-contrast-lbl', v => (v / 100).toFixed(2) + '×');
     bindImgRange('img-red', 'img-red-lbl', v => (v / 100).toFixed(2));
+    bindImgRange('img-yellow', 'img-yellow-lbl', v => (v / 100).toFixed(2));
     bindImgRange('img-dither', 'img-dither-lbl', v => (v / 100).toFixed(2) + '×');
     const imgInvert = document.getElementById('img-invert');
     if (imgInvert) imgInvert.onchange = () => scheduleActiveImagePreview();
@@ -2443,6 +2519,7 @@ function updateProps() {
     const el = elements[selected];
 
     // 颜色
+    if (!panelSupportsColor(el.color)) el.color = panelColorIndex(el.color);
     document.querySelectorAll('.color-btn').forEach(b=>b.classList.remove('sel'));
     const cb=document.querySelector(`.color-btn[data-color="${el.color}"]`);
     if (cb) cb.classList.add('sel');

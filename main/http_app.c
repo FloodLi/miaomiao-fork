@@ -1360,11 +1360,12 @@ static esp_err_t panel_config_get_handler(httpd_req_t *req)
     char json[384];
     snprintf(json, sizeof(json),
              "{\"panel\":%d,\"active_panel\":%d,\"pending_panel\":%d,"
-             "\"width\":%d,\"height\":%d,\"has_red\":%s,"
+             "\"width\":%d,\"height\":%d,\"has_red\":%s,\"has_yellow\":%s,"
              "\"busy_idle\":%d,\"pending_busy_idle\":%d,"
              "\"reboot_required\":%s}",
              (int)pending_panel, (int)epd_get_panel(), (int)pending_panel,
               epd_width(), epd_height(), epd_has_red() ? "true" : "false",
+              epd_has_yellow() ? "true" : "false",
                epd_busy_idle_level(), pending_busy,
                reboot_required ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
@@ -1417,10 +1418,13 @@ static esp_err_t panel_config_post_handler(httpd_req_t *req)
     char json[384];
     snprintf(json, sizeof(json),
              "{\"ok\":true,\"active_panel\":%d,\"pending_panel\":%d,"
-             "\"width\":%d,\"height\":%d,\"busy_idle\":%d,\"pending_busy_idle\":%d,"
+             "\"width\":%d,\"height\":%d,\"has_red\":%s,\"has_yellow\":%s,"
+             "\"busy_idle\":%d,\"pending_busy_idle\":%d,"
              "\"reboot_required\":%s,\"note\":\"panel config saved; reboot to apply\"}",
              (int)epd_get_panel(), (int)pending_panel,
-              epd_width(), epd_height(), epd_busy_idle_level(), pending_busy,
+              epd_width(), epd_height(), epd_has_red() ? "true" : "false",
+              epd_has_yellow() ? "true" : "false",
+              epd_busy_idle_level(), pending_busy,
               reboot_required ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);

@@ -57,6 +57,11 @@ static bool fb_e6_color_planes_enabled(void)
     return epd_get_panel() == EPD_PANEL_E6_37_6C;
 }
 
+static bool fb_yellow_plane_enabled(void)
+{
+    return epd_has_yellow();
+}
+
 static bool fb_has_extra_color_planes(const fb_t *fb)
 {
     return fb && (fb->yellow || fb->blue || fb->green);
@@ -76,17 +81,24 @@ static void fb_free_extra_color_planes(fb_t *fb)
 
 static bool fb_alloc_extra_color_planes(fb_t *fb)
 {
-    if (!fb_e6_color_planes_enabled())
+    const bool need_yellow = fb_yellow_plane_enabled();
+    const bool need_blue_green = fb_e6_color_planes_enabled();
+    if (!need_yellow && !need_blue_green)
         return true;
 
     size_t size = (size_t)fb->plane_bytes;
-    fb->yellow = fb_alloc_plane_storage(size, "fb yellow plane");
-    fb->blue = fb_alloc_plane_storage(size, "fb blue plane");
-    fb->green = fb_alloc_plane_storage(size, "fb green plane");
-    if (fb->yellow && fb->blue && fb->green)
+    if (need_yellow)
+        fb->yellow = fb_alloc_plane_storage(size, "fb yellow plane");
+    if (need_blue_green) {
+        fb->blue = fb_alloc_plane_storage(size, "fb blue plane");
+        fb->green = fb_alloc_plane_storage(size, "fb green plane");
+    }
+    if ((!need_yellow || fb->yellow) &&
+        (!need_blue_green || (fb->blue && fb->green)))
         return true;
 
-    ESP_LOGE(TAG, "E6 color plane allocation failed (3x%u)", (unsigned)size);
+    ESP_LOGE(TAG, "color plane allocation failed (yellow=%d blue_green=%d plane=%u)",
+             need_yellow ? 1 : 0, need_blue_green ? 1 : 0, (unsigned)size);
     fb_free_extra_color_planes(fb);
     return false;
 }

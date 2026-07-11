@@ -141,7 +141,7 @@ static fb_color_t msg_color_from_config(uint8_t color)
     case 1:
         return COLOR_RED;
     case 2:
-        return epd_get_panel() == EPD_PANEL_E6_37_6C ? COLOR_YELLOW : COLOR_RED;
+        return epd_has_yellow() ? COLOR_YELLOW : COLOR_RED;
     case 3:
         return epd_get_panel() == EPD_PANEL_E6_37_6C ? COLOR_BLUE : COLOR_BLACK;
     case 4:
