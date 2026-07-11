@@ -281,8 +281,8 @@ static fb_color_t json_color(int v)
     case 1:  return COLOR_RED;
     case 2:  return COLOR_WHITE;
     case 3:  return is_e6 ? COLOR_YELLOW : COLOR_RED;
-    case 4:  return is_e6 ? COLOR_BLUE : COLOR_BLACK;
-    case 5:  return is_e6 ? COLOR_GREEN : COLOR_BLACK;
+    case 4:  return is_e6 ? COLOR_GREEN : COLOR_BLACK;
+    case 5:  return is_e6 ? COLOR_BLUE : COLOR_BLACK;
     default: return COLOR_BLACK;
     }
 }

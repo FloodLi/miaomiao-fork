@@ -423,6 +423,13 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
                   <label>阈值 <span id="thrVal">96</span></label>
                   <input type="range" id="thr" min="40" max="210" value="96">
                 </div>
+                <div class="ctrl-line" id="e6DitherCtrl" style="display:none">
+                  <label>E6 抖动算法</label>
+                  <select id="e6DitherMode">
+                    <option value="six" selected>六色 FS</option>
+                    <option value="tri">三色抖动</option>
+                  </select>
+                </div>
                 <div class="ctrl-line">
                   <label>抖动强度 <span id="ditherVal">1.00×</span></label>
                   <input type="range" id="dither" min="0" max="160" value="100">
@@ -588,6 +595,7 @@ function previewOpts(){
     redSensitivity: (+(document.getElementById('redSens')?.value || 35)) / 100,
     yellowSensitivity: (+(document.getElementById('yellowSens')?.value || 35)) / 100,
     dither: (+(document.getElementById('dither')?.value || 100)) / 100,
+    e6DitherMode: document.getElementById('e6DitherMode')?.value || 'six',
     invert: !!document.getElementById('invertImg')?.checked
   };
 }
@@ -634,6 +642,7 @@ function saveUploadPreviewOptions(){
       red:document.getElementById('redSens')?.value || '35',
       yellow:document.getElementById('yellowSens')?.value || '35',
       dither:document.getElementById('dither')?.value || '100',
+      e6DitherMode:document.getElementById('e6DitherMode')?.value || 'six',
       fit:document.getElementById('fitMode')?.value || 'cover',
       invert:!!document.getElementById('invertImg')?.checked,
       flipX:!!document.getElementById('flipX')?.checked,
@@ -656,6 +665,7 @@ function loadUploadPreviewOptions(){
     if(opt.red!=null) document.getElementById('redSens').value=opt.red;
     if(opt.yellow!=null) document.getElementById('yellowSens').value=opt.yellow;
     if(opt.dither!=null) document.getElementById('dither').value=opt.dither;
+    if(opt.e6DitherMode!=null) document.getElementById('e6DitherMode').value=opt.e6DitherMode;
     if(opt.fit!=null) document.getElementById('fitMode').value=opt.fit;
     if(opt.invert!=null) document.getElementById('invertImg').checked=!!opt.invert;
     if(opt.flipX!=null) document.getElementById('flipX').checked=!!opt.flipX;
@@ -688,6 +698,8 @@ function updateColorControls(){
   });
   const yel=document.getElementById('yellowSensCtrl');
   if(yel) yel.classList.toggle('color-unsupported',yellowOff);
+  const e6=document.getElementById('e6DitherCtrl');
+  if(e6) e6.style.display=isE6PreviewPanel()?'':'none';
 }
 
 function updatePreviewStageSize(){
@@ -816,7 +828,7 @@ function ditherPreview(canvas,opt){
   const im=ctx.getImageData(0,0,canvas.width,canvas.height);
   const d=im.data,w=canvas.width,h=canvas.height;
   applySharpen(d,w,h,opt.sharpness);
-  if(isE6PreviewPanel()){
+  if(isE6PreviewPanel() && opt.e6DitherMode!=='tri'){
     ditherPreviewE6SixColor(ctx,im,opt);
     return;
   }
@@ -862,12 +874,13 @@ function ditherPreview(canvas,opt){
   const redLightGate=230-redSensitivity*80;
   const yellowGate=86-yellowSensitivity*58;
   const yellowLightGate=238-yellowSensitivity*72;
+  const useYellow=epdPanelHasYellow && !(isE6PreviewPanel() && opt.e6DitherMode==='tri');
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
       const idx=y*w+x;
       const p=idx*4;
       const old=Math.max(0,Math.min(255,gray[idx]));
-      const isYellow=epdPanelHasYellow&&yellowScore[idx]>yellowGate&&old<yellowLightGate&&yellowScore[idx]>=redScore[idx]-8;
+      const isYellow=useYellow&&yellowScore[idx]>yellowGate&&old<yellowLightGate&&yellowScore[idx]>=redScore[idx]-8;
       if(isYellow){
         d[p]=210;d[p+1]=165;d[p+2]=24;d[p+3]=255;
         gray[idx]=255;
@@ -1074,7 +1087,7 @@ function initUploadPreview(){
       renderPreview();
     });
   });
-  ['flipX','flipY','fitMode','thr','brightness','contrast','gamma','sharp','redMode','redSens','yellowSens','dither','invertImg'].forEach(id=>{
+  ['flipX','flipY','fitMode','thr','brightness','contrast','gamma','sharp','redMode','redSens','yellowSens','dither','e6DitherMode','invertImg'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('input',()=>{markPresetCustom();saveUploadPreviewOptions();renderPreview();});
     if(el) el.addEventListener('change',()=>{markPresetCustom();saveUploadPreviewOptions();renderPreview();});
