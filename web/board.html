@@ -95,6 +95,9 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
 .color-btn.black{background:#222;color:#fff}
 .color-btn.red{background:#c0392b;color:#fff}
 .color-btn.white{background:#fff;color:#555}
+.color-btn.yellow{background:#ffe800;color:#333}
+.color-btn.blue{background:#1450b9;color:#fff}
+.color-btn.green{background:#28965a;color:#fff}
 .color-btn.sel{border-color:var(--ac);transform:scale(1.06);box-shadow:0 2px 8px var(--ag)}
 
 /* 图标网格 */
@@ -235,6 +238,9 @@ body .epd-credit a:hover{text-decoration:underline}
       <div class="color-btn black sel" data-color="0">黑</div>
       <div class="color-btn red"       data-color="1">红</div>
       <div class="color-btn white"     data-color="2">白</div>
+      <div class="color-btn yellow"    data-color="3">黄</div>
+      <div class="color-btn blue"      data-color="4">蓝</div>
+      <div class="color-btn green"     data-color="5">绿</div>
     </div>
   </div>
 
@@ -751,8 +757,37 @@ function toggleGrid() {
     renderOverlaySelection();
 }
 
-const FG_COLORS = [[30,30,30],[192,57,43],[255,255,255]];
-const CSS_COLORS = ['#1e1e1e','#c0392b','#ffffff'];
+const FG_COLORS = [[30,30,30],[196,36,28],[255,255,255],[255,232,0],[20,80,185],[40,150,90]];
+const CSS_COLORS = ['#1e1e1e','#c4241c','#ffffff','#ffe800','#1450b9','#28965a'];
+const E6_NEAR_PALETTE = [[2,2,2],[190,200,200],[205,202,0],[135,19,0],[5,64,158],[39,102,60]];
+const E6_EXACT_PALETTE = [[0,0,0],[255,255,255],[255,232,0],[196,36,28],[20,80,185],[40,150,90]];
+
+function isE6Panel() {
+    return EPD_W === 792 && EPD_H === 528;
+}
+
+function fgRgbFromCss(c) {
+    c = (c || '').toLowerCase();
+    const idx = CSS_COLORS.indexOf(c);
+    if (idx >= 0) return FG_COLORS[idx];
+    if (c === '#fff' || c === '#ffffff' || c === 'white') return [255,255,255];
+    if (c === '#c0392b' || c === '#c4241c' || c === 'red') return [196,36,28];
+    return FG_COLORS[0];
+}
+
+function nearestE6Color(r, g, b) {
+    let best = 0, bestDist = Infinity;
+    for (let i = 0; i < E6_NEAR_PALETTE.length; i++) {
+        const p = E6_NEAR_PALETTE[i];
+        const dr = r - p[0], dg = g - p[1], db = b - p[2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = i;
+        }
+    }
+    return best;
+}
 
 function epdAuthHeaders(){
   try{
@@ -1247,9 +1282,8 @@ function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
     const key = (_cacheKey || (w + 'x' + h)) + '_' + fg + '_' + (red ? 'bwr' : 'bw');
     let oc = BMP_CACHE[key];
     if (!oc) {
-        let fr=0,fg2=0,fb2=0;
-        if (!red && (fg==='#c0392b'||fg==='red')){fr=192;fg2=57;fb2=43;}
-        else if (!red && (fg==='#fff'||fg==='white')){fr=255;fg2=255;fb2=255;}
+        const fgRgb = fgRgbFromCss(fg);
+        let fr=fgRgb[0],fg2=fgRgb[1],fb2=fgRgb[2];
         const stride = Math.ceil(w / 8);
         oc = document.createElement('canvas');
         oc.width = w; oc.height = h;
@@ -1262,7 +1296,7 @@ function drawBmpRaw(ctx2d, imgData, x, y, dispW, dispH, fgColor) {
                 const on = (data[byteIdx] >> bitMask) & 1;
                 const isRed = red ? ((red[byteIdx] >> bitMask) & 1) : 0;
                 const i = (row * w + col) * 4;
-                if (isRed) { id.data[i]=192; id.data[i+1]=57; id.data[i+2]=43; id.data[i+3]=255; }
+                if (isRed) { id.data[i]=196; id.data[i+1]=36; id.data[i+2]=28; id.data[i+3]=255; }
                 else if (on) { id.data[i]=fr; id.data[i+1]=fg2; id.data[i+2]=fb2; id.data[i+3]=255; }
                 else    { id.data[i]=255; id.data[i+1]=255; id.data[i+2]=255; id.data[i+3]=255; }
             }
@@ -1286,6 +1320,11 @@ function quantizeBoardSnapshotCanvas(c) {
             continue;
         }
         const r = d[i], g = d[i + 1], b = d[i + 2];
+        if (isE6Panel()) {
+            const p = E6_EXACT_PALETTE[nearestE6Color(r, g, b)];
+            d[i] = p[0]; d[i + 1] = p[1]; d[i + 2] = p[2]; d[i + 3] = 255;
+            continue;
+        }
         const redLike = r > 130 && r > g * 1.25 && r > b * 1.25;
         const gray = (r * 30 + g * 59 + b * 11) / 100;
         if (redLike) {
