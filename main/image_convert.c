@@ -1711,6 +1711,35 @@ esp_err_t image_convert_png_to_epd_raw(const uint8_t *png, size_t png_len,
     return png_decode_to_epd(rgba, pw, ph, out_path);
 }
 
+esp_err_t image_convert_to_epd_fb(const uint8_t *data, size_t len, fb_t **out_fb)
+{
+    if (!data || len < 4 || !out_fb)
+        return ESP_ERR_INVALID_ARG;
+    *out_fb = NULL;
+
+    if (!image_panel_is_e6_6c() ||
+        data[0] != 0x89 || data[1] != 0x50 ||
+        data[2] != 0x4E || data[3] != 0x47)
+        return ESP_ERR_NOT_SUPPORTED;
+
+    unsigned char *rgba = NULL;
+    unsigned pw = 0, ph = 0;
+    int64_t t0 = esp_timer_get_time();
+    unsigned perr = lodepng_decode32(&rgba, &pw, &ph, data, len);
+    if (perr || !rgba) {
+        ESP_LOGE(TAG, "PNG framebuffer decode error %u: %s",
+                 perr, lodepng_error_text(perr));
+        free(rgba);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "PNG decoded for framebuffer in %lld ms: %ux%u",
+             (long long)((esp_timer_get_time() - t0) / 1000LL), pw, ph);
+
+    esp_err_t err = png_try_prequantized_framebuffer(rgba, pw, ph, out_fb);
+    free(rgba);
+    return err;
+}
+
 esp_err_t image_convert_file_to_epd_fb(const char *input_path, fb_t **out_fb)
 {
     if (!input_path || !out_fb)

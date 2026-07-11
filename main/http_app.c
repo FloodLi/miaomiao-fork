@@ -1288,21 +1288,39 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
     unsigned epoch = display_policy_begin_manual_display();
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
-    esp_err_t cerr = image_convert_to_epd_raw(img, (size_t)total, raw_path);
+    fb_t *fast_fb = NULL;
+    esp_err_t cerr = image_convert_to_epd_fb(img, (size_t)total, &fast_fb);
+    if (cerr == ESP_OK) {
+        ESP_LOGI(TAG, "Upload fast framebuffer convert selected");
+    } else {
+        if (cerr != ESP_ERR_NOT_SUPPORTED)
+            ESP_LOGI(TAG, "Upload fast framebuffer convert unavailable: %s",
+                     esp_err_to_name(cerr));
+        cerr = image_convert_to_epd_raw(img, (size_t)total, raw_path);
+    }
     free(img);
     esp_err_t derr = ESP_OK;
     if (cerr == ESP_OK && display_policy_epoch_is_current(epoch)) {
         epd_request_full_refresh_next();
-        fb_t *fb = fb_create();
-        if (!fb) {
-            derr = ESP_ERR_NO_MEM;
+        if (fast_fb) {
+            derr = epd_display_fb_free(fast_fb);
+            fast_fb = NULL;
         } else {
-            derr = fb_import(fb, raw_path);
-            if (derr == ESP_OK)
-                derr = epd_display_fb_free(fb);
-            else
-                fb_destroy(fb);
+            fb_t *fb = fb_create();
+            if (!fb) {
+                derr = ESP_ERR_NO_MEM;
+            } else {
+                derr = fb_import(fb, raw_path);
+                if (derr == ESP_OK)
+                    derr = epd_display_fb_free(fb);
+                else
+                    fb_destroy(fb);
+            }
         }
+    }
+    if (fast_fb) {
+        fb_destroy(fast_fb);
+        fast_fb = NULL;
     }
     fb_raw_file_unlock();
 
