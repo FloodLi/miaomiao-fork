@@ -523,6 +523,15 @@ typedef struct {
     bool valid;
 } pq_cache_entry_t;
 
+typedef struct {
+    unsigned black;
+    unsigned red;
+    unsigned yellow;
+    unsigned blue;
+    unsigned green;
+    unsigned white;
+} pq_counts_t;
+
 static void rgba_on_white(uint8_t *r, uint8_t *g, uint8_t *b, uint8_t a)
 {
     if (a >= 255)
@@ -636,6 +645,85 @@ static bool bw_or_color_quantized_pixel_cached(uint8_t r, uint8_t g,
     return ok;
 }
 
+static esp_err_t png_pack_prequantized_planes(const unsigned char *rgba,
+                                              int EW, int EH, int RB,
+                                              bool has_red, bool has_yellow,
+                                              bool has_blue, bool has_green,
+                                              uint8_t *black, uint8_t *red,
+                                              uint8_t *yellow, uint8_t *blue,
+                                              uint8_t *green,
+                                              pq_counts_t *counts)
+{
+    if (!rgba || !black || (has_red && !red) || (has_yellow && !yellow) ||
+        (has_blue && !blue) || (has_green && !green) || !counts)
+        return ESP_ERR_INVALID_ARG;
+
+    memset(counts, 0, sizeof(*counts));
+    pq_cache_entry_t cache[128] = { 0 };
+
+    for (int y = 0; y < EH; y++) {
+        const uint8_t *src = rgba + (size_t)y * (size_t)EW * 4u;
+        size_t row = (size_t)y * (size_t)RB;
+        for (int bx = 0; bx < RB; bx++) {
+            uint8_t black_byte = 0xFF;
+            uint8_t red_byte = 0x00;
+            uint8_t yellow_byte = 0x00;
+            uint8_t blue_byte = 0x00;
+            uint8_t green_byte = 0x00;
+
+            for (int bi = 0; bi < 8; bi++, src += 4) {
+                uint8_t bit = (uint8_t)(0x80u >> bi);
+                prequantized_color_t cls = PQ_WHITE;
+                if (!bw_or_color_quantized_pixel_cached(src[0], src[1], src[2], src[3],
+                                                        has_red, has_yellow,
+                                                        has_blue, has_green,
+                                                        cache, &cls)) {
+                    return ESP_ERR_NOT_SUPPORTED;
+                }
+                switch (cls) {
+                case PQ_WHITE:
+                    counts->white++;
+                    break;
+                case PQ_BLACK:
+                    black_byte &= (uint8_t)~bit;
+                    counts->black++;
+                    break;
+                case PQ_RED:
+                    red_byte |= bit;
+                    counts->red++;
+                    break;
+                case PQ_YELLOW:
+                    yellow_byte |= bit;
+                    counts->yellow++;
+                    break;
+                case PQ_BLUE:
+                    blue_byte |= bit;
+                    counts->blue++;
+                    break;
+                case PQ_GREEN:
+                    green_byte |= bit;
+                    counts->green++;
+                    break;
+                case PQ_OTHER:
+                default:
+                    return ESP_ERR_NOT_SUPPORTED;
+                }
+            }
+            size_t bp = row + (size_t)bx;
+            black[bp] = black_byte;
+            if (red)
+                red[bp] = red_byte;
+            if (yellow)
+                yellow[bp] = yellow_byte;
+            if (blue)
+                blue[bp] = blue_byte;
+            if (green)
+                green[bp] = green_byte;
+        }
+    }
+    return ESP_OK;
+}
+
 static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
                                                   unsigned pw, unsigned ph,
                                                   const char *out_path)
@@ -668,83 +756,19 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
         return ESP_ERR_NO_MEM;
     }
 
-    unsigned black_count = 0;
-    unsigned red_count = 0;
-    unsigned yellow_count = 0;
-    unsigned blue_count = 0;
-    unsigned green_count = 0;
-    unsigned white_count = 0;
-    pq_cache_entry_t cache[128] = { 0 };
-
-    for (int y = 0; y < EH; y++) {
-        const uint8_t *src = rgba + (size_t)y * (size_t)EW * 4u;
-        size_t row = (size_t)y * (size_t)RB;
-        for (int bx = 0; bx < RB; bx++) {
-            uint8_t black_byte = 0xFF;
-            uint8_t red_byte = 0x00;
-            uint8_t yellow_byte = 0x00;
-            uint8_t blue_byte = 0x00;
-            uint8_t green_byte = 0x00;
-
-            for (int bi = 0; bi < 8; bi++, src += 4) {
-                uint8_t bit = (uint8_t)(0x80u >> bi);
-                prequantized_color_t cls = PQ_WHITE;
-                if (!bw_or_color_quantized_pixel_cached(src[0], src[1], src[2], src[3],
-                                                        has_red, has_yellow,
-                                                        has_blue, has_green,
-                                                        cache, &cls)) {
-                    free(black);
-                    free(red);
-                    free(yellow);
-                    free(blue);
-                    free(green);
-                    return ESP_ERR_NOT_SUPPORTED;
-                }
-                switch (cls) {
-                case PQ_WHITE:
-                    white_count++;
-                    break;
-                case PQ_BLACK:
-                    black_byte &= (uint8_t)~bit;
-                    black_count++;
-                    break;
-                case PQ_RED:
-                    red_byte |= bit;
-                    red_count++;
-                    break;
-                case PQ_YELLOW:
-                    yellow_byte |= bit;
-                    yellow_count++;
-                    break;
-                case PQ_BLUE:
-                    blue_byte |= bit;
-                    blue_count++;
-                    break;
-                case PQ_GREEN:
-                    green_byte |= bit;
-                    green_count++;
-                    break;
-                case PQ_OTHER:
-                default:
-                    free(black);
-                    free(red);
-                    free(yellow);
-                    free(blue);
-                    free(green);
-                    return ESP_ERR_NOT_SUPPORTED;
-                }
-            }
-            size_t bp = row + (size_t)bx;
-            black[bp] = black_byte;
-            if (red)
-                red[bp] = red_byte;
-            if (yellow)
-                yellow[bp] = yellow_byte;
-            if (blue)
-                blue[bp] = blue_byte;
-            if (green)
-                green[bp] = green_byte;
-        }
+    pq_counts_t counts;
+    esp_err_t pack_err = png_pack_prequantized_planes(rgba, EW, EH, RB,
+                                                      has_red, has_yellow,
+                                                      has_blue, has_green,
+                                                      black, red, yellow,
+                                                      blue, green, &counts);
+    if (pack_err != ESP_OK) {
+        free(black);
+        free(red);
+        free(yellow);
+        free(blue);
+        free(green);
+        return pack_err;
     }
     int64_t t_pack = esp_timer_get_time();
     ESP_LOGI(TAG, "PNG prequantized pack done in %lld ms",
@@ -764,13 +788,54 @@ static esp_err_t png_try_prequantized_passthrough(const unsigned char *rgba,
 
     ESP_LOGI(TAG,
              "PNG prequantized passthrough: %ux%u -> %s (%u bytes/plane, white=%u black=%u red=%u yellow=%u blue=%u green=%u)",
-             pw, ph, out_path, (unsigned)EC, white_count, black_count,
-             red_count, yellow_count, blue_count, green_count);
+             pw, ph, out_path, (unsigned)EC, counts.white, counts.black,
+             counts.red, counts.yellow, counts.blue, counts.green);
     free(black);
     free(red);
     free(yellow);
     free(blue);
     free(green);
+    return ESP_OK;
+}
+
+static esp_err_t png_try_prequantized_framebuffer(const unsigned char *rgba,
+                                                  unsigned pw, unsigned ph,
+                                                  fb_t **out_fb)
+{
+    const int EW = epd_width();
+    const int EH = epd_height();
+    const int RB = EW / 8;
+
+    if (!rgba || !out_fb || !image_panel_is_e6_6c() ||
+        pw != (unsigned)EW || ph != (unsigned)EH)
+        return ESP_ERR_NOT_SUPPORTED;
+
+    int64_t t0 = esp_timer_get_time();
+    fb_t *fb = fb_create();
+    if (!fb)
+        return ESP_ERR_NO_MEM;
+    if (!fb->red || !fb->yellow || !fb->blue || !fb->green) {
+        fb_destroy(fb);
+        return ESP_ERR_NO_MEM;
+    }
+
+    pq_counts_t counts;
+    esp_err_t err = png_pack_prequantized_planes(rgba, EW, EH, RB,
+                                                 true, true, true, true,
+                                                 fb->black, fb->red,
+                                                 fb->yellow, fb->blue,
+                                                 fb->green, &counts);
+    if (err != ESP_OK) {
+        fb_destroy(fb);
+        return err;
+    }
+
+    ESP_LOGI(TAG,
+             "PNG prequantized framebuffer pack done in %lld ms (%ux%u, white=%u black=%u red=%u yellow=%u blue=%u green=%u)",
+             (long long)((esp_timer_get_time() - t0) / 1000LL),
+             pw, ph, counts.white, counts.black, counts.red, counts.yellow,
+             counts.blue, counts.green);
+    *out_fb = fb;
     return ESP_OK;
 }
 
@@ -1644,6 +1709,70 @@ esp_err_t image_convert_png_to_epd_raw(const uint8_t *png, size_t png_len,
              (unsigned long)esp_get_free_heap_size());
 
     return png_decode_to_epd(rgba, pw, ph, out_path);
+}
+
+esp_err_t image_convert_file_to_epd_fb(const char *input_path, fb_t **out_fb)
+{
+    if (!input_path || !out_fb)
+        return ESP_ERR_INVALID_ARG;
+    *out_fb = NULL;
+
+    if (!image_panel_is_e6_6c())
+        return ESP_ERR_NOT_SUPPORTED;
+
+    uint8_t magic[4] = {0};
+    FILE *mf = fopen(input_path, "rb");
+    if (!mf) {
+        ESP_LOGE(TAG, "open failed: %s", input_path);
+        return ESP_FAIL;
+    }
+    size_t mr = fread(magic, 1, sizeof(magic), mf);
+    fclose(mf);
+    if (mr < 4 || magic[0] != 0x89 || magic[1] != 0x50 ||
+        magic[2] != 0x4E || magic[3] != 0x47)
+        return ESP_ERR_NOT_SUPPORTED;
+
+    struct stat st;
+    if (stat(input_path, &st) != 0 || st.st_size <= 0)
+        return ESP_FAIL;
+    if (st.st_size > PNG_MAX_FILE_BYTES) {
+        ESP_LOGE(TAG, "PNG too large for framebuffer fast path (%ld bytes, max %u bytes)",
+                 (long)st.st_size, (unsigned)PNG_MAX_FILE_BYTES);
+        return ESP_ERR_NO_MEM;
+    }
+
+    uint8_t *buf = (uint8_t *)img_alloc((size_t)st.st_size, "png fb file buffer");
+    if (!buf)
+        return ESP_ERR_NO_MEM;
+    FILE *pf = fopen(input_path, "rb");
+    if (!pf) {
+        free(buf);
+        return ESP_FAIL;
+    }
+    size_t got = fread(buf, 1, (size_t)st.st_size, pf);
+    fclose(pf);
+    if (got != (size_t)st.st_size) {
+        free(buf);
+        return ESP_FAIL;
+    }
+
+    unsigned char *rgba = NULL;
+    unsigned pw = 0, ph = 0;
+    int64_t t0 = esp_timer_get_time();
+    unsigned perr = lodepng_decode32(&rgba, &pw, &ph, buf, got);
+    free(buf);
+    if (perr || !rgba) {
+        ESP_LOGE(TAG, "PNG framebuffer decode error %u: %s",
+                 perr, lodepng_error_text(perr));
+        free(rgba);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "PNG decoded for framebuffer in %lld ms: %ux%u",
+             (long long)((esp_timer_get_time() - t0) / 1000LL), pw, ph);
+
+    esp_err_t err = png_try_prequantized_framebuffer(rgba, pw, ph, out_fb);
+    free(rgba);
+    return err;
 }
 
 /* ── BMP conversion (stretch-to-fill, red-first F-S) ──────────────── */

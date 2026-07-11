@@ -193,6 +193,7 @@ static void gallery_show_task(void *arg)
     esp_err_t perr = ESP_OK;
     esp_err_t derr = ESP_OK;
     bool skipped = false;
+    fb_t *fast_fb = NULL;
 
     ESP_LOGI(TAG, "Gallery show task start: '%s', bytes=%d, show_epoch=%u, display_epoch=%u, upload_epoch=%u",
              job->name, job->size, job->show_epoch, job->display_epoch, job->upload_epoch);
@@ -210,7 +211,15 @@ static void gallery_show_task(void *arg)
 
     if (!skipped) {
         ESP_LOGI(TAG, "Gallery show convert begin: %s", job->path);
-        cerr = image_convert_file_to_epd_raw(job->path, raw_path);
+        cerr = image_convert_file_to_epd_fb(job->path, &fast_fb);
+        if (cerr == ESP_OK) {
+            ESP_LOGI(TAG, "Gallery show fast framebuffer convert selected");
+        } else {
+            if (cerr != ESP_ERR_NOT_SUPPORTED)
+                ESP_LOGI(TAG, "Gallery show fast framebuffer convert unavailable: %s",
+                         esp_err_to_name(cerr));
+            cerr = image_convert_file_to_epd_raw(job->path, raw_path);
+        }
         int64_t t_convert = esp_timer_get_time();
         if (cerr == ESP_OK) {
             ESP_LOGI(TAG, "Gallery show convert done in %lld ms",
@@ -248,8 +257,14 @@ static void gallery_show_task(void *arg)
                      job->name);
         } else {
             int64_t t_display0 = esp_timer_get_time();
-            ESP_LOGI(TAG, "Gallery show display begin from raw file");
-            derr = epd_display_from_file(raw_path);
+            ESP_LOGI(TAG, "Gallery show display begin from %s",
+                     fast_fb ? "fast framebuffer" : "raw file");
+            if (fast_fb) {
+                derr = epd_display_fb_free(fast_fb);
+                fast_fb = NULL;
+            } else {
+                derr = epd_display_from_file(raw_path);
+            }
             int64_t t_display1 = esp_timer_get_time();
             if (derr == ESP_OK) {
                 ESP_LOGI(TAG, "Gallery show display done in %lld ms, total %lld ms",
@@ -262,6 +277,10 @@ static void gallery_show_task(void *arg)
         }
     }
 
+    if (fast_fb) {
+        fb_destroy(fast_fb);
+        fast_fb = NULL;
+    }
     fb_raw_file_unlock();
 
     if (cerr != ESP_OK || perr != ESP_OK || derr != ESP_OK) {
