@@ -1,0 +1,61 @@
+# Build output
+build*/
+sdkconfig.old
+
+# Local ESP-IDF tools / Python environments
+.idf-tools/
+.venv-idf/
+
+# ESP-IDF managed components (auto-downloaded)
+managed_components/
+
+# IDE / Editor
+.vscode/*
+!.vscode/settings.json
+.idea/
+.cursor/
+project.private.config.json
+*.swp
+*.swo
+*~
+
+# Separate projects kept next to this firmware checkout
+/shuimoping/
+/refdoc/
+/.tmp_openepaperlink/
+/.agents/
+/.codex/
+/release/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Temporary / Debug
+*.log
+.tmp/
+
+# Generated assets / scratch outputs (logo previews, cutouts, PPT material,
+# bundled python deps, etc.) - not part of the firmware source.
+output/
+outputs/
+.playwright-cli/
+$dst/
+
+# Keep tools/fonts/ and spiffs_image/ tracked so this verified baseline can
+# rebuild offline without refetching font assets.
+
+# Local reference clones (not part of firmware)
+otto-robot/
+E-Paper_ESP32_Driver_Board_Code/
+
+# Local original media/reference files. Public README uses docs/images/.
+复刻所需物料图/
+水墨屏内部图/
+水墨屏原理图/
+水墨屏实物展示/
+网页效果展示图片/

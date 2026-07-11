@@ -1,0 +1,13 @@
+SIL Open Font License 1.1
+
+The generated firmware bitmap fonts are derived from open fonts.
+Official license text and sources:
+
+- https://github.com/lxgw/975maru
+- https://github.com/notofonts/noto-fonts/blob/main/LICENSE
+- https://openfontlicense.org/
+
+If the build host already has these open fonts installed, this script may copy
+those local font files into the configured cache directory to avoid unreliable
+large downloads. Do not replace them with proprietary OS-bundled fonts for public
+firmware releases.
