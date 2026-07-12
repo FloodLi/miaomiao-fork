@@ -433,9 +433,9 @@ void epd_load_panel_from_nvs(void)
         ESP_LOGW(TAG, "JD79665 reference flow uses BUSY idle-high; migrating busy_idle -> 1");
         (void)epd_set_busy_idle(1);
     }
-    if (s_panel == EPD_PANEL_42_BWR && busy_idle_effective() == 0) {
-        ESP_LOGW(TAG, "4.2 SSD1619 module reports BUSY idle-high here; migrating busy_idle -> 1");
-        (void)epd_set_busy_idle(1);
+    if (s_panel == EPD_PANEL_42_BWR && busy_idle_effective() == 1) {
+        ESP_LOGW(TAG, "4.2 SSD1619 init needs BUSY idle-low on this board; migrating busy_idle -> 0");
+        (void)epd_set_busy_idle(0);
     }
 }
 
