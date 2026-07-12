@@ -256,6 +256,19 @@ static bool panel_is_ssd1667_102(void)
     return s_panel == EPD_PANEL_REF_SSD1667_102_BWR;
 }
 
+static bool panel_is_42_400x300(void)
+{
+    return s_panel == EPD_PANEL_42_BWR ||
+           s_panel == EPD_PANEL_REF_UC8176_42_BW ||
+           s_panel == EPD_PANEL_REF_UC8176_42_BWR ||
+           s_panel == EPD_PANEL_REF_SSD1619_42_BW ||
+           s_panel == EPD_PANEL_REF_SSD1619_42_BWR ||
+           s_panel == EPD_PANEL_REF_SSD1683_42_BWR ||
+           s_panel == EPD_PANEL_REF_SSD1683_42_LEGACY ||
+           s_panel == EPD_PANEL_REF_SSD1683_42_BW ||
+           s_panel == EPD_PANEL_FPC194_SSD1683_42_BWR;
+}
+
 static bool panel_uses_noninverted_ssd16xx_red_plane(void)
 {
     return panel_is_ref_ssd1683_bwr() ||
@@ -2739,6 +2752,8 @@ esp_err_t epd_init(void)
         ESP_LOGI(TAG, "JD796xx: skip startup white clear; first full content refresh overwrites panel");
     } else if (panel_is_ssd1667_102()) {
         ESP_LOGI(TAG, "SSD1667 10.2: skip startup white clear; first full content refresh overwrites panel");
+    } else if (panel_is_42_400x300()) {
+        ESP_LOGI(TAG, "4.2 400x300: skip startup white clear; welcome/IP page is the first full refresh");
     } else {
         epd_clear_to_white_locked();
     }
