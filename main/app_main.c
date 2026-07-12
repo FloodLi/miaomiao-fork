@@ -40,6 +40,7 @@
 static const char *TAG = "app";
 
 #define BOOT_WELCOME_HOLD_MS 1000
+#define BOOT_RESTORE_GRACE_MS 8000
 
 static int welcome_draw_text(fb_t *fb, int x, int y, const char *text,
                              fb_color_t color, int scale)
@@ -336,6 +337,10 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
 static void boot_display_route(void)
 {
     ESP_LOGI(TAG, "boot_display_route: starting");
+    if (http_app_user_activity_seen()) {
+        ESP_LOGI(TAG, "boot_display_route: skipped because web UI is already active");
+        return;
+    }
     display_policy_set_manual_screen_active(true);
     unsigned boot_epoch = display_policy_display_epoch();
 
@@ -348,6 +353,17 @@ static void boot_display_route(void)
     if (display_policy_display_epoch() != boot_epoch) {
         ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");
         return;
+    }
+    for (int elapsed = 0; elapsed < BOOT_RESTORE_GRACE_MS; elapsed += 200) {
+        if (display_policy_display_epoch() != boot_epoch) {
+            ESP_LOGI(TAG, "boot_display_route: canceled during restore grace");
+            return;
+        }
+        if (http_app_user_activity_seen()) {
+            ESP_LOGI(TAG, "boot_display_route: skip saved-mode restore after web activity");
+            return;
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
 
     int saved_mode = power_mgr_load_mode();
