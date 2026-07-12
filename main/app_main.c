@@ -40,7 +40,6 @@
 static const char *TAG = "app";
 
 #define BOOT_WELCOME_HOLD_MS 1000
-#define BOOT_RESTORE_GRACE_MS 8000
 
 static int welcome_draw_text(fb_t *fb, int x, int y, const char *text,
                              fb_color_t color, int scale)
@@ -354,61 +353,7 @@ static void boot_display_route(void)
         ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");
         return;
     }
-    for (int elapsed = 0; elapsed < BOOT_RESTORE_GRACE_MS; elapsed += 200) {
-        if (display_policy_display_epoch() != boot_epoch) {
-            ESP_LOGI(TAG, "boot_display_route: canceled during restore grace");
-            return;
-        }
-        if (http_app_user_activity_seen()) {
-            ESP_LOGI(TAG, "boot_display_route: skip saved-mode restore after web activity");
-            return;
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-
-    int saved_mode = power_mgr_load_mode();
-    int n = display_mode_count();
-    bool write_mode_back = false;
-    int mode = normalize_saved_mode(saved_mode, n, &write_mode_back);
-    ESP_LOGI(TAG, "boot_display_route: switching to mode %d (%s)",
-             mode, display_mode_name(mode));
-    boot_epoch = 0;
-    esp_err_t err = display_mode_show_request(mode, &boot_epoch);
-    if (err == ESP_OK && mode == DISPLAY_MODE_CALENDAR)
-        calendar_display_wait_render_idle();
-    if (display_policy_display_epoch() != boot_epoch) {
-        ESP_LOGI(TAG, "boot_display_route: mode restore canceled by newer display request");
-        return;
-    }
-    /* 数据源不可用时（典型：轮播图但 SPIFFS 无图）回落到时钟，
-     * 保留 NVS 中用户原偏好，等数据补齐后下次启动自动恢复。 */
-    if (err != ESP_OK && mode != DISPLAY_MODE_CLOCK) {
-        ESP_LOGW(TAG, "boot_display_route: mode %d unavailable (%s), falling back to clock",
-                 mode, esp_err_to_name(err));
-        esp_err_t fallback_err = display_mode_show_request(DISPLAY_MODE_CLOCK, &boot_epoch);
-        if (fallback_err == ESP_OK) {
-            mode = DISPLAY_MODE_CLOCK;
-            err = fallback_err;
-        } else {
-            ESP_LOGW(TAG, "boot_display_route: clock fallback failed (%s)",
-                     esp_err_to_name(fallback_err));
-            err = fallback_err;
-        }
-    }
-    if (err == ESP_OK)
-        button_set_current_mode(mode);
-    /* 仅当原 NVS 值非法被纠正时才回写，避免把临时回落覆盖掉用户偏好 */
-    if (write_mode_back && err == ESP_OK) {
-        power_mgr_save_mode(mode);
-    }
-
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "boot_display_route: done, mode %d active%s",
-                 mode, (mode != saved_mode) ? " (fallback)" : "");
-    } else {
-        ESP_LOGW(TAG, "boot_display_route: no active mode (%s)",
-                 esp_err_to_name(err));
-    }
+    ESP_LOGI(TAG, "boot_display_route: done, normal boot keeps welcome/IP screen");
 }
 
 static void start_mdns(void)
