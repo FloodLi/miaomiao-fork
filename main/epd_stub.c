@@ -44,6 +44,7 @@
 #define EPD_FILL_CHUNK    4096
 #define EPD_BUSY_TIMEOUT_MS  60000
 #define EPD_BUSY_UPDATE_TIMEOUT_MS  12000
+#define EPD_JD796XX_BUSY_UPDATE_TIMEOUT_MS  120000
 #define EPD_ATC29_BUSY_TIMEOUT_MS  2500
 #define EPD_ATC29_SAFE_REFRESH_MS  12000
 #define EPD_E6_BUSY_TIMEOUT_MS     180000
@@ -183,7 +184,7 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_REF_UC8159_75_LOW_BWR] = { 640, 384, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "UC8159 7.5\" low BWR", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BW]  = { 880, 528, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BW", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BWR] = { 880, 528, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BWR", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
-    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  0, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd79665_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd79665_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
     [EPD_PANEL_REF_SSD1619_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619A 4.2\" BW reference", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
     [EPD_PANEL_REF_SSD1619_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619 4.2\" BWR", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
     [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79668 4.2\" BWRY", ref_jd79668_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
@@ -237,6 +238,11 @@ static bool panel_is_ref_ssd1683_bwr(void)
     return s_panel == EPD_PANEL_REF_SSD1683_42_BWR ||
            s_panel == EPD_PANEL_REF_SSD1683_42_LEGACY ||
            s_panel == EPD_PANEL_FPC194_SSD1683_42_BWR;
+}
+
+static bool panel_is_jd796xx(void)
+{
+    return panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP;
 }
 
 static bool panel_uses_noninverted_ssd16xx_red_plane(void)
@@ -399,9 +405,9 @@ static void nvs_load_panel(void)
 void epd_load_panel_from_nvs(void)
 {
     nvs_load_panel();
-    if (s_panel == EPD_PANEL_REF_JD79665_75_BWRY && s_busy_idle_level == 1) {
-        ESP_LOGW(TAG, "JD79665 uses BUSY idle-low on this board; migrating saved busy_idle 1 -> 0");
-        (void)epd_set_busy_idle(0);
+    if (s_panel == EPD_PANEL_REF_JD79665_75_BWRY && s_busy_idle_level == 0) {
+        ESP_LOGW(TAG, "JD79665 reference flow uses BUSY idle-high; migrating saved busy_idle 0 -> 1");
+        (void)epd_set_busy_idle(1);
     }
 }
 
@@ -536,7 +542,10 @@ static bool epd_wait_ready(bool after_update_cmd)
     int idle = busy_idle_effective();
     const bool flexible_busy = panel_is_atc_29_flexible();
     const int timeout_ms = flexible_busy ? EPD_ATC29_BUSY_TIMEOUT_MS :
-                           (after_update_cmd ? EPD_BUSY_UPDATE_TIMEOUT_MS : EPD_BUSY_TIMEOUT_MS);
+                           (after_update_cmd && panel_is_jd796xx()
+                                ? EPD_JD796XX_BUSY_UPDATE_TIMEOUT_MS
+                                : (after_update_cmd ? EPD_BUSY_UPDATE_TIMEOUT_MS
+                                                    : EPD_BUSY_TIMEOUT_MS));
 
     if (after_update_cmd &&
         atomic_load(&s_busy_timeout_streak) >= EPD_BUSY_TIMEOUT_FALLBACK_THRESHOLD) {
@@ -2700,6 +2709,8 @@ esp_err_t epd_init(void)
     panel_run_full_init();
     if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
         ESP_LOGI(TAG, "E6 3.7: skip startup white clear; first full content refresh overwrites panel");
+    } else if (panel_is_jd796xx()) {
+        ESP_LOGI(TAG, "JD796xx: skip startup white clear; first full content refresh overwrites panel");
     } else {
         epd_clear_to_white_locked();
     }
