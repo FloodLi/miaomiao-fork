@@ -183,7 +183,7 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_REF_UC8159_75_LOW_BWR] = { 640, 384, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "UC8159 7.5\" low BWR", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BW]  = { 880, 528, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BW", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BWR] = { 880, 528, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BWR", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
-    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd79665_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+    [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  0, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd79665_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
     [EPD_PANEL_REF_SSD1619_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619A 4.2\" BW reference", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
     [EPD_PANEL_REF_SSD1619_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619 4.2\" BWR", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
     [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79668 4.2\" BWRY", ref_jd79668_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
@@ -404,6 +404,10 @@ static void nvs_load_panel(void)
 void epd_load_panel_from_nvs(void)
 {
     nvs_load_panel();
+    if (s_panel == EPD_PANEL_REF_JD79665_75_BWRY && s_busy_idle_level == 1) {
+        ESP_LOGW(TAG, "JD79665 uses BUSY idle-low on this board; migrating saved busy_idle 1 -> 0");
+        (void)epd_set_busy_idle(0);
+    }
 }
 
 static int busy_idle_effective(void)
