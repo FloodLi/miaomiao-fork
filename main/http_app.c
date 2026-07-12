@@ -373,7 +373,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     json_escape(esc_wx_text, sizeof(esc_wx_text), wx_sum.valid ? wx_sum.now.text : "");
     json_escape(esc_wx_update, sizeof(esc_wx_update), wx_sum.valid ? wx_sum.update_time : "");
 
-    bool wx_configured = wx_cfg.api_key[0] && wx_cfg.api_host[0] && wx_cfg.location[0];
+    bool wx_configured = wx_cfg.city_name[0] != '\0';
     char json[2048];
     snprintf(json, sizeof(json),
              "{\"version\":\"%s\",\"idf\":\"%s\",\"build_date\":\"%s\",\"build_time\":\"%s\","
@@ -860,10 +860,8 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
         return ESP_OK;
     }
     cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
-    /* 不在 GET 中下发明文 Key，避免局域网嗅探；前端用 api_key_set + 留空保存保留原密钥 */
-    cJSON_AddStringToObject(root, "api_key", "");
-    cJSON_AddBoolToObject(root, "api_key_set", cfg.api_key[0] != '\0');
-    cJSON_AddStringToObject(root, "api_host", cfg.api_host);
+    cJSON_AddStringToObject(root, "provider", "Open-Meteo");
+    cJSON_AddStringToObject(root, "timezone", cfg.api_host);
     cJSON_AddStringToObject(root, "location", cfg.location);
     cJSON_AddStringToObject(root, "city_name", cfg.city_name);
     cJSON_AddNumberToObject(root, "refresh_min", cfg.refresh_min);
@@ -904,18 +902,15 @@ static esp_err_t weather_config_post_handler(httpd_req_t *req)
     if ((j = cJSON_GetObjectItem(root, "enabled")) && cJSON_IsBool(j))
         cfg.enabled = cJSON_IsTrue(j);
     const char *s;
-    cJSON *jk = cJSON_GetObjectItem(root, "api_key");
-    if (jk && cJSON_IsString(jk) && jk->valuestring && jk->valuestring[0] != '\0')
-        snprintf(cfg.api_key, sizeof(cfg.api_key), "%s", jk->valuestring);
-    j = cJSON_GetObjectItem(root, "api_key_clear");
-    if (j && cJSON_IsTrue(j))
-        cfg.api_key[0] = '\0';
-    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "api_host"))))
-        snprintf(cfg.api_host, sizeof(cfg.api_host), "%s", s);
-    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "location"))))
-        snprintf(cfg.location, sizeof(cfg.location), "%s", s);
-    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "city_name"))))
+    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "city_name")))) {
+        bool city_changed = strcmp(cfg.city_name, s) != 0;
         snprintf(cfg.city_name, sizeof(cfg.city_name), "%s", s);
+        if (city_changed) {
+            cfg.location[0] = '\0';
+            cfg.api_host[0] = '\0';
+        }
+    }
+    cfg.api_key[0] = '\0';
     if ((j = cJSON_GetObjectItem(root, "refresh_min")) && cJSON_IsNumber(j))
         cfg.refresh_min = (uint32_t)j->valuedouble;
     cJSON_Delete(root);

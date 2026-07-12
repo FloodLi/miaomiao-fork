@@ -372,7 +372,7 @@ static bool app_weather_config_ready(void)
     weather_config_t cfg;
     if (weather_get_config(&cfg) != ESP_OK)
         return false;
-    return cfg.enabled && cfg.api_key[0] && cfg.api_host[0] && cfg.location[0];
+    return cfg.enabled && cfg.city_name[0];
 }
 
 static bool app_codex_config_ready(void)
