@@ -28,7 +28,7 @@
 static const char k_wx_placeholder_l1[] =
     "\xe5\xa4\xa9\xe6\xb0\x94\xe6\x95\xb0\xe6\x8d\xae\xe6\x9c\xaa\xe5\xb0\xb1\xe7\xbb\xaa"; /* 天气数据未就绪 */
 static const char k_wx_placeholder_l2[] =
-    "\xe8\xaf\xb7\xe5\x85\x88\xe5\x9c\xa8\xe5\xa4\xa9\xe6\xb0\x94\xe9\xa1\xb5\xe5\xa1\xab API Key"; /* 请先在天气页填 API Key */
+    "请先在天气页填写城市";
 
 static const char *TAG    = "clock";
 static const char *NVS_NS = "clock";

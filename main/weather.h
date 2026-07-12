@@ -6,10 +6,10 @@
 
 typedef struct {
     bool     enabled;
-    char     api_key[48];
-    char     api_host[64];       /* e.g. "xxx.re.qweatherapi.com" (no https://) */
-    char     location[32];       /* QWeather location ID or "lon,lat" */
-    char     city_name[32];
+    char     api_key[48];        /* Legacy QWeather key; unused by Open-Meteo. */
+    char     api_host[64];       /* Cached Open-Meteo timezone, e.g. "Asia/Shanghai". */
+    char     location[32];       /* Cached "lat,lon"; populated by geocoding. */
+    char     city_name[64];      /* User-entered city name. */
     uint32_t refresh_min;        /* 0=manual; nonzero auto mode normalizes to 30 min */
 } weather_config_t;
 
