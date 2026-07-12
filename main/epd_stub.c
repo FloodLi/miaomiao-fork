@@ -45,6 +45,7 @@
 #define EPD_BUSY_TIMEOUT_MS  60000
 #define EPD_BUSY_UPDATE_TIMEOUT_MS  12000
 #define EPD_JD796XX_BUSY_UPDATE_TIMEOUT_MS  120000
+#define EPD_SSD1667_102_BUSY_UPDATE_TIMEOUT_MS  120000
 #define EPD_ATC29_BUSY_TIMEOUT_MS  2500
 #define EPD_ATC29_SAFE_REFRESH_MS  12000
 #define EPD_E6_BUSY_TIMEOUT_MS     180000
@@ -243,6 +244,11 @@ static bool panel_is_ref_ssd1683_bwr(void)
 static bool panel_is_jd796xx(void)
 {
     return panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP;
+}
+
+static bool panel_is_ssd1667_102(void)
+{
+    return s_panel == EPD_PANEL_REF_SSD1667_102_BWR;
 }
 
 static bool panel_uses_noninverted_ssd16xx_red_plane(void)
@@ -544,8 +550,10 @@ static bool epd_wait_ready(bool after_update_cmd)
     const int timeout_ms = flexible_busy ? EPD_ATC29_BUSY_TIMEOUT_MS :
                            (after_update_cmd && panel_is_jd796xx()
                                 ? EPD_JD796XX_BUSY_UPDATE_TIMEOUT_MS
-                                : (after_update_cmd ? EPD_BUSY_UPDATE_TIMEOUT_MS
-                                                    : EPD_BUSY_TIMEOUT_MS));
+                                : (after_update_cmd && panel_is_ssd1667_102()
+                                       ? EPD_SSD1667_102_BUSY_UPDATE_TIMEOUT_MS
+                                       : (after_update_cmd ? EPD_BUSY_UPDATE_TIMEOUT_MS
+                                                           : EPD_BUSY_TIMEOUT_MS)));
 
     if (after_update_cmd &&
         atomic_load(&s_busy_timeout_streak) >= EPD_BUSY_TIMEOUT_FALLBACK_THRESHOLD) {
@@ -2711,6 +2719,8 @@ esp_err_t epd_init(void)
         ESP_LOGI(TAG, "E6 3.7: skip startup white clear; first full content refresh overwrites panel");
     } else if (panel_is_jd796xx()) {
         ESP_LOGI(TAG, "JD796xx: skip startup white clear; first full content refresh overwrites panel");
+    } else if (panel_is_ssd1667_102()) {
+        ESP_LOGI(TAG, "SSD1667 10.2: skip startup white clear; first full content refresh overwrites panel");
     } else {
         epd_clear_to_white_locked();
     }
