@@ -2,7 +2,6 @@
 #include "http_internal.h"
 
 #include <errno.h>
-#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -53,7 +52,6 @@ httpd_handle_t    http_server_handle;
 http_app_config_t http_app_cfg;
 const char       *http_images_dir   = "/spiffs/images";
 const int         http_upload_max_bytes = 2 * 1024 * 1024;
-static atomic_bool s_user_activity_seen = ATOMIC_VAR_INIT(false);
 
 /* backward compat aliases used within this file */
 #define s_server  http_server_handle
@@ -138,13 +136,7 @@ bool http_check_basic_auth(httpd_req_t *req)
 void http_note_user_activity(httpd_req_t *req)
 {
     (void)req;
-    atomic_store(&s_user_activity_seen, true);
     power_mgr_reset_activity();
-}
-
-bool http_app_user_activity_seen(void)
-{
-    return atomic_load(&s_user_activity_seen);
 }
 
 static esp_err_t auth_config_get_handler(httpd_req_t *req)

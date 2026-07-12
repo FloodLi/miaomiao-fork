@@ -336,10 +336,6 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
 static void boot_display_route(void)
 {
     ESP_LOGI(TAG, "boot_display_route: starting");
-    if (http_app_user_activity_seen()) {
-        ESP_LOGI(TAG, "boot_display_route: skipped because web UI is already active");
-        return;
-    }
     display_policy_set_manual_screen_active(true);
     unsigned boot_epoch = display_policy_display_epoch();
 

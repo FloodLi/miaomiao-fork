@@ -1,7 +1,5 @@
 #pragma once
 
-#include <stdbool.h>
-
 #include "esp_err.h"
 
 typedef struct {
@@ -10,4 +8,3 @@ typedef struct {
 } http_app_config_t;
 
 esp_err_t http_app_start(const http_app_config_t *cfg);
-bool http_app_user_activity_seen(void);
