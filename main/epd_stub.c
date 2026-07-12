@@ -2338,7 +2338,6 @@ static void ref_jd79665_init(void)
     const epd_panel_desc_t *d = panel_desc();
     epd_hw_reset();
     delay_ms(50);
-    epd_wait_ready(false);
 
     cmd1(0x4D, 0x78);
     cmd2(0x00, 0x2F, 0x29);
