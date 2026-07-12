@@ -41,6 +41,28 @@ static const char *TAG = "app";
 
 #define BOOT_WELCOME_HOLD_MS 1000
 
+static int count_bits8(uint8_t v)
+{
+    int n = 0;
+    while (v) {
+        n += v & 1u;
+        v >>= 1;
+    }
+    return n;
+}
+
+static void log_welcome_fb_stats(const fb_t *fb)
+{
+    int black = 0;
+    int red = 0;
+    for (int i = 0; i < fb->plane_bytes; i++) {
+        black += 8 - count_bits8(fb->black[i]);
+        red += count_bits8(fb->red[i]);
+    }
+    ESP_LOGI(TAG, "Welcome FB stats: %dx%d black_px=%d red_px=%d",
+             fb->width, fb->height, black, red);
+}
+
 static int welcome_draw_text(fb_t *fb, int x, int y, const char *text,
                              fb_color_t color, int scale)
 {
@@ -222,6 +244,8 @@ static void render_welcome_screen(void)
         welcome_draw_footer(fb, "SETUP", info);
     }
 
+    log_welcome_fb_stats(fb);
+    epd_request_full_refresh_next();
     epd_display_fb_free(fb);
     ESP_LOGI(TAG, "Welcome screen displayed");
 }
