@@ -424,12 +424,12 @@ static void nvs_load_panel(void)
 void epd_load_panel_from_nvs(void)
 {
     nvs_load_panel();
-    if (s_panel == EPD_PANEL_REF_JD79665_75_BWRY && s_busy_idle_level == 0) {
-        ESP_LOGW(TAG, "JD79665 reference flow uses BUSY idle-high; migrating saved busy_idle 0 -> 1");
+    if (s_panel == EPD_PANEL_REF_JD79665_75_BWRY && busy_idle_effective() == 0) {
+        ESP_LOGW(TAG, "JD79665 reference flow uses BUSY idle-high; migrating busy_idle -> 1");
         (void)epd_set_busy_idle(1);
     }
-    if (s_panel == EPD_PANEL_42_BWR && s_busy_idle_level == 0) {
-        ESP_LOGW(TAG, "4.2 SSD1619 module reports BUSY idle-high here; migrating saved busy_idle 0 -> 1");
+    if (s_panel == EPD_PANEL_42_BWR && busy_idle_effective() == 0) {
+        ESP_LOGW(TAG, "4.2 SSD1619 module reports BUSY idle-high here; migrating busy_idle -> 1");
         (void)epd_set_busy_idle(1);
     }
 }
