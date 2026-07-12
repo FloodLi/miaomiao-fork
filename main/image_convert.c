@@ -958,25 +958,34 @@ static esp_err_t png_try_prequantized_framebuffer(const unsigned char *rgba,
     const int EH = epd_height();
     const int RB = EW / 8;
 
-    if (!rgba || !out_fb || !image_panel_is_e6_6c() ||
-        pw != (unsigned)EW || ph != (unsigned)EH)
+    if (!rgba || !out_fb || pw != (unsigned)EW || ph != (unsigned)EH)
         return ESP_ERR_NOT_SUPPORTED;
 
     int64_t t0 = esp_timer_get_time();
+    bool has_red = epd_has_red();
+    bool has_yellow = epd_has_yellow();
+    bool has_blue = image_panel_is_e6_6c();
+    bool has_green = image_panel_is_e6_6c();
+
     fb_t *fb = fb_create();
     if (!fb)
         return ESP_ERR_NO_MEM;
-    if (!fb->red || !fb->yellow || !fb->blue || !fb->green) {
+    if ((has_red && !fb->red) || (has_yellow && !fb->yellow) ||
+        (has_blue && !fb->blue) || (has_green && !fb->green)) {
         fb_destroy(fb);
         return ESP_ERR_NO_MEM;
     }
 
     pq_counts_t counts;
     esp_err_t err = png_pack_prequantized_planes(rgba, EW, EH, RB,
-                                                 true, true, true, true,
-                                                 fb->black, fb->red,
-                                                 fb->yellow, fb->blue,
-                                                 fb->green, &counts);
+                                                 has_red, has_yellow,
+                                                 has_blue, has_green,
+                                                 fb->black,
+                                                 has_red ? fb->red : NULL,
+                                                 has_yellow ? fb->yellow : NULL,
+                                                 has_blue ? fb->blue : NULL,
+                                                 has_green ? fb->green : NULL,
+                                                 &counts);
     if (err != ESP_OK) {
         fb_destroy(fb);
         return err;
@@ -1869,8 +1878,7 @@ esp_err_t image_convert_to_epd_fb(const uint8_t *data, size_t len, fb_t **out_fb
         return ESP_ERR_INVALID_ARG;
     *out_fb = NULL;
 
-    if (!image_panel_is_e6_6c() ||
-        data[0] != 0x89 || data[1] != 0x50 ||
+    if (data[0] != 0x89 || data[1] != 0x50 ||
         data[2] != 0x4E || data[3] != 0x47)
         return ESP_ERR_NOT_SUPPORTED;
 
@@ -1897,9 +1905,6 @@ esp_err_t image_convert_file_to_epd_fb(const char *input_path, fb_t **out_fb)
     if (!input_path || !out_fb)
         return ESP_ERR_INVALID_ARG;
     *out_fb = NULL;
-
-    if (!image_panel_is_e6_6c())
-        return ESP_ERR_NOT_SUPPORTED;
 
     uint8_t magic[4] = {0};
     FILE *mf = fopen(input_path, "rb");
