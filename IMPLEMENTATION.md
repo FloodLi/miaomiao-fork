@@ -4,14 +4,14 @@
 
 当前实现已经覆盖图片转换、图库、轮播、天气、时钟、日历、课程表、待办、倒计时、Codex 额度看板、留言板、画布、OTA、低功耗和外置 fontfs 字库。稳定性基线包括：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容；挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志；低功耗正常启动与 RTC 定时器 quick-refresh 已分离。
 
-v2.3.4 同步了屏幕参考驱动选项和低功耗闲置计时修复：网页后台状态轮询和自动刷屏不再持续刷新用户活跃时间，用户真正停留不操作时设备可按配置进入深睡。
+v2.3.5 在现有屏幕参考驱动和低功耗逻辑上，增加 BUSY 超时回退、UC 4.2 三色屏刷新后高压关断，以及实体按键可切换页面配置。
 
 后续实现重点：OTA 与低功耗长稳测试、更多屏幕型号适配，以及在源码、分区表或字库资源变化后保持 Release 包与校验信息同步。
 
 > 项目代号：**epaper_uploader**
 > 硬件平台：ESP32-S3 + SSD1619(4.2" 400×300) / UC8179(5.83" 648×480) 三色墨水屏
 > 技术栈：ESP-IDF（**最低 v5.5.1**）/ C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
-> 固件版本：v2.3.4（`PROJECT_VER`） | 文档版本：v2.3.4-docs | 2026-06-28
+> 固件版本：v2.3.5（`PROJECT_VER`） | 文档版本：v2.3.5-docs | 2026-07-13
 
 ---
 
@@ -95,7 +95,7 @@ msp/
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 / UC8179 / ATC-Solum / EPD-nRF5 参考面板，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
-│   ├── http_app.c/h           # HTTP 服务器（73 条路由 + Basic Auth + OTA）
+│   ├── http_app.c/h           # HTTP 服务器（75 条路由 + Basic Auth + OTA）
 │   ├── http_gallery.c         # 画廊 HTTP 路由
 │   ├── http_features.c        # 功能模块 HTTP 路由
 │   ├── http_canvas.c          # 画布留言板 HTTP 路由与素材管理
@@ -146,7 +146,7 @@ msp/
 | **应用入口** | `app_main.c` | 双启动路径：完整启动（WiFi+HTTP+全功能）/ 深睡快速刷新 |
 | **EPD 驱动** | `epd_stub.c` / `epd.h` | SSD1619 + UC8179 双屏支持，SPI DMA，BWR 三色 |
 | **图片转换** | `image_convert.c/h` | JPEG/PNG/BMP 解码、拉伸全屏、Floyd-Steinberg 抖色 |
-| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 73 条路由 + Basic Auth + OTA |
+| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 75 条路由 + Basic Auth + OTA |
 | **WiFi 管理** | `wifi_manager.c/h` | AP+STA 共存、NVS 凭据、自动重连 |
 | **轮播调度** | `scheduler.c/h` | 画廊顺序/随机自动轮播 |
 | **天气** | `weather.c/h` | 和风天气 HTTPS，实时+3 天预报 |
@@ -671,11 +671,12 @@ httpd_resp_send(req, (const char *)index_html_start,
 | GET/POST | `/board`, `/canvas_*` | 画布留言板可视化编辑与 API |
 | POST | `/calendar_show` | 显示日历 |
 | GET/POST | `/power_config` | 电源管理配置 API |
+| GET/POST | `/button_modes` | 实体按键可切换页面配置 |
 | GET/POST | `/auth_config` | HTTP 认证配置 |
 | POST | `/ota` | 固件升级 |
 | GET | `/version` | 固件版本 |
 | POST | `/spiffs_remount` / `/spiffs_format` | 文件系统诊断恢复；格式化必须提交 `{"confirm":"FORMAT_SPIFFS"}` |
-| *… 共 73 条路由，以 `http_app.c` 为准* | | |
+| *… 共 75 条路由，以 `http_app.c` 为准* | | |
 
 ---
 
@@ -733,7 +734,7 @@ image_convert_file_to_epd_raw(input_path, out_path);
 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 config.recv_wait_timeout  = 5;      // 接收超时 5 秒，快速释放空闲连接
 config.send_wait_timeout  = 5;      // 发送超时 5 秒
-config.max_uri_handlers   = 80;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前 73）
+config.max_uri_handlers   = 80;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前 75）
 config.stack_size         = 16384;  // HTTP 任务栈 16KB（图片转换需要较深调用栈）
 config.lru_purge_enable   = true;   // 当连接数满时，关闭最久未使用的连接
 ```
@@ -963,7 +964,7 @@ app_main()
     │
     ├─ 内容模块初始化                天气/时钟/日历/课程表/待办/留言板/画布/轮播
     │
-    ├─ http_app_start()              HTTP 服务器（73 条路由，Basic Auth）
+    ├─ http_app_start()              HTTP 服务器（75 条路由，Basic Auth）
     │
     ├─ 显示欢迎屏
     │

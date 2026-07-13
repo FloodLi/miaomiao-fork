@@ -1,6 +1,6 @@
 # 喵哎-MiaooAim 工程技术文档
 
-## 工程状态（2026-06-28）
+## 工程状态（2026-07-13）
 
 本文档反映当前 ESP32-S3 三色墨水屏固件的工程实现状态。已完成显示 epoch 仲裁、日历/画布/留言异步显示返回语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 用户数据保护与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、手动画面期间天气后台收敛、EPD 初始化失败降级诊断、AP 密码日志脱敏、外置 fontfs 字库、低功耗按模式快速刷新、日历跨日刷新、Web 画板字体渲染和 5.83" 页面/驱动说明同步。
 
@@ -10,10 +10,12 @@
 
 2026-06-28 同步 v2.3.4 版本准备：补充 UC 4.2 三色与 SSD1619A 4.2 双色参考驱动选项，并收紧低功耗闲置计时，避免后台状态轮询和自动刷屏持续阻止深睡。
 
+2026-07-13 同步 v2.3.5：BUSY 超时后切换到固定等待，UC 4.2 三色参考驱动刷新后执行高压关断和深睡，并新增实体按键可切换页面配置及 `/button_modes` 接口。
+
 建议复刻和二次开发时重点验证 OTA 成功/失败/回滚流程、低功耗唤醒、轮播与天气长时间运行、连续上传抢占场景，以及实际屏幕驱动 IC 和 BUSY 电平。发布新固件前必须在 ESP-IDF 终端重新执行完整 `idf.py build`。
 
-> **项目版本**: v2.3.4（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）
-> **文档版本**: v2.3.4-docs（公开发布同步版）
+> **项目版本**: v2.3.5（`CMakeLists.txt` → `PROJECT_VER` → `GET /version` 中 `version`）
+> **文档版本**: v2.3.5-docs（公开发布同步版）
 > **最后更新**: 2026-06-28
 > **硬件平台**: ESP32-S3 + SSD1619(4.2") / UC8179(5.83")，并接入 ATC/Solum 与 EPD-nRF5 参考实验面板配置入口
 > **软件框架**: ESP-IDF（**最低要求 v5.5.1**；5.5.x 更高发行版通常兼容）
@@ -500,18 +502,18 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 
 ### 5.4 HTTP 服务器模块 (`http_app.c` + `http_gallery.c` + `http_features.c` + `http_canvas.c`)
 
-**路由数量:** 73 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
+**路由数量:** 75 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
 **认证方式:** HTTP Basic Auth
 **最大连接:** 5 个并发
 
-**路由分组（共 73 条；以下按功能归类，完整注册表以 `main/http_app.c` 为准）：**
+**路由分组（共 75 条；以下按功能归类，完整注册表以 `main/http_app.c` 为准）：**
 
 | 分组 | 路径示例 |
 |------|-----------|
 | 页面与状态 | `GET /` `/config` `/gallery` `/weather` `/clock` `/calendar` `/message` `/codex` `/favicon.ico` `/miaooaim-mark.png` `/status` |
 | 画廊 | `POST /upload` · `GET /images` `/image` · `POST /show` `/delete_image` `/delete` |
 | 网络与面板 | `GET /wifi_status` `/scan` · `POST /wifi_connect` `/wifi_forget` · `GET|POST /panel_config` |
-| 轮播 / 认证 / 电源 | `GET|POST /slideshow` · `GET|POST /auth_config` · `GET|POST /power_config` |
+| 轮播 / 认证 / 电源 / 按键 | `GET|POST /slideshow` · `GET|POST /auth_config` · `GET|POST /power_config` · `GET|POST /button_modes` |
 | 画布留言板 | `GET /board` · `GET|POST /canvas_layout` · `POST /canvas_show` · 图标图片资源管理 |
 | 天气 / 时钟 / 额度 / 留言 | `GET|POST /weather_config` · `POST /weather_show` · `GET|POST /clock_config` · `POST /clock_show` · `GET|POST /codex_quota_config` · `POST /codex_quota_show` · `GET|POST /msg_config` · `POST /msg_show` |
 | 日历 / 课程表 / 待办 / 倒计时 | `POST /calendar_show` · `GET /timetable` `/timetable.json` · `POST /timetable` `/timetable_show` · `GET /todo` `/todo.json` · `POST /todo` `/todo_show` · `GET /countdown` · `GET|POST /countdown_config` · `POST /countdown_show` |
@@ -1140,7 +1142,7 @@ idf.py -p COM3 monitor
 
 ---
 
-**文档版本:** v2.3.4-docs
+**文档版本:** v2.3.5-docs
 **最后更新:** 2026-06-28
 **维护者:** 项目维护者
 

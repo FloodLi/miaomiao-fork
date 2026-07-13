@@ -1961,6 +1961,32 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
           </div>
         </section>
 
+        <section class="side-panel" id="buttonModes">
+          <div class="side-head">
+            <div>
+              <h2>按键切换页面</h2>
+              <p>选择左右按键循环切换时包含的页面。</p>
+            </div>
+          </div>
+          <div class="side-body">
+            <div class="switch-list">
+              <label class="switch-row"><b>时钟</b><span class="toggle"><input type="checkbox" data-button-mode="0"><span class="sl"></span></span></label>
+              <label class="switch-row"><b>日历</b><span class="toggle"><input type="checkbox" data-button-mode="1"><span class="sl"></span></span></label>
+              <label class="switch-row"><b>课程表</b><span class="toggle"><input type="checkbox" data-button-mode="2"><span class="sl"></span></span></label>
+              <label class="switch-row"><b>天气</b><span class="toggle"><input type="checkbox" data-button-mode="3"><span class="sl"></span></span></label>
+              <label class="switch-row"><b>轮播图</b><span class="toggle"><input type="checkbox" data-button-mode="4"><span class="sl"></span></span></label>
+              <label class="switch-row"><b>待办事项</b><span class="toggle"><input type="checkbox" data-button-mode="5"><span class="sl"></span></span></label>
+              <label class="switch-row"><b>倒计时</b><span class="toggle"><input type="checkbox" data-button-mode="6"><span class="sl"></span></span></label>
+              <label class="switch-row"><b>Codex 额度</b><span class="toggle"><input type="checkbox" data-button-mode="7"><span class="sl"></span></span></label>
+            </div>
+            <div class="compact-actions" style="margin-top:12px">
+              <button class="btn primary" onclick="saveButtonModes()">保存设置</button>
+              <button class="btn ghost sm" onclick="loadButtonModes()">刷新</button>
+            </div>
+            <div class="log" id="buttonModeLog">加载中…</div>
+          </div>
+        </section>
+
         <section class="side-panel" id="backup">
           <div class="side-head">
             <div>
@@ -2611,13 +2637,45 @@ async function savePower(){
   });
 })();
 
+function buttonModeLog(s,cls){var el=document.getElementById('buttonModeLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+
+async function loadButtonModes(){
+  try{
+    var r=await fetch('/button_modes',epdFetchOpts());
+    var j=await r.json();
+    var enabled=0;
+    document.querySelectorAll('[data-button-mode]').forEach(function(el){
+      var bit=1<<parseInt(el.dataset.buttonMode,10);
+      el.checked=(j.mask&bit)!==0;
+      if(el.checked)enabled++;
+    });
+    buttonModeLog('当前已选择 '+enabled+' 个按键页面。');
+  }catch(e){buttonModeLog('加载失败: '+e,'bad');}
+}
+
+async function saveButtonModes(){
+  var mask=0;
+  document.querySelectorAll('[data-button-mode]').forEach(function(el){
+    if(el.checked)mask|=1<<parseInt(el.dataset.buttonMode,10);
+  });
+  if(!mask){buttonModeLog('请至少选择一个页面。','bad');return;}
+  buttonModeLog('保存中…');
+  try{
+    var r=await fetch('/button_modes',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mask:mask})}));
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var j=await r.json();
+    if(!j.ok)throw new Error('保存失败');
+    buttonModeLog('已保存，左右按键将按新顺序跳过未选择页面。','ok');
+  }catch(e){buttonModeLog('保存失败: '+e,'bad');}
+}
+
 function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 
 async function exportConfig(){
   bkLog('正在收集所有配置…');
   try{
-    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config'];
-    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power'];
+    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/button_modes'];
+    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','button_modes'];
     var backup={_version:1,_date:new Date().toISOString()};
     for(var i=0;i<endpoints.length;i++){
       try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -2640,7 +2698,7 @@ async function importConfig(input){
     var backup=JSON.parse(text);
     if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
     var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
-      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config'};
+      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',button_modes:'/button_modes'};
     var ok=0,fail=0;
     for(var key in map){
       if(!backup[key])continue;
@@ -2662,6 +2720,7 @@ async function initConfigPage(){
   await loadVersion();
   await loadAuth();
   await loadPower();
+  await loadButtonModes();
 }
 initConfigPage();
 // keep the live overview (memory / time / connection) fresh without noisy logs
