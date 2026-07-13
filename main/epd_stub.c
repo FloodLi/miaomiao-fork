@@ -228,6 +228,11 @@ static bool panel_is_ref_ssd1683_bwr(void)
            s_panel == EPD_PANEL_FPC194_SSD1683_42_BWR;
 }
 
+static bool panel_is_ref_uc42_bwr(void)
+{
+    return s_panel == EPD_PANEL_REF_UC8176_42_BWR;
+}
+
 static bool panel_needs_inverted_black_plane(void)
 {
     return s_panel == EPD_PANEL_HINK_SSD1619_29_BWR;
@@ -850,8 +855,21 @@ static void ref_uc81xx_refresh(void)
     epd_wait_ready(true);
     epd_cmd(0x92);
     epd_cmd(0x02);
-    epd_wait_ready(false);
-    delay_ms(200);
+    delay_ms(100);
+    bool power_off_ok = epd_wait_ready(true);
+
+    if (panel_is_ref_uc42_bwr()) {
+        /* The tested UC 4.2 BWR panel retained 15-20V after refresh when only
+         * Power Off was sent. Deep sleep forces the booster/VCOM section off;
+         * the next display must reset and initialize the controller again. */
+        cmd1(0x07, 0xA5);
+        delay_ms(100);
+        s_panel_seq_done = false;
+        ESP_LOGI(TAG, "UC 4.2 BWR power down: power_off=%s, deep sleep entered",
+                 power_off_ok ? "ready" : "fallback");
+    } else {
+        delay_ms(200);
+    }
 }
 
 static void ref_ssd16xx_refresh(void)

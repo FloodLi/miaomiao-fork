@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -1469,6 +1470,87 @@ static esp_err_t power_config_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ── physical button page cycle ───────────────────────────────────── */
+
+static esp_err_t button_modes_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *modes = cJSON_CreateArray();
+    if (!root || !modes) {
+        cJSON_Delete(root);
+        cJSON_Delete(modes);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
+
+    uint16_t mask = button_get_enabled_mode_mask();
+    cJSON_AddNumberToObject(root, "mask", mask);
+    cJSON_AddItemToObject(root, "modes", modes);
+    for (int i = 0; i < display_mode_count(); i++) {
+        cJSON *mode = cJSON_CreateObject();
+        if (!mode) {
+            cJSON_Delete(root);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+            return ESP_OK;
+        }
+        cJSON_AddNumberToObject(mode, "id", i);
+        cJSON_AddStringToObject(mode, "name", display_mode_name(i));
+        cJSON_AddStringToObject(mode, "label", display_mode_label(i));
+        cJSON_AddBoolToObject(mode, "enabled", (mask & (1U << i)) != 0);
+        cJSON_AddItemToArray(modes, mode);
+    }
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "JSON 内存不足");
+        return ESP_OK;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    free(json);
+    return ESP_OK;
+}
+
+static esp_err_t button_modes_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char body[256] = {0};
+    if (!http_read_request_body(req, body, sizeof(body), "请求为空"))
+        return ESP_OK;
+
+    cJSON *root = cJSON_Parse(body);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON 格式错误");
+        return ESP_OK;
+    }
+    cJSON *jmask = cJSON_GetObjectItem(root, "mask");
+    if (!cJSON_IsNumber(jmask) || jmask->valueint <= 0 || jmask->valueint > UINT16_MAX) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "至少选择一个按键页面");
+        return ESP_OK;
+    }
+    uint16_t mask = (uint16_t)jmask->valueint;
+    cJSON_Delete(root);
+
+    esp_err_t err = button_set_enabled_mode_mask(mask);
+    if (err == ESP_ERR_INVALID_ARG) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "至少选择一个按键页面");
+        return ESP_OK;
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "save button mode mask: %s", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "按键页面配置保存失败");
+        return ESP_OK;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
 /* countdown handlers moved to http_features.c */
 
 /* ── session open hook (reset inactivity timer) ───────────────────── */
@@ -1819,6 +1901,8 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/auth_config",   HTTP_POST, auth_config_post_handler,   NULL },
         { "/power_config",  HTTP_GET,  power_config_get_handler,   NULL },
         { "/power_config",  HTTP_POST, power_config_post_handler,  NULL },
+        { "/button_modes",  HTTP_GET,  button_modes_get_handler,   NULL },
+        { "/button_modes",  HTTP_POST, button_modes_post_handler,  NULL },
     };
     int registered = 0;
     for (int i = 0; i < (int)(sizeof(uris) / sizeof(uris[0])); i++) {

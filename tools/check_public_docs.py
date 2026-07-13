@@ -18,12 +18,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED = {
-    "project_version": "2.3.4",
-    "http_routes": 73,
+    "project_version": "2.3.5",
+    "http_routes": 75,
     "web_html": 12,
     "web_png": 1,
-    "release_bin_sha256": "A7EB0494BAD50D5D297A9AD67F24CE224664E9F05A0189D9A73F11A3210301EC",
-    "release_zip_sha256": "749C81BAD63712F403AF4616DCDD9671143F9C426CBE8CAB4BFD02E848D8D664",
+    "release_bin_sha256": "55A71B8F52187E0692C782FDFEFF27F998052024D2612FD3C0C6CCBC271DD42E",
+    "release_zip_sha256": "B8F53D1CFC1AC4D74373B10A8B601F4757603AA752285A8E0E70DD31F3A0F28A",
+    "web_upgrade_bin_sha256": "38E89B836C75C7161A59DE6BF02547E32A7FB422E42D923C02DF1E6C496DDD22",
+    "web_upgrade_zip_sha256": "7F1DD30272D297DBD3B3B463161B66F1A6C37BA857DC53FA4797315F4064693B",
 }
 
 EXPECTED_PARTITIONS = {
@@ -137,7 +139,7 @@ def check_http_routes(failures: list[str]) -> None:
         return
     body = text[start:end]
     entries = re.findall(r'\{\s*"([^"]+)"\s*,\s*(HTTP_[A-Z]+)\s*,', body)
-    check(len(entries) == EXPECTED["http_routes"], "HTTP route count is 73", failures, str(len(entries)))
+    check(len(entries) == EXPECTED["http_routes"], "HTTP route count is 75", failures, str(len(entries)))
 
 
 def check_partitions(failures: list[str]) -> None:
@@ -156,8 +158,12 @@ def check_partitions(failures: list[str]) -> None:
 def check_release_hashes(failures: list[str]) -> None:
     bin_hash = sha256_file("release/epaper_uploader_full_16MB.bin")
     zip_hash = sha256_file("release/epaper_uploader_full_16MB.zip")
+    web_bin_hash = sha256_file("release/web_upgrade.bin")
+    web_zip_hash = sha256_file("release/web_upgrade.zip")
     check(bin_hash == EXPECTED["release_bin_sha256"], "release bin SHA256 matches docs", failures, bin_hash)
     check(zip_hash == EXPECTED["release_zip_sha256"], "release zip SHA256 matches docs", failures, zip_hash)
+    check(web_bin_hash == EXPECTED["web_upgrade_bin_sha256"], "web upgrade bin SHA256 matches docs", failures, web_bin_hash)
+    check(web_zip_hash == EXPECTED["web_upgrade_zip_sha256"], "web upgrade zip SHA256 matches docs", failures, web_zip_hash)
 
 
 def check_markdown_links(failures: list[str]) -> None:
@@ -196,7 +202,8 @@ def check_forbidden_text(failures: list[str]) -> None:
 
 
 def tracked_files() -> set[str]:
-    return {p.replace("\\", "/") for p in run_git("ls-files").splitlines()}
+    files = {p.replace("\\", "/") for p in run_git("ls-files").splitlines()}
+    return {p for p in files if (ROOT / p).exists()}
 
 
 def public_text_files() -> list[str]:

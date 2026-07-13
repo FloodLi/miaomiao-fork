@@ -22,6 +22,7 @@
 #include "epd.h"
 #include "esp_log.h"
 #include "fb_render.h"
+#include "nvs.h"
 #include "ui_theme.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -40,6 +41,8 @@ static const char *TAG = "button";
 #define DEBOUNCE_MS     40
 #define DEBOUNCE_TICKS  (DEBOUNCE_MS / POLL_MS)
 #define WORKER_STACK    10240
+#define BUTTON_NVS_NS   "button"
+#define MODE_MASK_KEY   "mode_mask"
 
 typedef enum {
     CMD_NEXT = 0,
@@ -49,7 +52,59 @@ typedef enum {
 
 static int            s_mode_idx;
 static atomic_bool    s_busy;
+static atomic_uint_fast16_t s_enabled_mode_mask = ATOMIC_VAR_INIT(UINT16_MAX);
 static QueueHandle_t  s_cmd_queue;
+
+static uint16_t registered_mode_mask(void)
+{
+    int n = display_mode_count();
+    if (n <= 0) return 0;
+    if (n >= 16) return UINT16_MAX;
+    return (uint16_t)((1U << n) - 1U);
+}
+
+uint16_t button_get_enabled_mode_mask(void)
+{
+    return (uint16_t)atomic_load(&s_enabled_mode_mask) & registered_mode_mask();
+}
+
+esp_err_t button_set_enabled_mode_mask(uint16_t mask)
+{
+    mask &= registered_mode_mask();
+    if (mask == 0)
+        return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(BUTTON_NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK)
+        return err;
+
+    err = nvs_set_u16(h, MODE_MASK_KEY, mask);
+    if (err == ESP_OK)
+        err = nvs_commit(h);
+    nvs_close(h);
+
+    if (err == ESP_OK) {
+        atomic_store(&s_enabled_mode_mask, mask);
+        ESP_LOGI(TAG, "button mode mask saved: 0x%04x", (unsigned)mask);
+    }
+    return err;
+}
+
+static void load_enabled_mode_mask(void)
+{
+    uint16_t mask = registered_mode_mask();
+    nvs_handle_t h;
+    if (nvs_open(BUTTON_NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        uint16_t stored = 0;
+        if (nvs_get_u16(h, MODE_MASK_KEY, &stored) == ESP_OK &&
+            (stored & registered_mode_mask()) != 0) {
+            mask = stored & registered_mode_mask();
+        }
+        nvs_close(h);
+    }
+    atomic_store(&s_enabled_mode_mask, mask);
+}
 
 int  button_get_current_mode(void) { return s_mode_idx; }
 void button_set_current_mode(int mode)
@@ -104,7 +159,21 @@ static void switch_mode(int dir)
     int n = display_mode_count();
     if (n == 0) return;
 
-    s_mode_idx = (s_mode_idx + dir + n) % n;
+    uint16_t enabled = button_get_enabled_mode_mask();
+    int next = s_mode_idx;
+    bool found = false;
+    for (int i = 0; i < n; i++) {
+        next = (next + dir + n) % n;
+        if ((enabled & (1U << next)) != 0) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        ESP_LOGW(TAG, "no enabled display mode for button navigation");
+        return;
+    }
+    s_mode_idx = next;
 
     unsigned epoch = 0;
     esp_err_t err = display_mode_show_request(s_mode_idx, &epoch);
@@ -210,6 +279,8 @@ static void button_task(void *arg)
 
 esp_err_t button_init(void)
 {
+    load_enabled_mode_mask();
+
     uint64_t mask = 0;
     for (int i = 0; i < BTN_COUNT; i++)
         mask |= (1ULL << btn_pins[i]);
@@ -257,7 +328,8 @@ esp_err_t button_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "3 buttons on GPIO %d/%d/%d, %d modes registered",
-             BTN_LEFT, BTN_MID, BTN_RIGHT, display_mode_count());
+    ESP_LOGI(TAG, "3 buttons on GPIO %d/%d/%d, %d modes registered, enabled mask=0x%04x",
+             BTN_LEFT, BTN_MID, BTN_RIGHT, display_mode_count(),
+             (unsigned)button_get_enabled_mode_mask());
     return ESP_OK;
 }

@@ -6,7 +6,7 @@
 [![JLC Hardware](https://img.shields.io/badge/JLCEDA-%E5%98%89%E7%AB%8B%E5%88%9B%E5%BC%80%E6%BA%90%E7%A1%AC%E4%BB%B6-red)](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)
 
 > 一款基于 ESP32-S3 的三色墨水屏智能终端固件与 Web 管理端，支持图片展示、天气、时钟、日历、课程表、待办、倒计时、留言画板、OTA 和低功耗。固件与仓库代号为 `epaper_uploader`，release 固件文件名沿用该代号。<br>
-> **发布版本：v2.3.4**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
+> **发布版本：v2.3.5**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 > **构建环境**：**ESP-IDF 最低要求 v5.5.1**；同大版本内更高发行版（如 5.5.4）一般可直接使用，若遇兼容问题以 5.5.1 为对照。
 
 ## 一分钟了解项目
@@ -15,7 +15,7 @@
 
 | 项目 | 当前状态 |
 |------|----------|
-| 当前版本 | v2.3.4，源码版本与 `CMakeLists.txt` 的 `PROJECT_VER` 一致 |
+| 当前版本 | v2.3.5，源码版本与 `CMakeLists.txt` 的 `PROJECT_VER` 一致 |
 | 主控平台 | ESP32-S3，推荐 16MB Flash；N16 / N16R8 均可，PSRAM 可提升图片转换余量 |
 | 主测屏幕 | 4.2" SSD1619 BWR 400×300、5.83" UC8179 / 微雪 BWR B V2 648×480 |
 | 使用方式 | 可直接刷 release 整包，也可用 ESP-IDF v5.5.x 自行编译 |
@@ -42,9 +42,9 @@
 | [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa) | 配套 4.2" SSD1619 PCB、外壳附件与硬件结构 |
 | [文档索引.md](文档索引.md) | 所有用户文档、工程文档、发布文档和支持文档入口 |
 
-## 当前发布状态（v2.3.4 / 2026-06-28）
+## 当前发布状态（v2.3.5 / 2026-07-13）
 
-当前版本已完成公开发布整理，适合复刻用户下载烧录，也适合二次开发者继续改功能、改 UI、适配屏幕。v2.3.4 在 v2.3.3 的日历、低功耗、5.83" 页面适配、字库显示、Web 画板渲染和分区文档基础上，补充 4.2" 参考驱动选项，并修复后台轮询和自动刷屏影响深睡闲置计时的问题。
+v2.3.5 继续收敛实机稳定性：修复 BUSY 超时造成的刷新延迟，补齐 UC 4.2 寸三色参考驱动刷新后的高压关断，并允许用户在后台决定左右实体按键循环包含哪些页面。历代版本变化统一记录在 [CHANGELOG.md](CHANGELOG.md)。
 
 ### 交付物
 
@@ -52,12 +52,12 @@
 |------|------------|
 | 固件源码 | `main/` 下包含启动、WiFi、HTTP、EPD、图片转换、天气、时钟、日历、课程表、待办、倒计时、画板、额度看板和低功耗模块 |
 | Web 管理端 | 12 个嵌入 HTML 页面 + 1 个 PNG 品牌资源，覆盖上传、画廊、配置、天气、时钟、日历、留言、课程表、待办、倒计时、画板和额度看板 |
-| HTTP 接口 | 73 条注册路由，覆盖图片、WiFi、配置、天气、课程、待办、倒计时、画板、OTA、鉴权、存储空间和系统状态 |
+| HTTP 接口 | 75 条注册路由，覆盖图片、WiFi、配置、天气、课程、待办、倒计时、画板、按键页面、OTA、鉴权、存储空间和系统状态 |
 | 字库资源 | 内置紧凑字库 + `fontfs` 外置字库；留言/画板支持浏览器字体渲染成图片后推屏 |
 | 分区表 | factory + 双 OTA + coredump + fontfs + SPIFFS，面向 16MB Flash 固件发布 |
 
 > 首次源码编译会下载开源字体生成 `fontfs`。若日志停在 `fetch_open_fonts.py` 并提示 read timeout，通常是 GitHub 原始文件访问超时；可重试，或把 `LXGW975YuanSC-400W.ttf`、`NotoSansMono-Regular.ttf` 放入 `tools/fonts/noto/` 后重新执行 `idf.py build`。也可设置 `MIAOO_FONT_SOURCE_DIR` 指向本地开源字体缓存目录。
-| 发布包 | `release/epaper_uploader_full_16MB.bin` 与 ZIP 已按 v2.3.4 当前源码重新构建并记录 SHA256 |
+| 发布包 | `release/` 同时提供 v2.3.5 完整烧录 BIN/ZIP 与网页 OTA 升级 BIN/ZIP，并记录 SHA256 |
 | 文档 | README、使用说明、工程文档、实现说明、字库说明、发布流程、安全支持、公开发布检查清单和更新日志 |
 
 ### 功能范围
@@ -73,6 +73,7 @@
 | 倒计时 | 可用 | 支持目标日期倒数、已过期/未到期状态提示和墨水屏页面展示 |
 | 留言与画板 | 可用 | Web 可视化编辑，浏览器把用户选择的字体渲染成图片后推屏，减少固件内置字体占用 |
 | Codex 额度看板 | 可用 | 支持中转站额度接口，展示余额、用量、请求数和令牌数 |
+| 实体按键页面 | 可配置 | 后台可选择左右按键循环包含的页面，未选择页面会被自动跳过 |
 | OTA 与安全 | 可用 | 支持 Web OTA、Basic Auth、配置导入导出和 SPIFFS 挂载失败保护性恢复 |
 | 低功耗 | 可用 | 正常开机保留 AP+STA/HTTP 后台；只有 RTC 定时唤醒进入 quick-refresh，并按当前显示模式决定是否联网 |
 
@@ -96,7 +97,7 @@
 | fontfs | `0x940000` 起，2.875MB，放固件随附 24/32px 外置字库资源；16px 小字走内置清晰位图 |
 | 用户 SPIFFS | `0xC20000` 起，3.875MB，放图片、画布素材、运行时文件和用户数据 |
 | Web 字体渲染 | 留言/画板页面可调用浏览器本机字体渲染为图片后推屏，不需要把所有字体都塞进固件 |
-| release 固件 | 当前 `release/` 已按 v2.3.4 重新构建并记录 SHA256；后续修改源码、分区表或字库后必须重新构建 |
+| release 固件 | 当前 `release/` 已按 v2.3.5 重新构建完整固件和网页 OTA 固件并记录 SHA256；后续修改源码、分区表或字库后必须重新构建 |
 
 ### 低功耗边界
 
@@ -383,7 +384,7 @@ msp/
 │   ├── app_main.c               # 启动流程（双启动路径：正常/深睡快速刷新）
 │   ├── epd_stub.c / epd.h       # EPD 驱动（SSD1619 / UC8179 / ATC-Solum / EPD-nRF5 参考面板，SPI DMA）
 │   ├── image_convert.c/h        # 图片解码 + Floyd-Steinberg 抖色
-│   ├── http_app.c/h             # HTTP 服务（73 条 URI + Basic Auth + OTA）
+│   ├── http_app.c/h             # HTTP 服务（75 条 URI + Basic Auth + OTA）
 │   ├── http_gallery.c           # 画廊相关路由
 │   ├── http_features.c          # 功能模块路由
 │   ├── http_internal.h          # HTTP 子模块共享声明
@@ -450,7 +451,9 @@ msp/
 ├── release/                     # 免编译烧录包与烧录说明
 │   ├── README.md
 │   ├── epaper_uploader_full_16MB.bin
-│   └── epaper_uploader_full_16MB.zip
+│   ├── epaper_uploader_full_16MB.zip
+│   ├── web_upgrade.bin
+│   └── web_upgrade.zip
 ├── test/                        # 主机端单元测试
 │   ├── README.md
 │   └── lunar/                   # 农历/节气算法测试工程
@@ -466,8 +469,6 @@ msp/
 ├── 公开发布检查清单.md
 ├── SECURITY.md
 ├── SUPPORT.md
-├── v2.3.4优化改动说明.md
-├── v2.3.3优化改动说明.md
 └── CMakeLists.txt               # 顶层构建脚本
 ```
 
@@ -488,7 +489,7 @@ msp/
 
 ## Web API 概览
 
-设备提供 **73 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
+设备提供 **75 条 HTTP 路由**（方法+路径组合，以 `http_app.c` 注册表为准），主要分类：
 
 | 分类 | 路径 | 说明 |
 |------|------|------|
@@ -502,7 +503,7 @@ msp/
 | 倒计时 | `/countdown_config`, `/countdown_show` | 倒计时管理 |
 | Codex 额度 | `/codex_quota_config`, `/codex_quota_show` | 中转站额度配置与显示 |
 | 画布留言板 | `/board`, `/canvas_layout`, `/canvas_show`, `/canvas_icon_upload`, `/canvas_image_upload` | WYSIWYG 画板、内置图标和自定义图片素材管理 |
-| 系统 | `/status`, `/version`, `/epd_test`, `/font_test`, `/epd_repair`, `/spiffs_remount`, `/spiffs_format`, `/ota`, `/auth_config`, `/power_config` | 系统状态、显示测试、文件系统恢复、OTA、鉴权和低功耗配置 |
+| 系统 | `/status`, `/version`, `/epd_test`, `/font_test`, `/epd_repair`, `/spiffs_remount`, `/spiffs_format`, `/ota`, `/auth_config`, `/power_config`, `/button_modes` | 系统状态、显示测试、文件系统恢复、OTA、鉴权、低功耗和实体按键页面配置 |
 
 > 完整 API 文档见 [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) 的“六、API 接口文档”；完整路由以 `main/http_app.c` 注册表为准。
 
@@ -527,12 +528,10 @@ msp/
 | [ENGINEERING_DOCS.md](ENGINEERING_DOCS.md) | 工程技术文档（架构/API/模块）⭐ | 开发者 |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | 技术实现详解（算法/驱动） | 核心开发者 |
 | [ROADMAP.md](ROADMAP.md) | 当前维护路线图、发布边界和后续优先级 | 贡献者 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本更新记录 | 用户 / 维护者 |
+| [CHANGELOG.md](CHANGELOG.md) | 历代版本的统一更新记录 | 用户 / 维护者 |
 | [RELEASE.md](RELEASE.md) | 维护者发布流程、整包合并、校验和分支同步 | 维护者 |
 | [docs/fonts.md](docs/fonts.md) | 字库来源、授权、生成和应用范围 | 二次开发者 |
 | [公开发布检查清单.md](公开发布检查清单.md) | 公开发布检查清单、release 校验和剩余验证建议 | 维护者 / 复刻者 |
-| [v2.3.4优化改动说明.md](v2.3.4优化改动说明.md) | v2.3.4 正式改动说明 | 用户 / 开发者 |
-| [v2.3.3优化改动说明.md](v2.3.3优化改动说明.md) | v2.3.3 历史版本说明 | 用户 / 开发者 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Issue / PR / 屏幕适配贡献规范 | 贡献者 |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区行为规范、日志脱敏和协作边界 | 所有参与者 |
 | [SECURITY.md](SECURITY.md) | 安全边界、漏洞报告和密钥脱敏建议 | 用户 / 维护者 |

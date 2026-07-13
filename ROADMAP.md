@@ -1,8 +1,8 @@
 # 喵哎-MiaooAim 开发路线图
 
-## 当前状态（v2.3.4 / 2026-06-28）
+## 当前状态（v2.3.5 / 2026-07-13）
 
-喵哎-MiaooAim 当前已经从功能快速迭代阶段进入稳定性、复刻体验和多屏适配阶段。仓库中的源码、Web 管理端、分区表、字库说明、公开发布检查清单和 release 固件已经按 v2.3.4 同步。
+喵哎-MiaooAim 当前已经从功能快速迭代阶段进入稳定性、复刻体验和多屏适配阶段。仓库中的源码、Web 管理端、分区表、字库说明、公开发布检查清单和 release 固件已经按 v2.3.5 同步。
 
 当前版本以 **ESP32-S3 + 16MB Flash + 三色墨水屏** 为主要目标，主测屏幕为：
 
@@ -18,9 +18,9 @@
 
 | 模块 | 当前状态 |
 |------|----------|
-| 固件工程 | ESP-IDF v5.5.x，目标芯片固定 ESP32-S3，`PROJECT_VER=2.3.4` |
+| 固件工程 | ESP-IDF v5.5.x，目标芯片固定 ESP32-S3，`PROJECT_VER=2.3.5` |
 | Web 管理端 | 12 个 HTML 页面 + 1 个 PNG 品牌资源，构建时嵌入固件 |
-| HTTP 接口 | 73 条已注册路由，覆盖上传、配置、天气、课程表、待办、倒计时、画板、OTA、鉴权和系统状态 |
+| HTTP 接口 | 75 条已注册路由，覆盖上传、配置、天气、课程表、待办、倒计时、画板、按键页面、OTA、鉴权和系统状态 |
 | 图片与画廊 | JPEG / PNG / BMP 上传，黑白红转换，线稿/纯黑白图片优化，画廊轮播 |
 | 时钟 | 数字时钟、日期、星期、电量、可选天气摘要 |
 | 日历 | 公历、农历、节气、节日、今日标记、跨日刷新 |
@@ -44,7 +44,7 @@
 | coredump | `0x920000` 起，128KB |
 | fontfs | `0x940000` 起，2.875MB，固件随附字库分区 |
 | 用户 SPIFFS | `0xC20000` 起，3.875MB，保存图片、画布素材和运行时文件 |
-| release | `release/epaper_uploader_full_16MB.bin` 与 ZIP 已按 v2.3.4 重新构建并记录 SHA256 |
+| release | v2.3.5 完整烧录固件与网页 OTA 固件均提供 BIN/ZIP，并记录 SHA256 |
 
 后续只要修改源码、分区表、`fontfs` 字库或构建配置，就需要重新执行完整构建，并同步更新 release 固件和校验值。
 
@@ -108,6 +108,7 @@
 - `partitions.csv` 与 README、工程文档、release 说明一致。
 - `release/epaper_uploader_full_16MB.bin` 重新合并并更新 SHA256。
 - `release/epaper_uploader_full_16MB.zip` 如重新生成，需要更新 SHA256。
+- `release/web_upgrade.bin` 与 `release/web_upgrade.zip` 由同次构建生成并更新 SHA256。
 - `firmware-download` 分支中的 bin 与 `master:release/epaper_uploader_full_16MB.bin` 为同一版本。
 - `git diff --check` 通过。
 - 文档中无本机路径、微信临时目录、真实 API Key 或会话化描述。
