@@ -4,12 +4,18 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef enum {
+    WEATHER_PROVIDER_OPEN_METEO = 0,
+    WEATHER_PROVIDER_QWEATHER   = 1,
+} weather_provider_t;
+
 typedef struct {
     bool     enabled;
-    char     api_key[48];        /* Legacy QWeather key; unused by Open-Meteo. */
-    char     api_host[64];       /* Cached Open-Meteo timezone, e.g. "Asia/Shanghai". */
-    char     location[32];       /* Cached "lat,lon"; populated by geocoding. */
-    char     city_name[64];      /* User-entered city name. */
+    weather_provider_t provider;
+    char     api_key[48];        /* QWeather key; preserved when Open-Meteo is active. */
+    char     api_host[64];       /* QWeather host, or Open-Meteo cached timezone. */
+    char     location[32];       /* QWeather location ID, or Open-Meteo cached "lat,lon". */
+    char     city_name[64];      /* User-entered city/display name. */
     uint32_t refresh_min;        /* 0=manual; nonzero auto mode normalizes to 30 min */
 } weather_config_t;
 
