@@ -47,13 +47,14 @@ static const char *NVS_NS = "weather";
 #define MAX_RESP_LEN     12288
 #define WEATHER_ACTIVE_REFRESH_MIN 30
 #define WEATHER_EMBED_CACHE_TTL_US (300LL * 1000000LL)
-#define WEATHER_TEMP_HISTORY_VERSION 1
+#define WEATHER_TEMP_HISTORY_VERSION 2
 #define WEATHER_TEMP_HISTORY_POINTS 24
 #define WEATHER_TEMP_HISTORY_MIN_POINTS 2
 #define NVS_KEY_TEMP_HISTORY "hist24"
 
 static weather_config_t s_cfg = {
     .enabled     = false,
+    .provider    = WEATHER_PROVIDER_OPEN_METEO,
     .api_key     = "",
     .api_host    = "",
     .location    = "",
@@ -68,6 +69,7 @@ static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool               s_skip_initial_task_fetch;
 static bool               s_quick_refresh_network_allowed = true;
 static int64_t            s_data_fetched_us;
+static weather_provider_t s_data_source_provider;
 static char               s_data_source_host[sizeof(((weather_config_t *)0)->api_host)];
 static char               s_data_source_location[sizeof(((weather_config_t *)0)->location)];
 static unsigned           s_fullpage_request_epoch;
@@ -85,7 +87,7 @@ typedef struct {
 
 typedef struct {
     uint32_t version;
-    uint32_t reserved;
+    uint32_t provider;
     char api_host[sizeof(((weather_config_t *)0)->api_host)];
     char location[sizeof(((weather_config_t *)0)->location)];
     weather_temp_history_point_t points[WEATHER_TEMP_HISTORY_POINTS];
@@ -100,14 +102,49 @@ static void weather_config_snapshot(weather_config_t *out)
     portEXIT_CRITICAL(&s_cfg_mux);
 }
 
+static weather_provider_t weather_provider_normalize(weather_provider_t provider)
+{
+    return provider == WEATHER_PROVIDER_QWEATHER ? WEATHER_PROVIDER_QWEATHER
+                                                 : WEATHER_PROVIDER_OPEN_METEO;
+}
+
+static const char *weather_provider_name(weather_provider_t provider)
+{
+    return weather_provider_normalize(provider) == WEATHER_PROVIDER_QWEATHER
+               ? "qweather"
+               : "open_meteo";
+}
+
+static void weather_source_key(const weather_config_t *cfg,
+                               char *host, size_t host_len,
+                               char *location, size_t location_len)
+{
+    if (!cfg)
+        return;
+    if (weather_provider_normalize(cfg->provider) == WEATHER_PROVIDER_QWEATHER) {
+        snprintf(host, host_len, "%s", cfg->api_host);
+    } else {
+        snprintf(host, host_len, "%s", cfg->city_name);
+    }
+    snprintf(location, location_len, "%s", cfg->location);
+}
+
 static bool weather_config_has_api(const weather_config_t *cfg)
 {
-    return cfg && cfg->city_name[0] != '\0';
+    if (!cfg)
+        return false;
+    if (weather_provider_normalize(cfg->provider) == WEATHER_PROVIDER_QWEATHER) {
+        return cfg->api_key[0] != '\0' &&
+               cfg->api_host[0] != '\0' &&
+               cfg->location[0] != '\0';
+    }
+    return cfg->city_name[0] != '\0';
 }
 
 static bool weather_config_equal(const weather_config_t *a, const weather_config_t *b)
 {
     return a->enabled == b->enabled &&
+           a->provider == b->provider &&
            a->refresh_min == b->refresh_min &&
            strcmp(a->api_key, b->api_key) == 0 &&
            strcmp(a->api_host, b->api_host) == 0 &&
@@ -138,16 +175,22 @@ static uint32_t weather_effective_refresh_min(const weather_config_t *cfg,
 static void weather_note_fetch_success_locked(const weather_config_t *cfg)
 {
     s_data_fetched_us = esp_timer_get_time();
-    snprintf(s_data_source_host, sizeof(s_data_source_host), "%s", cfg->city_name);
-    snprintf(s_data_source_location, sizeof(s_data_source_location), "%s", cfg->location);
+    s_data_source_provider = weather_provider_normalize(cfg->provider);
+    weather_source_key(cfg,
+                       s_data_source_host, sizeof(s_data_source_host),
+                       s_data_source_location, sizeof(s_data_source_location));
 }
 
 static bool weather_cached_fresh_locked(const weather_config_t *cfg)
 {
     if (!s_data.valid || s_data_fetched_us <= 0)
         return false;
-    if (strcmp(s_data_source_host, cfg->city_name) != 0 ||
-        strcmp(s_data_source_location, cfg->location) != 0) {
+    char host[sizeof(s_data_source_host)] = {0};
+    char location[sizeof(s_data_source_location)] = {0};
+    weather_source_key(cfg, host, sizeof(host), location, sizeof(location));
+    if (s_data_source_provider != weather_provider_normalize(cfg->provider) ||
+        strcmp(s_data_source_host, host) != 0 ||
+        strcmp(s_data_source_location, location) != 0) {
         return false;
     }
     return (esp_timer_get_time() - s_data_fetched_us) < WEATHER_EMBED_CACHE_TTL_US;
@@ -170,19 +213,23 @@ static bool weather_try_notify_from_fresh_cache(const weather_config_t *cfg)
 
 static bool weather_history_source_matches_locked(const weather_config_t *cfg)
 {
+    char host[sizeof(s_temp_history.api_host)] = {0};
+    char location[sizeof(s_temp_history.location)] = {0};
+    weather_source_key(cfg, host, sizeof(host), location, sizeof(location));
     return s_temp_history.version == WEATHER_TEMP_HISTORY_VERSION &&
-           strcmp(s_temp_history.api_host, cfg->api_host) == 0 &&
-           strcmp(s_temp_history.location, cfg->location) == 0;
+           s_temp_history.provider == (uint32_t)weather_provider_normalize(cfg->provider) &&
+           strcmp(s_temp_history.api_host, host) == 0 &&
+           strcmp(s_temp_history.location, location) == 0;
 }
 
 static void weather_history_reset_locked(const weather_config_t *cfg)
 {
     memset(&s_temp_history, 0, sizeof(s_temp_history));
     s_temp_history.version = WEATHER_TEMP_HISTORY_VERSION;
-    snprintf(s_temp_history.api_host, sizeof(s_temp_history.api_host), "%s",
-             cfg->api_host);
-    snprintf(s_temp_history.location, sizeof(s_temp_history.location), "%s",
-             cfg->location);
+    s_temp_history.provider = (uint32_t)weather_provider_normalize(cfg->provider);
+    weather_source_key(cfg,
+                       s_temp_history.api_host, sizeof(s_temp_history.api_host),
+                       s_temp_history.location, sizeof(s_temp_history.location));
 }
 
 static int weather_history_find_slot_locked(int64_t hour_epoch)
@@ -443,6 +490,11 @@ static void nvs_load(void)
 
     uint8_t v8;
     if (nvs_get_u8(h, "enabled", &v8) == ESP_OK) s_cfg.enabled = (v8 != 0);
+    bool provider_loaded = false;
+    if (nvs_get_u8(h, "provider", &v8) == ESP_OK) {
+        s_cfg.provider = weather_provider_normalize((weather_provider_t)v8);
+        provider_loaded = true;
+    }
 
     size_t len;
     len = sizeof(s_cfg.api_key);
@@ -453,8 +505,17 @@ static void nvs_load(void)
     nvs_get_str(h, "location", s_cfg.location, &len);
     len = sizeof(s_cfg.city_name);
     nvs_get_str(h, "city", s_cfg.city_name, &len);
-    s_cfg.api_key[0] = '\0';
-    if (!weather_location_is_latlon(s_cfg.location)) {
+
+    if (!provider_loaded &&
+        s_cfg.api_key[0] != '\0' &&
+        s_cfg.api_host[0] != '\0' &&
+        s_cfg.location[0] != '\0') {
+        s_cfg.provider = WEATHER_PROVIDER_QWEATHER;
+    }
+    s_cfg.provider = weather_provider_normalize(s_cfg.provider);
+
+    if (s_cfg.provider == WEATHER_PROVIDER_OPEN_METEO &&
+        !weather_location_is_latlon(s_cfg.location)) {
         s_cfg.location[0] = '\0';
         s_cfg.api_host[0] = '\0';
     }
@@ -479,6 +540,7 @@ static void nvs_save_snapshot(const weather_config_t *cfg)
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
     nvs_set_u8(h,  "enabled",  cfg->enabled ? 1 : 0);
+    nvs_set_u8(h,  "provider", (uint8_t)weather_provider_normalize(cfg->provider));
     nvs_set_str(h, "api_key",  cfg->api_key);
     nvs_set_str(h, "api_host", cfg->api_host);
     nvs_set_str(h, "location", cfg->location);
@@ -828,6 +890,10 @@ static void weather_cache_geocode_result(const weather_config_t *cfg)
     bool changed = false;
     weather_config_t snap;
     portENTER_CRITICAL(&s_cfg_mux);
+    if (s_cfg.provider != WEATHER_PROVIDER_OPEN_METEO) {
+        portEXIT_CRITICAL(&s_cfg_mux);
+        return;
+    }
     snap = s_cfg;
     if (strcmp(s_cfg.city_name, cfg->city_name) != 0) {
         snprintf(s_cfg.city_name, sizeof(s_cfg.city_name), "%s", cfg->city_name);
@@ -841,7 +907,6 @@ static void weather_cache_geocode_result(const weather_config_t *cfg)
         snprintf(s_cfg.api_host, sizeof(s_cfg.api_host), "%s", cfg->api_host);
         changed = true;
     }
-    s_cfg.api_key[0] = '\0';
     snap = s_cfg;
     portEXIT_CRITICAL(&s_cfg_mux);
     if (changed)
@@ -937,6 +1002,154 @@ static bool parse_open_meteo_forecast(const char *json)
              s_data.daily_count, s_data.hourly_count);
     cJSON_Delete(root);
     return true;
+}
+
+/* parse QWeather JSON */
+
+static bool parse_qweather_now(const char *json)
+{
+    ESP_LOGI(TAG, "parse_qweather_now: %.120s", json);
+
+    cJSON *root = cJSON_Parse(json);
+    if (!root) {
+        ESP_LOGE(TAG, "parse_qweather_now: cJSON_Parse failed");
+        return false;
+    }
+
+    const char *code = cJSON_GetStringValue(cJSON_GetObjectItem(root, "code"));
+    if (!code || strcmp(code, "200") != 0) {
+        ESP_LOGW(TAG, "QWeather API error code: %s", code ? code : "null");
+        cJSON_Delete(root);
+        return false;
+    }
+
+    cJSON *now = cJSON_GetObjectItem(root, "now");
+    if (!now) {
+        ESP_LOGE(TAG, "parse_qweather_now: 'now' object missing");
+        cJSON_Delete(root);
+        return false;
+    }
+
+    const char *v;
+    memset(&s_data.now, 0, sizeof(s_data.now));
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "temp"))))
+        s_data.now.temp = atoi(v);
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "feelsLike"))))
+        s_data.now.feels_like = atoi(v);
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "humidity"))))
+        s_data.now.humidity = atoi(v);
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "pressure"))))
+        s_data.now.pressure = atoi(v);
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "text"))))
+        snprintf(s_data.now.text, sizeof(s_data.now.text), "%s", v);
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "windDir"))))
+        snprintf(s_data.now.wind_dir, sizeof(s_data.now.wind_dir), "%s", v);
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "windScale"))))
+        s_data.now.wind_scale = atoi(v);
+    if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(now, "icon"))))
+        s_data.now.icon = atoi(v);
+
+    cJSON_Delete(root);
+    return true;
+}
+
+static bool parse_qweather_daily(const char *json)
+{
+    cJSON *root = cJSON_Parse(json);
+    if (!root)
+        return false;
+
+    const char *code = cJSON_GetStringValue(cJSON_GetObjectItem(root, "code"));
+    if (!code || strcmp(code, "200") != 0) {
+        ESP_LOGW(TAG, "QWeather daily API error code: %s", code ? code : "null");
+        cJSON_Delete(root);
+        return false;
+    }
+
+    cJSON *daily = cJSON_GetObjectItem(root, "daily");
+    if (!daily) {
+        cJSON_Delete(root);
+        return false;
+    }
+
+    int count = cJSON_GetArraySize(daily);
+    if (count > 3) count = 3;
+    if (count < 0) count = 0;
+    s_data.daily_count = count;
+
+    for (int i = 0; i < count; i++) {
+        cJSON *d = cJSON_GetArrayItem(daily, i);
+        const char *v;
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(d, "fxDate"))))
+            snprintf(s_data.daily[i].date, sizeof(s_data.daily[i].date), "%s", v);
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(d, "tempMax"))))
+            s_data.daily[i].temp_max = atoi(v);
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(d, "tempMin"))))
+            s_data.daily[i].temp_min = atoi(v);
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(d, "textDay"))))
+            snprintf(s_data.daily[i].text_day, sizeof(s_data.daily[i].text_day), "%s", v);
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(d, "iconDay"))))
+            s_data.daily[i].icon_day = atoi(v);
+    }
+
+    cJSON_Delete(root);
+    return true;
+}
+
+static bool parse_qweather_hourly(const char *json)
+{
+    cJSON *root = cJSON_Parse(json);
+    if (!root)
+        return false;
+
+    const char *code = cJSON_GetStringValue(cJSON_GetObjectItem(root, "code"));
+    if (!code || strcmp(code, "200") != 0) {
+        ESP_LOGW(TAG, "QWeather hourly API error code: %s", code ? code : "null");
+        cJSON_Delete(root);
+        return false;
+    }
+
+    cJSON *hourly = cJSON_GetObjectItem(root, "hourly");
+    if (!hourly) {
+        cJSON_Delete(root);
+        return false;
+    }
+
+    int count = cJSON_GetArraySize(hourly);
+    if (count > 24) count = 24;
+    if (count < 0) count = 0;
+    s_data.hourly_count = 0;
+
+    for (int i = 0; i < count; i++) {
+        cJSON *h = cJSON_GetArrayItem(hourly, i);
+        const char *v;
+
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(h, "fxTime")))) {
+            if (strlen(v) >= 16) {
+                snprintf(s_data.hourly[i].time, sizeof(s_data.hourly[i].time),
+                         "%.5s", v + 11);
+            } else {
+                snprintf(s_data.hourly[i].time, sizeof(s_data.hourly[i].time), "--:--");
+            }
+        } else {
+            snprintf(s_data.hourly[i].time, sizeof(s_data.hourly[i].time), "--:--");
+        }
+
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(h, "temp"))))
+            s_data.hourly[i].temp = atoi(v);
+        else
+            s_data.hourly[i].temp = s_data.now.temp;
+
+        if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(h, "icon"))))
+            s_data.hourly[i].icon = atoi(v);
+        else
+            s_data.hourly[i].icon = s_data.now.icon;
+
+        s_data.hourly_count++;
+    }
+
+    cJSON_Delete(root);
+    return s_data.hourly_count > 0;
 }
 
 /* render weather to EPD */
@@ -2266,6 +2479,126 @@ static void render_weather(unsigned epoch)
 
 /* fetch + display */
 
+static esp_err_t weather_fetch_open_meteo_data(weather_config_t *cfg, bool full_page)
+{
+    char url[512];
+
+    if (!weather_location_is_latlon(cfg->location)) {
+        char city_enc[192];
+        if (!weather_url_encode(cfg->city_name, city_enc, sizeof(city_enc))) {
+            ESP_LOGE(TAG, "city name too long for geocoding URL");
+            return ESP_ERR_INVALID_ARG;
+        }
+        snprintf(url, sizeof(url),
+                 "https://geocoding-api.open-meteo.com/v1/search?"
+                 "name=%s&count=1&language=zh&format=json",
+                 city_enc);
+        char *resp = http_get(url);
+        if (!resp)
+            return ESP_FAIL;
+        bool ok = parse_open_meteo_geocode(resp, cfg);
+        free(resp);
+        if (!ok) {
+            ESP_LOGE(TAG, "geocode failed for city=%s", cfg->city_name);
+            return ESP_FAIL;
+        }
+        weather_cache_geocode_result(cfg);
+
+        /* Let the first TLS connection fully tear down in tcpip before opening the second. */
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    double lat = 0;
+    double lon = 0;
+    if (sscanf(cfg->location, "%lf,%lf", &lat, &lon) != 2) {
+        ESP_LOGE(TAG, "invalid Open-Meteo location cache: %s", cfg->location);
+        return ESP_FAIL;
+    }
+
+    snprintf(url, sizeof(url),
+             "https://api.open-meteo.com/v1/forecast?"
+             "latitude=%.5f&longitude=%.5f"
+             "&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
+             "pressure_msl,weather_code,wind_direction_10m,wind_speed_10m"
+             "&hourly=temperature_2m,weather_code"
+             "&daily=weather_code,temperature_2m_max,temperature_2m_min"
+             "&forecast_days=3&timezone=auto",
+             lat, lon);
+    char *resp = http_get(url);
+    if (!resp)
+        return ESP_FAIL;
+    bool ok = parse_open_meteo_forecast(resp);
+    free(resp);
+    if (!ok) {
+        ESP_LOGE(TAG, "parse_open_meteo_forecast failed, aborting");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Current: %d\xc2\xb0" "C, %s, icon=%d",
+             s_data.now.temp, s_data.now.text, s_data.now.icon);
+
+    weather_history_note_current_locked(cfg);
+    bool need_hourly = full_page && !weather_history_has_enough_locked();
+    if (full_page && !need_hourly)
+        ESP_LOGI(TAG, "Hourly forecast skipped; using saved temp history");
+    if (need_hourly && s_data.hourly_count <= 0)
+        ESP_LOGW(TAG, "Hourly forecast unavailable, trend falls back to daily range");
+
+    return ESP_OK;
+}
+
+static esp_err_t weather_fetch_qweather_data(const weather_config_t *cfg,
+                                             bool full_page)
+{
+    char url[512];
+
+    snprintf(url, sizeof(url),
+             "https://%s/v7/weather/now?location=%s&key=%s",
+             cfg->api_host, cfg->location, cfg->api_key);
+    char *resp = http_get(url);
+    if (!resp)
+        return ESP_FAIL;
+    bool ok = parse_qweather_now(resp);
+    free(resp);
+    if (!ok)
+        return ESP_FAIL;
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    snprintf(url, sizeof(url),
+             "https://%s/v7/weather/3d?location=%s&key=%s",
+             cfg->api_host, cfg->location, cfg->api_key);
+    resp = http_get(url);
+    if (resp) {
+        parse_qweather_daily(resp);
+        free(resp);
+    }
+
+    weather_history_note_current_locked(cfg);
+    bool need_hourly = full_page && !weather_history_has_enough_locked();
+
+    if (need_hourly) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        snprintf(url, sizeof(url),
+                 "https://%s/v7/weather/24h?location=%s&key=%s",
+                 cfg->api_host, cfg->location, cfg->api_key);
+        resp = http_get(url);
+        if (resp) {
+            if (parse_qweather_hourly(resp)) {
+                ESP_LOGI(TAG, "Hourly forecast: %d points", s_data.hourly_count);
+            } else {
+                ESP_LOGW(TAG, "parse_qweather_hourly failed, trend falls back to daily range");
+                s_data.hourly_count = 0;
+            }
+            free(resp);
+        }
+    } else if (full_page) {
+        ESP_LOGI(TAG, "QWeather hourly forecast skipped; using saved temp history");
+    }
+
+    return ESP_OK;
+}
+
 static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
                                                 bool begin_new_manual_epoch,
                                                 unsigned requested_epoch,
@@ -2274,7 +2607,8 @@ static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
     weather_config_t cfg;
     weather_config_snapshot(&cfg);
     if (!weather_config_has_api(&cfg)) {
-        ESP_LOGW(TAG, "Weather city not configured");
+        ESP_LOGW(TAG, "Weather provider=%s not configured",
+                 weather_provider_name(cfg.provider));
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -2304,82 +2638,20 @@ static esp_err_t weather_fetch_and_display_impl(bool force_fullscreen,
     wifi_ps_type_t old_wifi_ps = WIFI_PS_MIN_MODEM;
     bool wifi_ps_changed = false;
 
-    ESP_LOGI(TAG, "Fetching weather for city=%s location=%s ...",
-             cfg.city_name, cfg.location[0] ? cfg.location : "<need geocode>");
+    ESP_LOGI(TAG, "Fetching weather provider=%s city=%s host=%s location=%s ...",
+             weather_provider_name(cfg.provider), cfg.city_name, cfg.api_host,
+             cfg.location[0] ? cfg.location : "<need geocode>");
     weather_wifi_net_boost_begin(&old_wifi_ps, &wifi_ps_changed);
 
-    char url[512];
     bool full_page = display_policy_weather_use_full_page(force_fullscreen);
-    s_data.hourly_count = 0;
+    memset(&s_data, 0, sizeof(s_data));
 
-    if (!weather_location_is_latlon(cfg.location)) {
-        char city_enc[192];
-        if (!weather_url_encode(cfg.city_name, city_enc, sizeof(city_enc))) {
-            ESP_LOGE(TAG, "city name too long for geocoding URL");
-            ret = ESP_ERR_INVALID_ARG;
-            goto out;
-        }
-        snprintf(url, sizeof(url),
-                 "https://geocoding-api.open-meteo.com/v1/search?"
-                 "name=%s&count=1&language=zh&format=json",
-                 city_enc);
-        char *resp = http_get(url);
-        if (!resp) {
-            ret = ESP_FAIL;
-            goto out;
-        }
-        bool ok = parse_open_meteo_geocode(resp, &cfg);
-        free(resp);
-        if (!ok) {
-            ESP_LOGE(TAG, "geocode failed for city=%s", cfg.city_name);
-            ret = ESP_FAIL;
-            goto out;
-        }
-        weather_cache_geocode_result(&cfg);
-
-        /* Let the first TLS connection fully tear down in tcpip before opening the second. */
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    double lat = 0;
-    double lon = 0;
-    if (sscanf(cfg.location, "%lf,%lf", &lat, &lon) != 2) {
-        ESP_LOGE(TAG, "invalid Open-Meteo location cache: %s", cfg.location);
-        ret = ESP_FAIL;
+    if (weather_provider_normalize(cfg.provider) == WEATHER_PROVIDER_QWEATHER)
+        ret = weather_fetch_qweather_data(&cfg, full_page);
+    else
+        ret = weather_fetch_open_meteo_data(&cfg, full_page);
+    if (ret != ESP_OK)
         goto out;
-    }
-
-    snprintf(url, sizeof(url),
-             "https://api.open-meteo.com/v1/forecast?"
-             "latitude=%.5f&longitude=%.5f"
-             "&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
-             "pressure_msl,weather_code,wind_direction_10m,wind_speed_10m"
-             "&hourly=temperature_2m,weather_code"
-             "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-             "&forecast_days=3&timezone=auto",
-             lat, lon);
-    char *resp = http_get(url);
-    if (!resp) {
-        ret = ESP_FAIL;
-        goto out;
-    }
-    bool ok = parse_open_meteo_forecast(resp);
-    free(resp);
-    if (!ok) {
-        ESP_LOGE(TAG, "parse_open_meteo_forecast failed, aborting");
-        ret = ESP_FAIL;
-        goto out;
-    }
-    ESP_LOGI(TAG, "Current: %d\xc2\xb0" "C, %s, icon=%d",
-             s_data.now.temp, s_data.now.text, s_data.now.icon);
-
-    weather_history_note_current_locked(&cfg);
-    bool need_hourly = full_page && !weather_history_has_enough_locked();
-    if (full_page && !need_hourly)
-        ESP_LOGI(TAG, "Hourly forecast skipped; using saved temp history");
-
-    if (need_hourly && s_data.hourly_count <= 0)
-        ESP_LOGW(TAG, "Hourly forecast unavailable, trend falls back to daily range");
 
     /* update time */
     time_sync_get_str(s_data.update_time, sizeof(s_data.update_time));
@@ -2713,6 +2985,7 @@ esp_err_t weather_init(void)
     memset(&s_temp_history, 0, sizeof(s_temp_history));
     s_temp_history.version = WEATHER_TEMP_HISTORY_VERSION;
     s_data_fetched_us = 0;
+    s_data_source_provider = WEATHER_PROVIDER_OPEN_METEO;
     s_data_source_host[0] = '\0';
     s_data_source_location[0] = '\0';
     s_fullpage_request_epoch = 0;
@@ -2738,8 +3011,9 @@ esp_err_t weather_init(void)
     weather_config_snapshot(&init_cfg);
     bool low_power = false;
     uint32_t effective_refresh_min = weather_effective_refresh_min(&init_cfg, &low_power);
-    ESP_LOGI(TAG, "Weather init (enabled=%d, city=%s, location=%s, refresh=%lum, effective=%lum%s)",
-             init_cfg.enabled, init_cfg.city_name, init_cfg.location,
+    ESP_LOGI(TAG, "Weather init (enabled=%d, provider=%s, city=%s, host=%s, location=%s, refresh=%lum, effective=%lum%s)",
+             init_cfg.enabled, weather_provider_name(init_cfg.provider),
+             init_cfg.city_name, init_cfg.api_host, init_cfg.location,
              (unsigned long)init_cfg.refresh_min,
              (unsigned long)effective_refresh_min,
              low_power ? " low-power" : "");
@@ -2757,12 +3031,14 @@ esp_err_t weather_set_config(const weather_config_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
     weather_config_t snap = *cfg;
+    snap.provider = weather_provider_normalize(snap.provider);
     snap.refresh_min = weather_normalize_refresh_min(snap.refresh_min);
-    snap.api_key[0] = '\0';
     bool changed;
     portENTER_CRITICAL(&s_cfg_mux);
+    bool provider_changed = s_cfg.provider != snap.provider;
     bool city_changed = strcmp(s_cfg.city_name, snap.city_name) != 0;
-    if (city_changed || !weather_location_is_latlon(snap.location)) {
+    if (snap.provider == WEATHER_PROVIDER_OPEN_METEO &&
+        (provider_changed || city_changed || !weather_location_is_latlon(snap.location))) {
         snap.location[0] = '\0';
         snap.api_host[0] = '\0';
     }
@@ -2771,12 +3047,14 @@ esp_err_t weather_set_config(const weather_config_t *cfg)
     portEXIT_CRITICAL(&s_cfg_mux);
     if (changed) {
         nvs_save_snapshot(&snap);
-        ESP_LOGI(TAG, "Config saved: enabled=%d, city=%s, loc=%s, refresh=%lum (changed=1)",
-                 snap.enabled, snap.city_name, snap.location,
+        ESP_LOGI(TAG, "Config saved: enabled=%d, provider=%s, city=%s, host=%s, loc=%s, refresh=%lum (changed=1)",
+                 snap.enabled, weather_provider_name(snap.provider),
+                 snap.city_name, snap.api_host, snap.location,
                  (unsigned long)snap.refresh_min);
     } else {
-        ESP_LOGI(TAG, "Config unchanged: enabled=%d, city=%s, loc=%s, refresh=%lum",
-                 snap.enabled, snap.city_name, snap.location,
+        ESP_LOGI(TAG, "Config unchanged: enabled=%d, provider=%s, city=%s, host=%s, loc=%s, refresh=%lum",
+                 snap.enabled, weather_provider_name(snap.provider),
+                 snap.city_name, snap.api_host, snap.location,
                  (unsigned long)snap.refresh_min);
     }
     if (changed && s_event)

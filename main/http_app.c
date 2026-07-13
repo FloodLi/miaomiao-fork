@@ -845,6 +845,21 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
 
 /* ── GET /weather_config ───────────────────────────────────────────── */
 
+static const char *weather_provider_to_json(weather_provider_t provider)
+{
+    return provider == WEATHER_PROVIDER_QWEATHER ? "qweather" : "open_meteo";
+}
+
+static weather_provider_t weather_provider_from_json(const char *s,
+                                                     weather_provider_t fallback)
+{
+    if (!s || !s[0])
+        return fallback;
+    if (strcmp(s, "qweather") == 0 || strcmp(s, "heweather") == 0)
+        return WEATHER_PROVIDER_QWEATHER;
+    return WEATHER_PROVIDER_OPEN_METEO;
+}
+
 static esp_err_t weather_config_get_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
@@ -860,7 +875,11 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
         return ESP_OK;
     }
     cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
-    cJSON_AddStringToObject(root, "provider", "Open-Meteo");
+    cJSON_AddStringToObject(root, "provider", weather_provider_to_json(cfg.provider));
+    cJSON_AddNumberToObject(root, "provider_id", (int)cfg.provider);
+    cJSON_AddStringToObject(root, "api_key", "");
+    cJSON_AddBoolToObject(root, "api_key_set", cfg.api_key[0] != '\0');
+    cJSON_AddStringToObject(root, "api_host", cfg.api_host);
     cJSON_AddStringToObject(root, "timezone", cfg.api_host);
     cJSON_AddStringToObject(root, "location", cfg.location);
     cJSON_AddStringToObject(root, "city_name", cfg.city_name);
@@ -902,15 +921,30 @@ static esp_err_t weather_config_post_handler(httpd_req_t *req)
     if ((j = cJSON_GetObjectItem(root, "enabled")) && cJSON_IsBool(j))
         cfg.enabled = cJSON_IsTrue(j);
     const char *s;
+    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "provider"))))
+        cfg.provider = weather_provider_from_json(s, cfg.provider);
+    else if ((j = cJSON_GetObjectItem(root, "provider_id")) && cJSON_IsNumber(j))
+        cfg.provider = j->valueint == WEATHER_PROVIDER_QWEATHER
+                           ? WEATHER_PROVIDER_QWEATHER
+                           : WEATHER_PROVIDER_OPEN_METEO;
+    cJSON *jk = cJSON_GetObjectItem(root, "api_key");
+    if (jk && cJSON_IsString(jk) && jk->valuestring && jk->valuestring[0] != '\0')
+        snprintf(cfg.api_key, sizeof(cfg.api_key), "%s", jk->valuestring);
+    j = cJSON_GetObjectItem(root, "api_key_clear");
+    if (j && cJSON_IsTrue(j))
+        cfg.api_key[0] = '\0';
+    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "api_host"))))
+        snprintf(cfg.api_host, sizeof(cfg.api_host), "%s", s);
+    if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "location"))))
+        snprintf(cfg.location, sizeof(cfg.location), "%s", s);
     if ((s = cJSON_GetStringValue(cJSON_GetObjectItem(root, "city_name")))) {
         bool city_changed = strcmp(cfg.city_name, s) != 0;
         snprintf(cfg.city_name, sizeof(cfg.city_name), "%s", s);
-        if (city_changed) {
+        if (cfg.provider == WEATHER_PROVIDER_OPEN_METEO && city_changed) {
             cfg.location[0] = '\0';
             cfg.api_host[0] = '\0';
         }
     }
-    cfg.api_key[0] = '\0';
     if ((j = cJSON_GetObjectItem(root, "refresh_min")) && cJSON_IsNumber(j))
         cfg.refresh_min = (uint32_t)j->valuedouble;
     cJSON_Delete(root);

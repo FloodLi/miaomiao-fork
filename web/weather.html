@@ -12,12 +12,21 @@
 *{box-sizing:border-box;transition:background-color .35s,border-color .35s,color .3s,box-shadow .35s}
 body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;background:radial-gradient(1200px 800px at 20% -10%,var(--g1),transparent 60%),radial-gradient(900px 600px at 100% 0%,var(--g2),transparent 55%),var(--bg);color:var(--tx);min-height:100vh;overflow-y:scroll}
 .wrap{width:min(1180px,calc(100vw - 32px));max-width:1180px;margin:0 auto;padding:24px 0 36px}
-.hdr{display:flex;gap:12px;align-items:center;justify-content:space-between;min-height:46px;margin:0 0 16px;flex-wrap:wrap}.title{font-weight:800;letter-spacing:.2px;font-size:20px;line-height:1.25}.sub{color:var(--t2);font-size:13px;line-height:1.5}
-.nav{width:min(1180px,100%);display:flex;align-items:center;gap:8px;margin:0 auto 20px;padding:8px;overflow-x:auto;flex-wrap:nowrap;border-radius:18px;background:rgba(255,255,255,.60);border:1px solid var(--cb);box-shadow:0 8px 22px rgba(255,155,179,.10);scrollbar-width:none;-webkit-overflow-scrolling:touch;justify-content:center}.nav::-webkit-scrollbar{display:none}.nav a{flex:0 0 88px;width:88px;min-width:88px;max-width:88px;min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 6px;border-radius:12px;font-size:13px;font-weight:800;line-height:1;color:var(--tx);background:rgba(255,255,255,.78);border:1px solid var(--cb);text-decoration:none;white-space:nowrap;overflow:hidden;box-shadow:0 4px 12px rgba(255,155,179,.08)}.nav .ni{width:18px;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}.nav a:hover,.nav a.active{color:var(--ac);border-color:var(--ac);background:var(--hv);transform:translateY(-1px);box-shadow:0 0 0 2px var(--ag)}
-.card{position:relative;width:100%;background:var(--cd);border:1px solid var(--cb);border-radius:16px;overflow:hidden;box-shadow:var(--cs);margin-bottom:16px}.card .hd{padding:20px 22px 12px;background:linear-gradient(180deg,var(--ch),transparent)}.card .bd{padding:18px 22px 22px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;align-items:start}.kv{grid-column:1/-1;display:grid;grid-template-columns:110px 1fr;gap:8px 12px;font-size:13px;margin-bottom:4px}.k{color:var(--t2)}.v{font-weight:700}.ok{color:var(--ok)}.bad{color:var(--er)}.warn{color:var(--wn)}.row{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.form-row{margin-bottom:0}.form-row label{display:block;font-size:12px;color:var(--t2);margin-bottom:4px}.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:13px;color:var(--bt);background:linear-gradient(135deg,var(--ac),var(--a2));box-shadow:0 6px 20px var(--ag);transition:filter .2s,transform .15s}.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}.btn.ghost{background:var(--sf);color:var(--tx);border:1px solid var(--cb);box-shadow:none}.btn.ghost:hover{background:var(--hv);border-color:var(--ac)}.btn.sm{padding:6px 10px;font-size:12px;border-radius:8px}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;filter:none}.log{grid-column:1/-1;margin-top:4px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;background:var(--sf);border:1px solid var(--sb);border-radius:12px;padding:10px;min-height:48px;white-space:pre-wrap}
+.hdr{display:flex;gap:12px;align-items:center;justify-content:space-between;min-height:46px;margin:0 0 16px;flex-wrap:wrap}
+.title{font-weight:800;letter-spacing:.2px;font-size:20px;line-height:1.25}.sub{color:var(--t2);font-size:13px;line-height:1.5}
+.nav{width:min(1180px,100%);display:flex;align-items:center;gap:8px;margin:0 auto 20px;padding:8px;overflow-x:auto;flex-wrap:nowrap;border-radius:18px;background:rgba(255,255,255,.60);border:1px solid var(--cb);box-shadow:0 8px 22px rgba(255,155,179,.10);scrollbar-width:none;-webkit-overflow-scrolling:touch;justify-content:center}
+.nav::-webkit-scrollbar{display:none}.nav a{flex:0 0 88px;width:88px;min-width:88px;max-width:88px;min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 6px;border-radius:12px;font-size:13px;font-weight:800;line-height:1;color:var(--tx);background:rgba(255,255,255,.78);border:1px solid var(--cb);text-decoration:none;white-space:nowrap;overflow:hidden;box-shadow:0 4px 12px rgba(255,155,179,.08)}
+.nav .ni{width:18px;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}.nav a:hover,.nav a.active{color:var(--ac);border-color:var(--ac);background:var(--hv);transform:translateY(-1px);box-shadow:0 0 0 2px var(--ag)}
+.card{position:relative;width:100%;background:var(--cd);border:1px solid var(--cb);border-radius:16px;overflow:hidden;box-shadow:var(--cs);margin-bottom:16px}.card .hd{padding:20px 22px 12px;background:linear-gradient(180deg,var(--ch),transparent)}
+.card .bd{padding:18px 22px 22px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;align-items:start}
+.kv{grid-column:1/-1;display:grid;grid-template-columns:110px 1fr;gap:8px 12px;font-size:13px;margin-bottom:4px}.k{color:var(--t2)}.v{font-weight:700}.ok{color:var(--ok)}.bad{color:var(--er)}.warn{color:var(--wn)}
+.row{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.form-row{margin-bottom:0}.form-row label{display:block;font-size:12px;color:var(--t2);margin-bottom:4px}
+.btn{cursor:pointer;border:0;border-radius:12px;padding:10px 14px;font-weight:700;font-size:13px;color:var(--bt);background:linear-gradient(135deg,var(--ac),var(--a2));box-shadow:0 6px 20px var(--ag);transition:filter .2s,transform .15s}.btn:hover{filter:brightness(1.06);transform:translateY(-1px)}.btn.ghost{background:var(--sf);color:var(--tx);border:1px solid var(--cb);box-shadow:none}.btn.ghost:hover{background:var(--hv);border-color:var(--ac)}.btn.sm{padding:6px 10px;font-size:12px;border-radius:8px}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none;filter:none}
+.log{grid-column:1/-1;margin-top:4px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;background:var(--sf);border:1px solid var(--sb);border-radius:12px;padding:10px;min-height:48px;white-space:pre-wrap}
 select,input[type=text]{padding:10px 12px;background:var(--sf);border:1px solid var(--sb);color:var(--tx);border-radius:12px;font-size:14px;width:100%;max-width:none;font-family:inherit}select:focus,input:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px var(--ag)}
 .toggle{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}.toggle input{opacity:0;width:0;height:0;position:absolute}.toggle .sl{position:absolute;cursor:pointer;inset:0;background:var(--tg);border-radius:24px;transition:.3s}.toggle .sl:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:var(--cd);border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.15)}.toggle input:checked+.sl{background:var(--ac)}.toggle input:checked+.sl:before{transform:translateX(20px)}
-.epd-credit{width:100%;margin-top:20px;padding-top:14px;border-top:1px solid var(--cb);font-size:12px;color:var(--t2);text-align:center;line-height:1.6}.epd-credit strong{color:var(--tx);font-weight:700}.epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}.epd-credit a:hover{text-decoration:underline}
+.checkline{display:flex!important;align-items:center;gap:8px;margin-top:8px!important;font-size:12px!important;color:var(--t2)!important}.checkline input{width:auto}
+.hidden{display:none!important}.epd-credit{width:100%;margin-top:20px;padding-top:14px;border-top:1px solid var(--cb);font-size:12px;color:var(--t2);text-align:center;line-height:1.6}.epd-credit strong{color:var(--tx);font-weight:700}.epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}.epd-credit a:hover{text-decoration:underline}
 @media(max-width:760px){.wrap{width:calc(100vw - 24px);padding:16px 0 28px}.nav{margin-bottom:16px;justify-content:flex-start;padding:7px;gap:7px;border-radius:16px}.nav a{min-height:36px;padding:0 11px;font-size:12px}.card .bd{grid-template-columns:1fr}.kv{grid-template-columns:92px 1fr}}
 </style>
 </head>
@@ -25,14 +34,14 @@ select,input[type=text]{padding:10px 12px;background:var(--sf);border:1px solid 
 <div class="wrap">
   <div class="hdr"><div class="title">天气显示</div></div>
   <div class="nav">
-    <a href="/"><span class="ni">📤</span> 上传</a>
+    <a href="/"><span class="ni">🖼</span> 上传</a>
     <a href="/gallery"><span class="ni">🔁</span> 轮播</a>
     <a href="/weather" class="active"><span class="ni">🌤</span> 天气</a>
-    <a href="/clock"><span class="ni">🕒</span> 时钟</a>
+    <a href="/clock"><span class="ni">🕐</span> 时钟</a>
     <a href="/calendar"><span class="ni">🗓</span> 日历</a>
     <a href="/timetable"><span class="ni">📅</span> 课程表</a>
-    <a href="/todo"><span class="ni">✓</span> 待办</a>
-    <a href="/countdown"><span class="ni">⏱</span> 倒计时</a>
+    <a href="/todo"><span class="ni">✅</span> 待办</a>
+    <a href="/countdown"><span class="ni">⏳</span> 倒计时</a>
     <a href="/message"><span class="ni">💬</span> 文字留言</a>
     <a href="/board"><span class="ni">🎨</span> 画布留言</a>
     <a href="/codex"><span class="ni">📊</span> 额度</a>
@@ -41,15 +50,17 @@ select,input[type=text]{padding:10px 12px;background:var(--sf);border:1px solid 
 
   <div class="card">
     <div class="hd">
-      <div class="title" style="font-size:16px">Open-Meteo 城市天气</div>
-      <div class="sub">输入城市名后由设备自动查询经纬度并获取天气。</div>
+      <div class="title" style="font-size:16px">天气显示</div>
+      <div class="sub">可选择 Open-Meteo 城市直查，或使用原来的和风天气 API。</div>
     </div>
     <div class="bd">
       <div class="kv">
         <div class="k">天气状态</div><div class="v" id="w_status">-</div>
         <div class="k">最新数据</div><div class="v" id="w_data">-</div>
-        <div class="k">定位缓存</div><div class="v" id="w_geo">-</div>
+        <div class="k">当前来源</div><div class="v" id="w_source">-</div>
+        <div class="k">定位/Host</div><div class="v" id="w_geo">-</div>
       </div>
+
       <div class="form-row">
         <label>启用天气</label>
         <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px">
@@ -58,8 +69,28 @@ select,input[type=text]{padding:10px 12px;background:var(--sf);border:1px solid 
         </label>
       </div>
       <div class="form-row">
-        <label>城市</label>
+        <label>天气源</label>
+        <select id="wProvider">
+          <option value="open_meteo">Open-Meteo 城市直查</option>
+          <option value="qweather">和风天气 API</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label id="wCityLabel">城市</label>
         <input type="text" id="wCity" placeholder="北京 / 上海 / Hangzhou" autocomplete="off">
+      </div>
+      <div class="form-row qweather-only hidden">
+        <label>API Key（留空表示保留已保存 Key）</label>
+        <input type="text" id="wApiKey" placeholder="在 dev.qweather.com 获取">
+        <label class="checkline"><input type="checkbox" id="wApiKeyClear"> 清除已保存的 Key</label>
+      </div>
+      <div class="form-row qweather-only hidden">
+        <label>API Host（不含 https://）</label>
+        <input type="text" id="wApiHost" placeholder="xxx.re.qweatherapi.com">
+      </div>
+      <div class="form-row qweather-only hidden">
+        <label>Location ID 或经纬度</label>
+        <input type="text" id="wLocation" placeholder="101010100">
       </div>
       <div class="form-row">
         <label>天气刷新策略</label>
@@ -83,14 +114,19 @@ function epdAuthHeaders(){try{var u=localStorage.getItem('epd_auth_u');var p=loc
 function epdFetchOpts(extra){extra=extra||{};var h=Object.assign({},epdAuthHeaders(),extra.headers||{});return Object.assign({},extra,{headers:h});}
 function wLog(s,cls){const el=document.getElementById('wLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 async function fetchJsonRetry(url,options,retries,delayMs){retries=retries===undefined?4:retries;delayMs=delayMs===undefined?400:delayMs;let last;for(let i=0;i<retries;i++){try{const r=await fetch(url,epdFetchOpts(options));if(!r.ok) throw new Error('HTTP '+r.status);return await r.json();}catch(e){last=e;if(i<retries-1) await new Promise(function(res){setTimeout(res,delayMs*(i+1));});}}throw last;}
-let weatherHydrating=false,weatherAutoSaveTimer=null,weatherSaveInFlight=false;
-function collectWeatherCfg(){return {enabled:document.getElementById('wEnabled').checked,city_name:document.getElementById('wCity').value.trim(),refresh_min:parseInt(document.getElementById('wRefresh').value,10)||0};}
-function scheduleWeatherAutoSave(){if(weatherHydrating||weatherSaveInFlight)return;clearTimeout(weatherAutoSaveTimer);weatherAutoSaveTimer=setTimeout(function(){weatherAutoSaveTimer=null;var cfg=collectWeatherCfg();if(cfg.enabled&&!cfg.city_name)return;saveWeather({silent:true});},2000);}
-async function loadWeather(){try{weatherHydrating=true;const j=await fetchJsonRetry('/weather_config');document.getElementById('wEnabled').checked=!!j.enabled;document.getElementById('wLabel').textContent=j.enabled?'已开启':'已关闭';document.getElementById('wCity').value=j.city_name||'';document.getElementById('wRefresh').value=String(j.refresh_min?30:0);const st=document.getElementById('w_status');if(j.enabled&&j.city_name){st.textContent='运行中';st.className='v ok';}else if(j.enabled){st.textContent='等待城市';st.className='v warn';}else{st.textContent='已关闭';st.className='v warn';}const wd=document.getElementById('w_data');if(j.has_data){wd.textContent=j.temp+'°C '+j.text+' ('+(j.update_time||'--')+')';wd.className='v';}else{wd.textContent='暂无数据';wd.className='v warn';}const geo=document.getElementById('w_geo');geo.textContent=j.location?j.location+(j.timezone?' · '+j.timezone:''):'未查询';geo.className=j.location?'v':'v warn';wLog('设置已加载。');}catch(e){wLog('加载失败: '+e,'bad');}finally{weatherHydrating=false;}}
-async function saveWeather(opts){opts=opts||{};var silent=opts.silent===true;var cfg=collectWeatherCfg();if(cfg.enabled&&!cfg.city_name){if(!silent)wLog('请填写城市名','bad');return false;}wLog(silent?'自动保存中…':'保存中…');weatherSaveInFlight=true;try{var j=await fetchJsonRetry('/weather_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)},3,500);if(j.ok){if(!opts.noReload)await loadWeather();wLog(silent?'已自动保存。':'设置已保存。','ok');return true;}wLog('保存失败','bad');return false;}catch(e){wLog('请求失败: '+e,'bad');return false;}finally{weatherSaveInFlight=false;}}
-async function showWeather(){wLog('正在查询天气并渲染…墨水屏刷新需要一点时间');var ctrl=new AbortController();var t=setTimeout(function(){ctrl.abort();},120000);try{const r=await fetch('/weather_show',epdFetchOpts({method:'POST',signal:ctrl.signal}));const j=await r.json();if(j.ok){wLog('天气已显示在墨水屏上。','ok');await loadWeather();return true;}wLog('获取天气失败，请检查城市名或网络。','bad');return false;}catch(e){wLog('请求失败: '+(e.name==='AbortError'?'超时，墨水屏可能仍在刷新':e),'bad');return false;}finally{clearTimeout(t);}}
-async function queryWeather(){var cfg=collectWeatherCfg();if(!cfg.city_name){wLog('请填写城市名','bad');return;}document.getElementById('wEnabled').checked=true;document.getElementById('wLabel').textContent='已开启';var ok=await saveWeather({silent:true,noReload:true});if(ok)await showWeather();}
-(function(){['wEnabled','wCity','wRefresh'].forEach(function(id){var el=document.getElementById(id);if(!el)return;var ev=(el.tagName==='SELECT'||el.type==='checkbox')?'change':'input';el.addEventListener(ev,function(){if(id==='wEnabled')document.getElementById('wLabel').textContent=el.checked?'已开启':'已关闭';scheduleWeatherAutoSave();});});})();
+let weatherHydrating=false,weatherAutoSaveTimer=null,weatherSaveInFlight=false,weatherApiKeyConfigured=false,loadedProvider='open_meteo';
+function providerLabel(p){return p==='qweather'?'和风天气':'Open-Meteo';}
+function normalizeHost(s){return (s||'').trim().replace(/^https?:\/\//,'').replace(/\/.*$/,'');}
+function applyProviderUI(fromUser){var p=document.getElementById('wProvider').value;document.querySelectorAll('.qweather-only').forEach(function(el){el.classList.toggle('hidden',p!=='qweather');});document.getElementById('wCityLabel').textContent=p==='qweather'?'城市名称（显示用，可选）':'城市';document.getElementById('wCity').placeholder=p==='qweather'?'北京':'北京 / 上海 / Hangzhou';if(fromUser&&p==='qweather'&&loadedProvider!=='qweather'){document.getElementById('wApiHost').value='';document.getElementById('wLocation').value='';}}
+function collectWeatherCfg(){var p=document.getElementById('wProvider').value;var cfg={enabled:document.getElementById('wEnabled').checked,provider:p,city_name:document.getElementById('wCity').value.trim(),refresh_min:parseInt(document.getElementById('wRefresh').value,10)||0};if(p==='qweather'){cfg.api_key=document.getElementById('wApiKey').value.trim();cfg.api_key_clear=document.getElementById('wApiKeyClear').checked;cfg.api_host=normalizeHost(document.getElementById('wApiHost').value);cfg.location=document.getElementById('wLocation').value.trim();if(!cfg.api_key&&weatherApiKeyConfigured&&!cfg.api_key_clear)delete cfg.api_key;}return cfg;}
+function cfgReady(cfg){if(!cfg.enabled)return true;if(cfg.provider==='qweather')return (!!cfg.api_key||weatherApiKeyConfigured)&&!cfg.api_key_clear&&!!cfg.api_host&&!!cfg.location;return !!cfg.city_name;}
+function cfgMissingText(cfg){return cfg.provider==='qweather'?'请填写和风 API Key、API Host 和 Location ID':'请填写城市名';}
+function scheduleWeatherAutoSave(){if(weatherHydrating||weatherSaveInFlight)return;clearTimeout(weatherAutoSaveTimer);weatherAutoSaveTimer=setTimeout(function(){weatherAutoSaveTimer=null;var cfg=collectWeatherCfg();if(!cfgReady(cfg))return;saveWeather({silent:true});},2000);}
+async function loadWeather(){try{weatherHydrating=true;const j=await fetchJsonRetry('/weather_config');loadedProvider=j.provider||'open_meteo';weatherApiKeyConfigured=!!j.api_key_set;document.getElementById('wEnabled').checked=!!j.enabled;document.getElementById('wLabel').textContent=j.enabled?'已开启':'已关闭';document.getElementById('wProvider').value=loadedProvider;document.getElementById('wCity').value=j.city_name||'';document.getElementById('wRefresh').value=String(j.refresh_min?30:0);document.getElementById('wApiKey').value='';document.getElementById('wApiKey').placeholder=weatherApiKeyConfigured?'已保存，留空不修改':'和风天气 API Key';document.getElementById('wApiKeyClear').checked=false;document.getElementById('wApiHost').value=j.api_host||'';document.getElementById('wLocation').value=j.location||'';applyProviderUI(false);const st=document.getElementById('w_status');if(j.enabled&&((loadedProvider==='qweather'&&j.location&&j.api_host&&weatherApiKeyConfigured)||(loadedProvider!=='qweather'&&j.city_name))){st.textContent='运行中';st.className='v ok';}else if(j.enabled){st.textContent='等待配置';st.className='v warn';}else{st.textContent='已关闭';st.className='v warn';}const wd=document.getElementById('w_data');if(j.has_data){wd.textContent=j.temp+'°C '+j.text+' ('+(j.update_time||'--')+')';wd.className='v';}else{wd.textContent='暂无数据';wd.className='v warn';}document.getElementById('w_source').textContent=providerLabel(loadedProvider);const geo=document.getElementById('w_geo');if(loadedProvider==='qweather'){geo.textContent=(j.api_host||'未配置')+(j.location?' · '+j.location:'');geo.className=(j.api_host&&j.location)?'v':'v warn';}else{geo.textContent=j.location?j.location+(j.timezone?' · '+j.timezone:''):'未查询';geo.className=j.location?'v':'v warn';}wLog('设置已加载。');}catch(e){wLog('加载失败: '+e,'bad');}finally{weatherHydrating=false;}}
+async function saveWeather(opts){opts=opts||{};var silent=opts.silent===true;var cfg=collectWeatherCfg();if(!cfgReady(cfg)){if(!silent)wLog(cfgMissingText(cfg),'bad');return false;}wLog(silent?'自动保存中…':'保存中…');weatherSaveInFlight=true;try{var j=await fetchJsonRetry('/weather_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)},3,500);if(j.ok){if(!opts.noReload)await loadWeather();wLog(silent?'已自动保存。':'设置已保存。','ok');return true;}wLog('保存失败','bad');return false;}catch(e){wLog('请求失败: '+e,'bad');return false;}finally{weatherSaveInFlight=false;}}
+async function showWeather(){wLog('正在获取天气并渲染…墨水屏刷新需要一点时间');var ctrl=new AbortController();var t=setTimeout(function(){ctrl.abort();},120000);try{const r=await fetch('/weather_show',epdFetchOpts({method:'POST',signal:ctrl.signal}));const j=await r.json();if(j.ok){wLog('天气已显示在墨水屏上。','ok');await loadWeather();return true;}wLog('获取天气失败，请检查当前天气源配置和网络。','bad');return false;}catch(e){wLog('请求失败: '+(e.name==='AbortError'?'超时，墨水屏可能仍在刷新':e),'bad');return false;}finally{clearTimeout(t);}}
+async function queryWeather(){var cfg=collectWeatherCfg();cfg.enabled=true;if(!cfgReady(cfg)){wLog(cfgMissingText(cfg),'bad');return;}document.getElementById('wEnabled').checked=true;document.getElementById('wLabel').textContent='已开启';var ok=await saveWeather({silent:true,noReload:true});if(ok)await showWeather();}
+(function(){['wEnabled','wProvider','wCity','wRefresh','wApiKey','wApiKeyClear','wApiHost','wLocation'].forEach(function(id){var el=document.getElementById(id);if(!el)return;var ev=(el.tagName==='SELECT'||el.type==='checkbox')?'change':'input';el.addEventListener(ev,function(){if(id==='wEnabled')document.getElementById('wLabel').textContent=el.checked?'已开启':'已关闭';if(id==='wProvider')applyProviderUI(true);scheduleWeatherAutoSave();});});})();
 loadWeather();
 </script>
 </body>
