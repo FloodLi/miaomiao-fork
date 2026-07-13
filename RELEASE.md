@@ -1,6 +1,6 @@
 # 发布流程
 
-本文面向维护者，说明如何把当前源码发布成可供 Gitee 用户下载的 16MB 整包固件，并保持 README、release 文档、校验值和 `firmware-download` 分支一致。
+本文面向维护者，说明如何把当前源码发布成 16MB 完整烧录固件和网页 OTA 升级固件，并保持 README、release 文档、校验值和 `firmware-download` 分支一致。
 
 ## 发布前确认
 
@@ -48,11 +48,16 @@ python -m esptool --chip esp32s3 merge_bin `
 
 ## 生成 ZIP 与校验
 
-重新生成静态 ZIP：
+复制网页 OTA 升级固件并生成两个静态 ZIP：
 
 ```powershell
+Copy-Item -Force build\epaper_uploader.bin release\web_upgrade.bin
+
 Compress-Archive -Path release\epaper_uploader_full_16MB.bin `
   -DestinationPath release\epaper_uploader_full_16MB.zip -Force
+
+Compress-Archive -Path release\web_upgrade.bin `
+  -DestinationPath release\web_upgrade.zip -Force
 ```
 
 计算校验：
@@ -60,7 +65,10 @@ Compress-Archive -Path release\epaper_uploader_full_16MB.bin `
 ```powershell
 Get-FileHash -Algorithm SHA256 release\epaper_uploader_full_16MB.bin
 Get-FileHash -Algorithm SHA256 release\epaper_uploader_full_16MB.zip
-Get-Item release\epaper_uploader_full_16MB.bin, release\epaper_uploader_full_16MB.zip |
+Get-FileHash -Algorithm SHA256 release\web_upgrade.bin
+Get-FileHash -Algorithm SHA256 release\web_upgrade.zip
+Get-Item release\epaper_uploader_full_16MB.bin, release\epaper_uploader_full_16MB.zip, `
+  release\web_upgrade.bin, release\web_upgrade.zip |
   Select-Object Name,Length
 ```
 
@@ -68,7 +76,6 @@ Get-Item release\epaper_uploader_full_16MB.bin, release\epaper_uploader_full_16M
 
 - `release/README.md`
 - `公开发布检查清单.md`
-- `v2.3.3优化改动说明.md` 或对应版本说明
 - `CHANGELOG.md`
 - `README.md` 中如有版本、校验或下载说明变化
 
