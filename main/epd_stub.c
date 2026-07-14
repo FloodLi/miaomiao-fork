@@ -253,6 +253,11 @@ static bool panel_is_jd796xx(void)
     return panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP;
 }
 
+static bool panel_is_jd79668_42(void)
+{
+    return s_panel == EPD_PANEL_REF_JD79668_42_BWRY;
+}
+
 static bool panel_is_ssd1667_102(void)
 {
     return s_panel == EPD_PANEL_REF_SSD1667_102_BWR;
@@ -444,6 +449,10 @@ void epd_load_panel_from_nvs(void)
     nvs_load_panel();
     if (s_panel == EPD_PANEL_REF_JD79665_75_BWRY && busy_idle_effective() == 0) {
         ESP_LOGW(TAG, "JD79665 reference flow uses BUSY idle-high; migrating busy_idle -> 1");
+        (void)epd_set_busy_idle(1);
+    }
+    if (panel_is_jd79668_42() && busy_idle_effective() == 0) {
+        ESP_LOGW(TAG, "JD79668 4.2 datasheet uses BUSY_N idle-high; migrating busy_idle -> 1");
         (void)epd_set_busy_idle(1);
     }
     if (s_panel == EPD_PANEL_REF_SSD2677_97_BWRY && busy_idle_effective() == 0) {
@@ -2528,7 +2537,10 @@ static void ref_jd79668_init(void)
 {
     const epd_panel_desc_t *d = panel_desc();
     epd_hw_reset();
-    delay_ms(50);
+    ESP_LOGI(TAG, "JD79668 4.2: BUSY gpio after reset = %d (idle expect %d)",
+             (int)gpio_get_level(PIN_EPD_BUSY), busy_idle_effective());
+    epd_wait_ready(false);
+
     cmd1(0x4D, 0x78);
     cmd2(0x00, 0x0F, 0x29);
     epd_cmd(0x06);
@@ -2888,6 +2900,10 @@ esp_err_t epd_init(void)
         goto fail;
 
     nvs_load_panel();
+    if (panel_is_jd79668_42() && busy_idle_effective() == 0) {
+        ESP_LOGW(TAG, "JD79668 4.2 datasheet uses BUSY_N idle-high; migrating busy_idle -> 1");
+        (void)epd_set_busy_idle(1);
+    }
     if (panel_is_ssd2677_97() && busy_idle_effective() == 0) {
         ESP_LOGW(TAG, "SSD2677 9.7 reference flow uses BUSY idle-high; migrating busy_idle -> 1");
         (void)epd_set_busy_idle(1);
