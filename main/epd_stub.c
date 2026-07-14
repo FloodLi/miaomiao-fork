@@ -46,6 +46,7 @@
 #define EPD_BUSY_UPDATE_TIMEOUT_MS  12000
 #define EPD_JD796XX_BUSY_UPDATE_TIMEOUT_MS  120000
 #define EPD_SSD1667_102_BUSY_UPDATE_TIMEOUT_MS  120000
+#define EPD_SSD2677_97_BUSY_UPDATE_TIMEOUT_MS  120000
 #define EPD_ATC29_BUSY_TIMEOUT_MS  2500
 #define EPD_ATC29_SAFE_REFRESH_MS  12000
 #define EPD_E6_BUSY_TIMEOUT_MS     180000
@@ -93,6 +94,7 @@ typedef enum {
     EPD_CMD_DATA_DUAL_SSD,       /* split 792x272 frame over two SSD controllers */
     EPD_CMD_DATA_UC8159_INTERLEAVED, /* 2-bit UC8159 packed color stream on 0x10 */
     EPD_CMD_DATA_JD796XX_2BPP,   /* JD79665/668 native 2-bit-per-pixel stream on 0x10 */
+    EPD_CMD_DATA_SSD2677_2BPP,   /* SSD2677/2667 9.7" BWRY 2-bit-per-pixel stream on 0x10 */
     EPD_CMD_DATA_E6_3IN7_6C,     /* E6 3.7" six-color 2-bit compact stream, two refresh passes */
 } epd_data_mode_t;
 
@@ -134,6 +136,8 @@ static void ref_ssd1683_init(void);
 static void fpc194_ssd1683_init(void);
 static void ref_ssd1677_init(void);
 static void ref_ssd1667_102_init(void);
+static void ref_ssd2677_97_init(void);
+static void ref_ssd2677_97_sleep(void);
 static void e6_37_init(void);
 static void ref_jd79665_init(void);
 static void ref_jd79668_init(void);
@@ -145,6 +149,7 @@ static void ref_ssd16xx_refresh(void);
 static void ref_ssd1683_refresh(void);
 static void fpc194_ssd1683_refresh(void);
 static void ref_ssd1667_102_refresh(void);
+static void ref_ssd2677_97_refresh(void);
 static void e6_37_refresh(void);
 static void ref_jd796xx_refresh(void);
 static void refresh_atc_dualssd(void);
@@ -158,6 +163,7 @@ static void ref_ssd1683_cursor_home(void);
 static void fpc194_ssd1683_cursor_home(void);
 static void ref_ssd1677_cursor_home(void);
 static void ref_ssd1667_102_cursor_home(void);
+static void ref_ssd2677_97_cursor_home(void);
 static void ref_jd796xx_cursor_home(void);
 static void cursor_none(void);
 
@@ -195,6 +201,7 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_FPC194_SSD1683_42_BWR] = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "FPC-194 4.2\" BWR SSD1683", fpc194_ssd1683_init, fpc194_ssd1683_refresh, fpc194_ssd1683_cursor_home },
     [EPD_PANEL_REF_SSD1667_102_BWR]   = { 960, 640, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1667 10.2\" BWR", ref_ssd1667_102_init, ref_ssd1667_102_refresh, ref_ssd1667_102_cursor_home },
     [EPD_PANEL_E6_37_6C]              = { 792, 528, true,  1, false, EPD_CMD_DATA_E6_3IN7_6C, "E6 3.7\" six-color", e6_37_init, e6_37_refresh, cursor_none, .has_yellow = true },
+    [EPD_PANEL_REF_SSD2677_97_BWRY]   = { 960, 672, true,  1, false, EPD_CMD_DATA_SSD2677_2BPP, "SSD2677 9.7\" BWRY", ref_ssd2677_97_init, ref_ssd2677_97_refresh, ref_ssd2677_97_cursor_home, .has_yellow = true },
 };
 
 static bool panel_valid(epd_panel_t panel)
@@ -254,6 +261,17 @@ static bool panel_is_jd796xx(void)
 static bool panel_is_ssd1667_102(void)
 {
     return s_panel == EPD_PANEL_REF_SSD1667_102_BWR;
+}
+
+static bool panel_is_ssd2677_97(void)
+{
+    return s_panel == EPD_PANEL_REF_SSD2677_97_BWRY;
+}
+
+static bool panel_uses_bwry_2bpp(void)
+{
+    return panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP ||
+           panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP;
 }
 
 static bool panel_is_42_400x300(void)
@@ -433,6 +451,10 @@ void epd_load_panel_from_nvs(void)
         ESP_LOGW(TAG, "JD79665 reference flow uses BUSY idle-high; migrating busy_idle -> 1");
         (void)epd_set_busy_idle(1);
     }
+    if (s_panel == EPD_PANEL_REF_SSD2677_97_BWRY && busy_idle_effective() == 0) {
+        ESP_LOGW(TAG, "SSD2677 9.7 reference flow uses BUSY idle-high; migrating busy_idle -> 1");
+        (void)epd_set_busy_idle(1);
+    }
     if (s_panel == EPD_PANEL_42_BWR && busy_idle_effective() == 1) {
         ESP_LOGW(TAG, "4.2 SSD1619 init needs BUSY idle-low on this board; migrating busy_idle -> 0");
         (void)epd_set_busy_idle(0);
@@ -574,8 +596,10 @@ static bool epd_wait_ready(bool after_update_cmd)
                                 ? EPD_JD796XX_BUSY_UPDATE_TIMEOUT_MS
                                 : (after_update_cmd && panel_is_ssd1667_102()
                                        ? EPD_SSD1667_102_BUSY_UPDATE_TIMEOUT_MS
-                                       : (after_update_cmd ? EPD_BUSY_UPDATE_TIMEOUT_MS
-                                                           : EPD_BUSY_TIMEOUT_MS)));
+                                       : (after_update_cmd && panel_is_ssd2677_97()
+                                              ? EPD_SSD2677_97_BUSY_UPDATE_TIMEOUT_MS
+                                              : (after_update_cmd ? EPD_BUSY_UPDATE_TIMEOUT_MS
+                                                                  : EPD_BUSY_TIMEOUT_MS))));
 
     if (after_update_cmd &&
         atomic_load(&s_busy_timeout_streak) >= EPD_BUSY_TIMEOUT_FALLBACK_THRESHOLD) {
@@ -714,6 +738,17 @@ static void atc_unissd_97_cursor_home(void)
     epd_cmd(0x4F);
     epd_dat(0x00);
     epd_dat(0x00);
+}
+
+static void ref_ssd2677_97_full_window(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    cmd4(0x61, (uint8_t)(d->w >> 8), (uint8_t)d->w,
+         (uint8_t)(d->h >> 8), (uint8_t)d->h);
+}
+
+static void ref_ssd2677_97_cursor_home(void)
+{
 }
 
 static void ref_ssd1667_102_full_window(void)
@@ -1226,20 +1261,21 @@ static uint8_t jd796xx_pack4(uint8_t bw, uint8_t red, uint8_t yellow, int start_
     return out;
 }
 
-static void panel_write_jd796xx_2bpp(const uint8_t *bw, const uint8_t *red,
-                                     const uint8_t *yellow,
-                                     uint8_t bw_fill, uint8_t red_fill,
-                                     uint8_t yellow_fill)
+static void panel_write_bwry_2bpp_cmd(uint8_t data_cmd,
+                                      const uint8_t *bw, const uint8_t *red,
+                                      const uint8_t *yellow,
+                                      uint8_t bw_fill, uint8_t red_fill,
+                                      uint8_t yellow_fill)
 {
     int rb = epd_width() / 8;
     int H = epd_height();
     uint8_t *line = heap_caps_malloc((size_t)rb * 2u, MALLOC_CAP_DMA);
     if (!line) {
-        ESP_LOGE(TAG, "JD796xx line DMA malloc failed");
+        ESP_LOGE(TAG, "BWRY 2bpp line DMA malloc failed");
         return;
     }
 
-    epd_cmd(0x10);
+    epd_cmd(data_cmd);
     for (int y = 0; y < H; y++) {
         const size_t row = (size_t)y * (size_t)rb;
         for (int x = 0; x < rb; x++) {
@@ -1252,6 +1288,24 @@ static void panel_write_jd796xx_2bpp(const uint8_t *bw, const uint8_t *red,
         epd_bulk(line, (size_t)rb * 2u);
     }
     free(line);
+}
+
+static void panel_write_jd796xx_2bpp(const uint8_t *bw, const uint8_t *red,
+                                     const uint8_t *yellow,
+                                     uint8_t bw_fill, uint8_t red_fill,
+                                     uint8_t yellow_fill)
+{
+    panel_write_bwry_2bpp_cmd(0x10, bw, red, yellow,
+                              bw_fill, red_fill, yellow_fill);
+}
+
+static void panel_write_ssd2677_2bpp(const uint8_t *bw, const uint8_t *red,
+                                     const uint8_t *yellow,
+                                     uint8_t bw_fill, uint8_t red_fill,
+                                     uint8_t yellow_fill)
+{
+    panel_write_bwry_2bpp_cmd(0x10, bw, red, yellow,
+                              bw_fill, red_fill, yellow_fill);
 }
 
 static const uint8_t e6_37_color_map_pass1[16] = {
@@ -1524,6 +1578,9 @@ static void panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, int p
     case EPD_CMD_DATA_JD796XX_2BPP:
         panel_write_jd796xx_2bpp(bw, red, NULL, 0xFF, 0x00, 0x00);
         break;
+    case EPD_CMD_DATA_SSD2677_2BPP:
+        panel_write_ssd2677_2bpp(bw, red, NULL, 0xFF, 0x00, 0x00);
+        break;
     case EPD_CMD_DATA_E6_3IN7_6C:
         panel_write_e6_37_6c(bw, red, NULL, NULL, NULL,
                              0xFF, 0x00, 0x00, 0x00, 0x00);
@@ -1666,8 +1723,9 @@ static esp_err_t file_send_uc8159_interleaved(FILE *f, int pb, bool has_red_file
     return ret;
 }
 
-static esp_err_t file_send_jd796xx_2bpp(FILE *f, int pb, bool has_red_file,
-                                        bool has_yellow_file)
+static esp_err_t file_send_bwry_2bpp_cmd(FILE *f, int pb, bool has_red_file,
+                                         bool has_yellow_file,
+                                         uint8_t data_cmd)
 {
     int rb = epd_width() / 8;
     int H = epd_height();
@@ -1685,7 +1743,7 @@ static esp_err_t file_send_jd796xx_2bpp(FILE *f, int pb, bool has_red_file,
 
     long red_base = has_red_file ? (long)pb : -1;
     long yellow_base = has_yellow_file ? (long)pb * 2L : -1;
-    epd_cmd(0x10);
+    epd_cmd(data_cmd);
     esp_err_t ret = ESP_OK;
     for (int y = 0; y < H; y++) {
         ret = file_read_row(f, 0, y, rb, bw, 0xFF);
@@ -1709,6 +1767,18 @@ static esp_err_t file_send_jd796xx_2bpp(FILE *f, int pb, bool has_red_file,
     free(yellow);
     free(out);
     return ret;
+}
+
+static esp_err_t file_send_jd796xx_2bpp(FILE *f, int pb, bool has_red_file,
+                                        bool has_yellow_file)
+{
+    return file_send_bwry_2bpp_cmd(f, pb, has_red_file, has_yellow_file, 0x10);
+}
+
+static esp_err_t file_send_ssd2677_2bpp(FILE *f, int pb, bool has_red_file,
+                                        bool has_yellow_file)
+{
+    return file_send_bwry_2bpp_cmd(f, pb, has_red_file, has_yellow_file, 0x10);
 }
 
 static esp_err_t e6_37_write_pass_from_file(FILE *f, int pb, bool has_red_file,
@@ -1962,6 +2032,9 @@ static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file,
     case EPD_CMD_DATA_JD796XX_2BPP:
         ret = file_send_jd796xx_2bpp(f, pb, has_red_file, has_yellow_file);
         break;
+    case EPD_CMD_DATA_SSD2677_2BPP:
+        ret = file_send_ssd2677_2bpp(f, pb, has_red_file, has_yellow_file);
+        break;
     case EPD_CMD_DATA_E6_3IN7_6C:
         ret = file_send_e6_37_6c(f, pb, has_red_file, has_yellow_file,
                                  has_blue_file, has_green_file);
@@ -2049,6 +2122,9 @@ static void panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
         break;
     case EPD_CMD_DATA_JD796XX_2BPP:
         panel_write_jd796xx_2bpp(NULL, NULL, NULL, bw_byte, red_byte, 0x00);
+        break;
+    case EPD_CMD_DATA_SSD2677_2BPP:
+        panel_write_ssd2677_2bpp(NULL, NULL, NULL, bw_byte, red_byte, 0x00);
         break;
     case EPD_CMD_DATA_E6_3IN7_6C:
         panel_write_e6_37_6c(NULL, NULL, NULL, NULL, NULL,
@@ -2145,6 +2221,60 @@ static void atc_unissd_97_init(void)
     cmd2(0x21, 0x08, 0x00);
     atc_unissd_97_cursor_home();
     ESP_LOGI(TAG, "ATC/Solum 9.7 SSD init OK");
+}
+
+static void ref_ssd2677_97_init(void)
+{
+    const epd_panel_desc_t *d = panel_desc();
+
+    gpio_set_level(PIN_EPD_RST, 1);
+    delay_ms(100);
+    gpio_set_level(PIN_EPD_RST, 0);
+    delay_ms(10);
+    gpio_set_level(PIN_EPD_RST, 1);
+    delay_ms(10);
+    ESP_LOGI(TAG, "SSD2677 9.7: BUSY gpio after reset = %d (idle expect %d)",
+             (int)gpio_get_level(PIN_EPD_BUSY), busy_idle_effective());
+    epd_wait_ready(false);
+
+    cmd2(0x00, 0x2F, 0x29);
+
+    epd_cmd(0x01);
+    epd_dat(0x07);
+    epd_dat(0x00);
+    epd_dat(0x20);
+    epd_dat(0x1E);
+    epd_dat(0x78);
+    epd_dat(0x20);
+
+    cmd3(0x03, 0x00, 0x00, 0x00);
+    cmd4(0x06, 0x0F, 0x8B, 0x9C, 0xC1);
+    cmd1(0x30, 0x08);
+    cmd1(0x41, 0x00);
+    cmd1(0x50, 0x37);
+    cmd2(0x60, 0x04, 0x02);
+    ref_ssd2677_97_full_window();
+    cmd4(0x65, 0x00, 0x00, 0x00, 0x00);
+    cmd1(0xE7, 0x16);
+    cmd1(0xE3, 0x65);
+    cmd1(0xE0, 0x00);
+
+    epd_cmd(0x62);
+    epd_dat(0x77);
+    epd_dat(0x77);
+    epd_dat(0x77);
+    epd_dat(0x5C);
+    epd_dat(0x9F);
+    epd_dat(0x8C);
+    epd_dat(0x77);
+    epd_dat(0x63);
+
+    cmd1(0xE9, 0x01);
+    epd_cmd(0x04);
+    epd_wait_ready(false);
+
+    ESP_LOGI(TAG, "%s init OK (%dx%d BWRY 2bpp, reference sequence)",
+             d->name, d->w, d->h);
 }
 
 static void ref_ssd1667_102_init(void)
@@ -2567,6 +2697,37 @@ static void ref_ssd1667_102_refresh(void)
     }
 }
 
+static void ref_ssd2677_97_refresh(void)
+{
+    epd_cmd(0x12);
+    epd_dat(0x00);
+
+    TickType_t t0 = xTaskGetTickCount();
+    bool busy_ok = epd_wait_ready(true);
+    uint32_t elapsed_ms = pdTICKS_TO_MS(xTaskGetTickCount() - t0);
+
+    if (!busy_ok) {
+        ESP_LOGW(TAG, "SSD2677 9.7: refresh BUSY invalid after %u ms, used fallback wait",
+                 (unsigned)elapsed_ms);
+    } else if (elapsed_ms < 250) {
+        ESP_LOGW(TAG, "SSD2677 9.7: refresh BUSY only %u ms, using fixed %d ms wait",
+                 (unsigned)elapsed_ms, EPD_BUSY_FALLBACK_REFRESH_MS);
+        delay_ms(EPD_BUSY_FALLBACK_REFRESH_MS);
+    } else {
+        delay_ms(500);
+    }
+    ref_ssd2677_97_sleep();
+}
+
+static void ref_ssd2677_97_sleep(void)
+{
+    epd_cmd(0x02);
+    epd_dat(0x00);
+    epd_wait_ready(false);
+    cmd1(0x07, 0xA5);
+    s_panel_seq_done = false;
+}
+
 static void e6_37_refresh(void)
 {
     /* E6 3.7 performs two complete data+refresh passes inside the writer. */
@@ -2745,6 +2906,10 @@ esp_err_t epd_init(void)
         goto fail;
 
     nvs_load_panel();
+    if (panel_is_ssd2677_97() && busy_idle_effective() == 0) {
+        ESP_LOGW(TAG, "SSD2677 9.7 reference flow uses BUSY idle-high; migrating busy_idle -> 1");
+        (void)epd_set_busy_idle(1);
+    }
 
     ESP_LOGI(TAG, "EPD start: %s %dx%d, BUSY idle_level=%d (4.2\" default 0=Waveshare; NVS busy_idle=1 if GDE idle-high)",
               s_specs[s_panel].name, epd_width(), epd_height(), busy_idle_effective());
@@ -2756,6 +2921,8 @@ esp_err_t epd_init(void)
         ESP_LOGI(TAG, "JD796xx: skip startup white clear; first full content refresh overwrites panel");
     } else if (panel_is_ssd1667_102()) {
         ESP_LOGI(TAG, "SSD1667 10.2: skip startup white clear; first full content refresh overwrites panel");
+    } else if (panel_is_ssd2677_97()) {
+        ESP_LOGI(TAG, "SSD2677 9.7: skip startup white clear; first full content refresh overwrites panel");
     } else if (panel_is_42_400x300()) {
         ESP_LOGI(TAG, "4.2 400x300: skip startup white clear; welcome/IP page is the first full refresh");
     } else {
@@ -2934,8 +3101,11 @@ esp_err_t epd_display_test_pattern(void)
 
     panel_ensure_ready();
 
-    if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP) {
-        panel_write_jd796xx_2bpp(buf, red, yellow, 0xFF, 0x00, 0x00);
+    if (epd_has_yellow() && panel_uses_bwry_2bpp()) {
+        if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
+            panel_write_ssd2677_2bpp(buf, red, yellow, 0xFF, 0x00, 0x00);
+        else
+            panel_write_jd796xx_2bpp(buf, red, yellow, 0xFF, 0x00, 0x00);
         panel_desc()->refresh();
     } else if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
         panel_write_e6_37_6c(buf, red, yellow, NULL, NULL,
@@ -2999,8 +3169,11 @@ static void repair_fill_pattern(uint8_t *bw, uint8_t *red, uint8_t *yellow,
 static void repair_display_pattern(const uint8_t *bw, const uint8_t *red,
                                    const uint8_t *yellow)
 {
-    if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP) {
-        panel_write_jd796xx_2bpp(bw, red, yellow, 0xFF, 0x00, 0x00);
+    if (epd_has_yellow() && panel_uses_bwry_2bpp()) {
+        if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
+            panel_write_ssd2677_2bpp(bw, red, yellow, 0xFF, 0x00, 0x00);
+        else
+            panel_write_jd796xx_2bpp(bw, red, yellow, 0xFF, 0x00, 0x00);
         panel_desc()->refresh();
     } else if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
         panel_write_e6_37_6c(bw, red, yellow, NULL, NULL,
@@ -3202,9 +3375,13 @@ esp_err_t epd_display_from_buffer(const fb_t *fb)
         panel_write_e6_37_6c(fb->black, fb->red, fb->yellow, fb->blue, fb->green,
                              0xFF, 0x00, 0x00, 0x00, 0x00);
         panel_desc()->refresh();
-    } else if (panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP && epd_has_yellow()) {
-        panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
-                                 0xFF, 0x00, 0x00);
+    } else if (panel_uses_bwry_2bpp() && epd_has_yellow()) {
+        if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
+            panel_write_ssd2677_2bpp(fb->black, fb->red, fb->yellow,
+                                     0xFF, 0x00, 0x00);
+        else
+            panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
+                                     0xFF, 0x00, 0x00);
         panel_desc()->refresh();
     } else {
         panel_write_bw_red(fb->black, fb->red, pb);
@@ -3244,9 +3421,13 @@ esp_err_t epd_display_fb_free(fb_t *fb)
         panel_write_e6_37_6c(fb->black, fb->red, fb->yellow, fb->blue, fb->green,
                              0xFF, 0x00, 0x00, 0x00, 0x00);
         panel_desc()->refresh();
-    } else if (panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP && epd_has_yellow()) {
-        panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
-                                 0xFF, 0x00, 0x00);
+    } else if (panel_uses_bwry_2bpp() && epd_has_yellow()) {
+        if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
+            panel_write_ssd2677_2bpp(fb->black, fb->red, fb->yellow,
+                                     0xFF, 0x00, 0x00);
+        else
+            panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
+                                     0xFF, 0x00, 0x00);
         panel_desc()->refresh();
     } else {
         panel_write_bw_red_data(fb->black, fb->red, pb);

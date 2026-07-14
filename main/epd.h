@@ -45,6 +45,7 @@ typedef enum {
     EPD_PANEL_FPC194_SSD1683_42_BWR  = 41, /* FPC-194 4.2" 400x300 BW+Red tag panel, SSD1683 */
     EPD_PANEL_REF_SSD1667_102_BWR    = 42, /* 10.2" 960x640 BW+Red, SSD1667 */
     EPD_PANEL_E6_37_6C               = 43, /* E6 3.7" 792x528 six-color compact stream */
+    EPD_PANEL_REF_SSD2677_97_BWRY    = 44, /* 9.7" 960x672 BWRY, SSD2677 */
 
     EPD_PANEL_COUNT
 } epd_panel_t;
