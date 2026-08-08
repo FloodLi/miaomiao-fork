@@ -30,16 +30,58 @@ bool ui_layout_is_583(const fb_t *fb)
     return ui_layout_for(fb) == UI_LAYOUT_583;
 }
 
+bool ui_layout_is_e6_37(const fb_t *fb)
+{
+    return fb && fb->width == 792 && fb->height == 528;
+}
+
 bool ui_layout_is_wide(const fb_t *fb)
 {
     ui_layout_class_t cls = ui_layout_for(fb);
     return cls == UI_LAYOUT_583 || cls == UI_LAYOUT_LARGE;
 }
 
+bool ui_layout_is_xl(const fb_t *fb)
+{
+    return fb && fb->width >= 900 && fb->height >= 600;
+}
+
 int ui_scale_for(const fb_t *fb)
 {
     ui_layout_class_t cls = ui_layout_for(fb);
+    if (ui_layout_is_xl(fb))
+        return 3;
     return (cls == UI_LAYOUT_583 || cls == UI_LAYOUT_LARGE) ? 2 : 1;
+}
+
+fb_color_t ui_e6_palette_color(const fb_t *fb, int seed, fb_color_t fallback)
+{
+    if (!ui_layout_is_e6_37(fb))
+        return fallback;
+
+    static const fb_color_t palette[] = {
+        COLOR_BLUE,
+        COLOR_GREEN,
+        COLOR_RED,
+        COLOR_YELLOW,
+        COLOR_BLACK,
+    };
+    int n = (int)(sizeof(palette) / sizeof(palette[0]));
+    if (seed < 0)
+        seed = -seed;
+    return palette[seed % n];
+}
+
+static int ui_label_seed(const char *s)
+{
+    uint32_t h = 2166136261u;
+    if (!s)
+        return 0;
+    while (*s) {
+        h ^= (uint8_t)*s++;
+        h *= 16777619u;
+    }
+    return (int)(h & 0x7fffffff);
 }
 
 int ui_text_width(const char *s, int scale)
@@ -92,7 +134,7 @@ int ui_role_scale(const fb_t *fb, ui_text_role_t role)
     switch (role) {
     case UI_TEXT_VALUE:
     case UI_TEXT_TITLE:
-        return 2;
+        return ui_layout_is_xl(fb) ? 3 : 2;
     case UI_TEXT_LABEL:
     case UI_TEXT_SMALL:
     case UI_TEXT_BODY:
@@ -241,6 +283,28 @@ void ui_draw_page_frame(fb_t *fb, ui_frame_flags_t flags)
             accent_w = 42;
         if (accent_h < 42)
             accent_h = 42;
+        if (ui_layout_is_e6_37(fb)) {
+            fb_color_t seg[] = { COLOR_BLUE, COLOR_GREEN, COLOR_YELLOW, COLOR_RED };
+            int seg_w = accent_w / 4;
+            if (seg_w < 1)
+                seg_w = 1;
+            for (int i = 0; i < 4; i++) {
+                int sx = m + i * seg_w;
+                int sw = (i == 3) ? (accent_w - i * seg_w) : seg_w;
+                if (sw > 0)
+                    fb_fill_rect(fb, sx, m, sw, stroke, seg[i]);
+            }
+            int seg_h = accent_h / 4;
+            if (seg_h < 1)
+                seg_h = 1;
+            for (int i = 0; i < 4; i++) {
+                int sy = m + i * seg_h;
+                int sh = (i == 3) ? (accent_h - i * seg_h) : seg_h;
+                if (sh > 0)
+                    fb_fill_rect(fb, m, sy, stroke, sh, seg[(i + 1) % 4]);
+            }
+            return;
+        }
         fb_fill_rect(fb, m, m, accent_w, stroke, COLOR_RED);
         fb_fill_rect(fb, m, m, stroke, accent_h, COLOR_RED);
     }
@@ -280,6 +344,8 @@ int ui_draw_battery_badge(fb_t *fb, int right_x, int y)
     fb_color_t accent = COLOR_BLACK;
     if (!st.valid || st.charging || st.percent <= 20)
         accent = COLOR_RED;
+    else if (ui_layout_is_e6_37(fb))
+        accent = COLOR_GREEN;
 
     if (st.valid) {
         int fill = (icon_w - 4) * st.percent / 100;
@@ -304,12 +370,17 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
     const int W = fb->width;
     const int s = ui_scale_for(fb);
     const bool is_42 = ui_layout_is_42(fb);
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     const int x = 14 * s;
     const int y = 8 * s;
     const int line_y = is_42 ? 29 : 24 * s;
 
-    if (red_accent)
-        fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, COLOR_RED);
+    if (red_accent) {
+        fb_color_t mark = is_e6 ? COLOR_BLUE : COLOR_RED;
+        fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, mark);
+        if (is_e6)
+            fb_fill_rect(fb, x - 3 * s, y + 1 * s, 2 * s, 12 * s, COLOR_GREEN);
+    }
 
     int title_w = 0;
     if (title && title[0]) {
@@ -319,7 +390,9 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
         title_w = ui_fixed_text_width(fb, title, 1);
         if (title_w > title_max_w)
             title_w = title_max_w;
-        ui_draw_fixed_text_maxw(fb, x, y, title, COLOR_BLACK, 1, title_max_w);
+        ui_draw_fixed_text_maxw(fb, x, y, title,
+                                is_e6 ? COLOR_BLUE : COLOR_BLACK,
+                                1, title_max_w);
     }
 
     int battery_right = W - 14 * s;
@@ -338,11 +411,26 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
         if (rx < min_right_x)
             rx = min_right_x;
         if (right_limit > rx)
-            ui_draw_fixed_text_maxw(fb, rx, y, right, COLOR_BLACK, 1,
+            ui_draw_fixed_text_maxw(fb, rx, y, right,
+                                    is_e6 ? COLOR_GREEN : COLOR_BLACK, 1,
                                     right_limit - rx);
     }
 
-    ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s, COLOR_BLACK, 6);
+    if (is_e6) {
+        int line_x = 12 * s;
+        int line_w = W - 24 * s;
+        int seg = line_w / 4;
+        if (seg < 1)
+            seg = 1;
+        fb_color_t colors[] = { COLOR_BLUE, COLOR_GREEN, COLOR_YELLOW, COLOR_RED };
+        for (int i = 0; i < 4; i++) {
+            int sx = line_x + i * seg;
+            int sw = (i == 3) ? (line_w - i * seg) : seg;
+            ui_draw_dotted_hline(fb, sx, line_y, sw, colors[i], 6);
+        }
+    } else {
+        ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s, COLOR_BLACK, 6);
+    }
 }
 
 void ui_draw_footer(fb_t *fb, const char *left, const char *right)
@@ -354,10 +442,12 @@ void ui_draw_footer(fb_t *fb, const char *left, const char *right)
     const int H = fb->height;
     const int s = ui_scale_for(fb);
     const bool is_42 = ui_layout_is_42(fb);
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     const int y = is_42 ? H - 26 : H - 20 * s;
     const int line_y = is_42 ? y - 8 : y - 4 * s;
 
-    ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s, COLOR_BLACK, 6);
+    ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s,
+                         is_e6 ? COLOR_GREEN : COLOR_BLACK, 6);
 
     int left_max_w = W - 28 * s;
     if (right && right[0]) {
@@ -365,11 +455,13 @@ void ui_draw_footer(fb_t *fb, const char *left, const char *right)
         left_max_w = W - 34 * s - rw;
     }
     if (left && left[0] && left_max_w > 0)
-        ui_draw_fixed_text_maxw(fb, 14 * s, y, left, COLOR_BLACK, 1, left_max_w);
+        ui_draw_fixed_text_maxw(fb, 14 * s, y, left,
+                                is_e6 ? COLOR_BLUE : COLOR_BLACK, 1, left_max_w);
 
     if (right && right[0]) {
         int rw = ui_fixed_text_width(fb, right, 1);
-        ui_draw_fixed_text(fb, W - 14 * s - rw, y, right, COLOR_BLACK, 1);
+        ui_draw_fixed_text(fb, W - 14 * s - rw, y, right,
+                           is_e6 ? COLOR_RED : COLOR_BLACK, 1);
     }
 }
 
@@ -384,8 +476,16 @@ void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent)
             accent_w = 28;
         if (accent_w > 96)
             accent_w = 96;
-        fb_fill_rect(fb, x, y, accent_w, 2, COLOR_RED);
-        fb_fill_rect(fb, x, y, 2, h > 34 ? 34 : h, COLOR_RED);
+        fb_color_t accent = ui_layout_is_e6_37(fb)
+                           ? ui_e6_palette_color(fb, (x / 8) + (y / 8), COLOR_RED)
+                           : COLOR_RED;
+        fb_fill_rect(fb, x, y, accent_w, 2, accent);
+        fb_fill_rect(fb, x, y, 2, h > 34 ? 34 : h, accent);
+        if (ui_layout_is_e6_37(fb) && accent_w > 20) {
+            fb_color_t next = ui_e6_palette_color(fb, (x / 8) + (y / 8) + 1,
+                                                  COLOR_GREEN);
+            fb_fill_rect(fb, x + accent_w / 2, y, accent_w / 2, 2, next);
+        }
     }
 }
 
@@ -396,6 +496,8 @@ void ui_draw_section_label(fb_t *fb, int x, int y, const char *label,
         return;
     if (scale < 1)
         scale = 1;
+    if (ui_layout_is_e6_37(fb))
+        color = ui_e6_palette_color(fb, ui_label_seed(label), color);
     fb_fill_rect(fb, x, y + 4 * scale, 4 * scale, 10 * scale, color);
     ui_draw_fixed_text(fb, x + 8 * scale, y, label, color, scale);
 }
@@ -420,11 +522,15 @@ void ui_draw_empty_state_compact(fb_t *fb, const char *title, const char *hint)
     int y = fb->height / 2 - 28 * s;
     if (title) {
         int px = ui_layout_is_42(fb) ? 16 : 32;
-        ui_draw_centered_text_px(fb, y, title, COLOR_BLACK, px);
+        ui_draw_centered_text_px(fb, y, title,
+                                 ui_layout_is_e6_37(fb) ? COLOR_BLUE : COLOR_BLACK,
+                                 px);
     }
     if (hint) {
         int px = 16 * s;
-        ui_draw_centered_text_px(fb, y + 28 * s, hint, COLOR_RED, px);
+        ui_draw_centered_text_px(fb, y + 28 * s, hint,
+                                 ui_layout_is_e6_37(fb) ? COLOR_GREEN : COLOR_RED,
+                                 px);
     }
 }
 
@@ -442,8 +548,18 @@ void ui_draw_progress_bar(fb_t *fb, int x, int y, int w, int h, int percent, fb_
     if (percent > 100)
         percent = 100;
 
-    fb_rect(fb, x, y, w, h, COLOR_BLACK);
+    bool is_e6 = ui_layout_is_e6_37(fb);
+    fb_rect(fb, x, y, w, h, is_e6 ? COLOR_BLUE : COLOR_BLACK);
     int inner = (w - 2) * percent / 100;
-    if (inner > 0)
-        fb_fill_rect(fb, x + 1, y + 1, inner, h - 2, fill);
+    if (inner > 0) {
+        if (is_e6 && inner > 8) {
+            int a = inner / 3;
+            int b = inner / 3;
+            fb_fill_rect(fb, x + 1, y + 1, a, h - 2, COLOR_GREEN);
+            fb_fill_rect(fb, x + 1 + a, y + 1, b, h - 2, COLOR_YELLOW);
+            fb_fill_rect(fb, x + 1 + a + b, y + 1, inner - a - b, h - 2, fill);
+        } else {
+            fb_fill_rect(fb, x + 1, y + 1, inner, h - 2, fill);
+        }
+    }
 }

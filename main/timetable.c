@@ -426,7 +426,7 @@ static int tt_draw_course_text_maxw(fb_t *fb, int x, int y, const char *s,
 
 static int tt_layout_scale(const fb_t *fb)
 {
-    return (fb && fb->width >= 600) ? 2 : 1;
+    return ui_scale_for(fb);
 }
 
 static void tt_draw_header(fb_t *fb, const char *title, const char *right,
@@ -554,6 +554,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
     int H = fb->height;
     int cols = cfg->show_days;
     int s = tt_layout_scale(fb);
+    bool xl = ui_layout_is_xl(fb);
 
     /* ── title ── */
     {
@@ -588,11 +589,11 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
     }
 
     /* ── layout dimensions ── */
-    int margin = 14 * s;
-    int hdr_h = 20 * s;
-    int pcol_w = 56;
-    int footer_h = 26 * s;
-    int y_start = 34 * s;
+    int margin = xl ? 36 : 14 * s;
+    int hdr_h = xl ? 44 : 20 * s;
+    int pcol_w = xl ? 72 : 56;
+    int footer_h = xl ? 54 : 26 * s;
+    int y_start = xl ? 86 : 34 * s;
     int grid_w = W - 2 * margin;
     if (grid_w < pcol_w + cols)
         grid_w = pcol_w + cols;

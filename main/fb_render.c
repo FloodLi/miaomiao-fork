@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <sys/stat.h>
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
@@ -49,6 +50,45 @@ static uint8_t *fb_alloc_plane_storage(size_t size, const char *label)
                  (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     return buf;
+}
+
+static bool fb_e6_color_planes_enabled(void)
+{
+    return epd_get_panel() == EPD_PANEL_E6_37_6C;
+}
+
+static bool fb_has_extra_color_planes(const fb_t *fb)
+{
+    return fb && (fb->yellow || fb->blue || fb->green);
+}
+
+static void fb_free_extra_color_planes(fb_t *fb)
+{
+    if (!fb)
+        return;
+    free(fb->yellow);
+    free(fb->blue);
+    free(fb->green);
+    fb->yellow = NULL;
+    fb->blue = NULL;
+    fb->green = NULL;
+}
+
+static bool fb_alloc_extra_color_planes(fb_t *fb)
+{
+    if (!fb_e6_color_planes_enabled())
+        return true;
+
+    size_t size = (size_t)fb->plane_bytes;
+    fb->yellow = fb_alloc_plane_storage(size, "fb yellow plane");
+    fb->blue = fb_alloc_plane_storage(size, "fb blue plane");
+    fb->green = fb_alloc_plane_storage(size, "fb green plane");
+    if (fb->yellow && fb->blue && fb->green)
+        return true;
+
+    ESP_LOGE(TAG, "E6 color plane allocation failed (3x%u)", (unsigned)size);
+    fb_free_extra_color_planes(fb);
+    return false;
 }
 
 static SemaphoreHandle_t raw_file_mutex_get(void)
@@ -172,6 +212,10 @@ fb_t *fb_create(void)
         fb->black         = reserved;
         fb->red           = reserved + pb;
         fb->uses_reserved = true;
+        if (!fb_alloc_extra_color_planes(fb)) {
+            fb_destroy(fb);
+            return NULL;
+        }
         fb_clear(fb);
         return fb;
     }
@@ -208,6 +252,11 @@ fb_t *fb_create(void)
         fb->planes_split = true;
     }
 
+    if (!fb_alloc_extra_color_planes(fb)) {
+        fb_destroy(fb);
+        return NULL;
+    }
+
     fb_clear(fb);
     return fb;
 }
@@ -215,6 +264,7 @@ fb_t *fb_create(void)
 void fb_destroy(fb_t *fb)
 {
     if (!fb) return;
+    fb_free_extra_color_planes(fb);
     if (fb->uses_reserved) {
         int current_pb = epd_plane_bytes();
         uint8_t *old = NULL;
@@ -240,9 +290,51 @@ void fb_clear(fb_t *fb)
 {
     memset(fb->black, 0xFF, fb->plane_bytes);
     memset(fb->red,   0x00, fb->plane_bytes);
+    if (fb->yellow)
+        memset(fb->yellow, 0x00, fb->plane_bytes);
+    if (fb->blue)
+        memset(fb->blue, 0x00, fb->plane_bytes);
+    if (fb->green)
+        memset(fb->green, 0x00, fb->plane_bytes);
 }
 
 /* ── primitives ───────────────────────────────────────────────────── */
+
+static void fb_clear_extra_color_bit(fb_t *fb, int byte_idx, uint8_t mask)
+{
+    if (fb->yellow)
+        fb->yellow[byte_idx] &= (uint8_t)~mask;
+    if (fb->blue)
+        fb->blue[byte_idx] &= (uint8_t)~mask;
+    if (fb->green)
+        fb->green[byte_idx] &= (uint8_t)~mask;
+}
+
+static bool fb_set_extra_color_bit(fb_t *fb, int byte_idx, uint8_t mask,
+                                   fb_color_t c)
+{
+    uint8_t *plane = NULL;
+    switch (c) {
+    case COLOR_YELLOW: plane = fb->yellow; break;
+    case COLOR_BLUE:   plane = fb->blue; break;
+    case COLOR_GREEN:  plane = fb->green; break;
+    default: break;
+    }
+    if (!plane)
+        return false;
+
+    fb->black[byte_idx] |= mask;
+    if (epd_has_red())
+        fb->red[byte_idx] &= (uint8_t)~mask;
+    if (fb->yellow)
+        fb->yellow[byte_idx] &= (uint8_t)~mask;
+    if (fb->blue)
+        fb->blue[byte_idx] &= (uint8_t)~mask;
+    if (fb->green)
+        fb->green[byte_idx] &= (uint8_t)~mask;
+    plane[byte_idx] |= mask;
+    return true;
+}
 
 void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
 {
@@ -250,23 +342,39 @@ void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
     int byte_idx = y * fb->row_bytes + x / 8;
     uint8_t mask = 0x80 >> (x % 8);
 
+    if (fb_set_extra_color_bit(fb, byte_idx, mask, c))
+        return;
+
     switch (c) {
     case COLOR_RED:
         if (epd_has_red()) {
             fb->red[byte_idx] |= mask;
             fb->black[byte_idx] |= mask;
+            fb_clear_extra_color_bit(fb, byte_idx, mask);
             return;
         }
         /* BW panels: red maps to black */
         __attribute__((fallthrough));
+    case COLOR_YELLOW:
+        if (epd_has_red()) {
+            fb->red[byte_idx] |= mask;
+            fb->black[byte_idx] |= mask;
+            fb_clear_extra_color_bit(fb, byte_idx, mask);
+            return;
+        }
+        __attribute__((fallthrough));
+    case COLOR_BLUE:
+    case COLOR_GREEN:
     case COLOR_BLACK:
         fb->black[byte_idx] &= ~mask;
         /* Black/red planes are exclusive: black clears any stale red bit. */
         if (epd_has_red()) fb->red[byte_idx] &= ~mask;
+        fb_clear_extra_color_bit(fb, byte_idx, mask);
         break;
     default:
         fb->black[byte_idx] |= mask;
         fb->red[byte_idx] &= ~mask;
+        fb_clear_extra_color_bit(fb, byte_idx, mask);
         break;
     }
 }
@@ -278,6 +386,12 @@ void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
     if (x0 < 0) x0 = 0;
     if (x1 >= fb->width) x1 = fb->width - 1;
     if (x0 > x1) return;
+
+    if (fb_has_extra_color_planes(fb)) {
+        for (int xx = x0; xx <= x1; xx++)
+            fb_pixel(fb, xx, y, c);
+        return;
+    }
 
     int row_off = y * fb->row_bytes;
     int sb = x0 / 8, eb = x1 / 8;
@@ -1041,12 +1155,19 @@ esp_err_t fb_export(const fb_t *fb, const char *path)
     bool ok = fb_write_all_chunked(f, fb->black, (size_t)fb->plane_bytes);
     if (ok && epd_has_red())
         ok = fb_write_all_chunked(f, fb->red, (size_t)fb->plane_bytes);
+    if (ok && fb->yellow)
+        ok = fb_write_all_chunked(f, fb->yellow, (size_t)fb->plane_bytes);
+    if (ok && fb->blue)
+        ok = fb_write_all_chunked(f, fb->blue, (size_t)fb->plane_bytes);
+    if (ok && fb->green)
+        ok = fb_write_all_chunked(f, fb->green, (size_t)fb->plane_bytes);
     int close_ret = fclose(f);
     if (close_ret != 0)
         ok = false;
     if (!ok) {
-        ESP_LOGE(TAG, "fb_export write failed: path=%s bytes=%u red=%d errno=%d",
-                 path, (unsigned)fb->plane_bytes, epd_has_red() ? 1 : 0, errno);
+        ESP_LOGE(TAG, "fb_export write failed: path=%s bytes=%u red=%d e6=%d errno=%d",
+                 path, (unsigned)fb->plane_bytes, epd_has_red() ? 1 : 0,
+                 fb_has_extra_color_planes(fb) ? 1 : 0, errno);
         remove(path);
         return ESP_FAIL;
     }
@@ -1060,9 +1181,30 @@ esp_err_t fb_import(fb_t *fb, const char *path)
         ESP_LOGE(TAG, "Cannot open %s", path);
         return ESP_FAIL;
     }
+    struct stat st;
+    bool have_size = (stat(path, &st) == 0);
+    off_t size = have_size ? st.st_size : 0;
     bool ok = (fread(fb->black, 1, fb->plane_bytes, f) == fb->plane_bytes);
     if (ok && epd_has_red())
         ok = (fread(fb->red, 1, fb->plane_bytes, f) == fb->plane_bytes);
+    if (ok && fb->yellow) {
+        if (have_size && size >= (off_t)fb->plane_bytes * 3)
+            ok = (fread(fb->yellow, 1, fb->plane_bytes, f) == fb->plane_bytes);
+        else
+            memset(fb->yellow, 0x00, fb->plane_bytes);
+    }
+    if (ok && fb->blue) {
+        if (have_size && size >= (off_t)fb->plane_bytes * 4)
+            ok = (fread(fb->blue, 1, fb->plane_bytes, f) == fb->plane_bytes);
+        else
+            memset(fb->blue, 0x00, fb->plane_bytes);
+    }
+    if (ok && fb->green) {
+        if (have_size && size >= (off_t)fb->plane_bytes * 5)
+            ok = (fread(fb->green, 1, fb->plane_bytes, f) == fb->plane_bytes);
+        else
+            memset(fb->green, 0x00, fb->plane_bytes);
+    }
     fclose(f);
     if (!ok) {
         ESP_LOGE(TAG, "fb_import read failed (file truncated?)");

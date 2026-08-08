@@ -1132,6 +1132,7 @@ static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
                                       const weather_config_t *cfg,
                                       const weather_data_t *wd)
 {
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     ui_draw_card(fb, x, y, w, h, true);
     ui_draw_section_label(fb, x + 8, y + 7,
                           "\xe5\xa4\xa9\xe6\xb0\x94\xe7\x8a\xb6\xe5\x86\xb5",
@@ -1140,17 +1141,18 @@ static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
     int icon_x = x + 42;
     int icon_y = y + 54;
     draw_weather_icon_code(fb, icon_x, icon_y, wd->now.icon, wd->now.text,
-                           QW_ICON_LARGE_SIZE, COLOR_BLACK);
+                           QW_ICON_LARGE_SIZE, is_e6 ? COLOR_BLUE : COLOR_BLACK);
 
     int temp_scale = 5;
     int temp_x = x + 176;
     draw_weather_temp_value_fit(fb, temp_x, y + 28, wd->now.temp,
-                                COLOR_BLACK, temp_scale,
+                                is_e6 ? COLOR_BLUE : COLOR_BLACK, temp_scale,
                                 w - (temp_x - x) - 12);
 
-    fb_fill_rect(fb, temp_x, y + 108, 30, 3, COLOR_RED);
+    fb_fill_rect(fb, temp_x, y + 108, 30, 3,
+                 is_e6 ? COLOR_GREEN : COLOR_RED);
     ui_draw_fixed_text_maxw(fb, temp_x, y + 118, wd->now.text,
-                            COLOR_RED, 2, w - 146);
+                            is_e6 ? COLOR_GREEN : COLOR_RED, 2, w - 146);
 
     int today_low = wd->now.temp;
     int today_high = wd->now.temp;
@@ -1166,7 +1168,7 @@ static void draw_current_weather_card(fb_t *fb, int x, int y, int w, int h,
     if (range_w < 96 || range_w > w - 44)
         range_w = w - 44;
     ui_draw_fixed_text_maxw(fb, x + 28, y + h - 28, range,
-                            COLOR_BLACK, 1, range_w);
+                            is_e6 ? COLOR_YELLOW : COLOR_BLACK, 1, range_w);
 
     const char *city = (cfg && cfg->city_name[0]) ? cfg->city_name : "";
     (void)city; /* City/date already lives in the page header on the large layout. */
@@ -1177,15 +1179,16 @@ static void draw_stat_box(fb_t *fb, int x, int y, int w, int h,
                           const char *label, const char *value,
                           fb_color_t accent, int value_scale)
 {
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     fb_rect(fb, x, y, w, h, COLOR_BLACK);
     fb_fill_rect(fb, x, y, 2, h, accent);
-    if (accent == COLOR_RED)
-        fb_fill_rect(fb, x, y, w / 4, 2, COLOR_RED);
+    if (accent != COLOR_BLACK || is_e6)
+        fb_fill_rect(fb, x, y, w / 4, 2, accent);
     ui_draw_fixed_text_maxw(fb, x + 9, y + 4, label, accent, 1, w - 18);
     int value_y = (value_scale >= 2) ? (y + h - 16 * value_scale - 1)
                                      : (y + h - 22);
     ui_draw_fixed_text_maxw(fb, x + 8, value_y, value,
-                            COLOR_BLACK, value_scale, w - 16);
+                            is_e6 ? accent : COLOR_BLACK, value_scale, w - 16);
 }
 
 static void draw_metric_deck(fb_t *fb, int x, int y, int w, int h,
@@ -1213,16 +1216,20 @@ static void draw_metric_deck(fb_t *fb, int x, int y, int w, int h,
     int tile_h = (h - 50 - tile_gap) / 2;
     if (tile_h < 54)
         tile_h = 54;
+    const bool is_e6 = ui_layout_is_e6_37(fb);
 
     draw_stat_box(fb, gx, gy, tile_w, tile_h,
-                  "\xe4\xbd\x93\xe6\x84\x9f", feels_value, COLOR_RED, 2);
+                  "\xe4\xbd\x93\xe6\x84\x9f", feels_value,
+                  is_e6 ? COLOR_RED : COLOR_RED, 2);
     draw_stat_box(fb, gx + tile_w + tile_gap, gy, tile_w, tile_h,
-                  "\xe6\xb9\xbf\xe5\xba\xa6", humidity_value, COLOR_BLACK, 2);
+                  "\xe6\xb9\xbf\xe5\xba\xa6", humidity_value,
+                  is_e6 ? COLOR_BLUE : COLOR_BLACK, 2);
     draw_stat_box(fb, gx, gy + tile_h + tile_gap, tile_w, tile_h,
-                  "\xe6\xb0\x94\xe5\x8e\x8b", pressure_value, COLOR_BLACK, 1);
+                  "\xe6\xb0\x94\xe5\x8e\x8b", pressure_value,
+                  is_e6 ? COLOR_GREEN : COLOR_BLACK, 1);
     draw_stat_box(fb, gx + tile_w + tile_gap, gy + tile_h + tile_gap,
                   tile_w, tile_h, "\xe9\xa3\x8e\xe5\x8a\x9b",
-                  wind_value, COLOR_RED, 1);
+                  wind_value, is_e6 ? COLOR_YELLOW : COLOR_RED, 1);
 }
 
 static void draw_forecast_orbit(fb_t *fb, int x, int y, int w, int h,
@@ -1256,10 +1263,12 @@ static void draw_forecast_orbit(fb_t *fb, int x, int y, int w, int h,
         else
             snprintf(md, sizeof(md), "%s", day->date);
 
-        fb_color_t accent = (i == 0) ? COLOR_RED : COLOR_BLACK;
+        fb_color_t accent = ui_layout_is_e6_37(fb)
+                           ? ui_e6_palette_color(fb, i + 1, COLOR_RED)
+                           : ((i == 0) ? COLOR_RED : COLOR_BLACK);
         fb_rect(fb, bx, card_y, bw, card_h, COLOR_BLACK);
-        if (i == 0)
-            fb_fill_rect(fb, bx, card_y, bw / 4, 2, COLOR_RED);
+        if (i == 0 || ui_layout_is_e6_37(fb))
+            fb_fill_rect(fb, bx, card_y, bw / 4, 2, accent);
         ui_draw_fixed_text_maxw(fb, bx + 8, card_y + 7, md,
                                 accent, 1, bw - 48);
         ui_draw_fixed_text_maxw(fb, bx + 66, card_y + 7, day->text_day,
@@ -1268,13 +1277,15 @@ static void draw_forecast_orbit(fb_t *fb, int x, int y, int w, int h,
         int icon_x = bx + bw - 36;
         draw_weather_icon_code(fb, icon_x, card_y + 20,
                                day->icon_day, day->text_day,
-                               QW_ICON_SMALL_SIZE, COLOR_BLACK);
+                               QW_ICON_SMALL_SIZE,
+                               ui_layout_is_e6_37(fb) ? accent : COLOR_BLACK);
 
         char temp[32];
         snprintf(temp, sizeof(temp), "\xe9\xab\x98%d / \xe4\xbd\x8e%d\xc2\xb0",
                  day->temp_max, day->temp_min);
         ui_draw_fixed_text_maxw(fb, bx + 8, card_y + card_h - 18, temp,
-                                COLOR_BLACK, 1, bw - 52);
+                                ui_layout_is_e6_37(fb) ? accent : COLOR_BLACK,
+                                1, bw - 52);
     }
 }
 
@@ -1313,6 +1324,7 @@ static void draw_temp_marker(fb_t *fb, int px, int py, const char *tag,
 static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
                                const weather_data_t *wd)
 {
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     ui_draw_card(fb, x, y, w, h, false);
     ui_draw_section_label(fb, x + 8, y + 7,
                           "24\xe5\xb0\x8f\xe6\x97\xb6\xe6\xb8\xa9\xe5\xba\xa6\xe5\x8f\x98\xe5\x8c\x96",
@@ -1469,14 +1481,14 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
         ui_draw_fixed_text(fb, x + 14, plot_y + plot_h - 12, axis,
                            COLOR_BLACK, 1);
 
-    fb_vline(fb, plot_x, plot_y, plot_h, COLOR_BLACK);
-    fb_hline(fb, plot_x, plot_y + plot_h, plot_w, COLOR_BLACK);
+    fb_vline(fb, plot_x, plot_y, plot_h, is_e6 ? COLOR_BLUE : COLOR_BLACK);
+    fb_hline(fb, plot_x, plot_y + plot_h, plot_w, is_e6 ? COLOR_BLUE : COLOR_BLACK);
     ui_draw_dotted_hline(fb, plot_x + 3, plot_y + plot_h / 2,
-                         plot_w - 6, COLOR_BLACK, 18);
+                         plot_w - 6, is_e6 ? COLOR_GREEN : COLOR_BLACK, 18);
     for (int t = 1; t < 3; t++) {
         int tx = plot_x + t * plot_w / 3;
         ui_draw_dotted_vline(fb, tx, plot_y + 6, plot_h - 10,
-                             COLOR_BLACK, 22);
+                             is_e6 ? COLOR_YELLOW : COLOR_BLACK, 22);
     }
 
     int px[25];
@@ -1492,15 +1504,20 @@ static void draw_temp_corridor(fb_t *fb, int x, int y, int w, int h,
         draw_line_thick(fb, px[i], py[i] + 3, px[i + 1], py[i + 1] + 3,
                         COLOR_BLACK, 1);
     for (int i = 0; i < count - 1; i++)
-        draw_line_thick(fb, px[i], py[i], px[i + 1], py[i + 1], COLOR_RED, 2);
+        draw_line_thick(fb, px[i], py[i], px[i + 1], py[i + 1],
+                        is_e6 ? COLOR_RED : COLOR_RED, 2);
     for (int i = 0; i < count; i++) {
         fb_fill_rect(fb, px[i] - 2, py[i] - 2, 5, 5, COLOR_RED);
-        fb_fill_rect(fb, px[i] - 1, py[i] - 1, 3, 3, COLOR_BLACK);
+        fb_fill_rect(fb, px[i] - 1, py[i] - 1, 3, 3,
+                     is_e6 ? COLOR_BLUE : COLOR_BLACK);
     }
 
     int mark_idx[2] = {min_idx, max_idx};
     const char *mark_tag[2] = {"\xe4\xbd\x8e", "\xe9\xab\x98"};
-    fb_color_t mark_color[2] = {COLOR_BLACK, COLOR_RED};
+    fb_color_t mark_color[2] = {
+        is_e6 ? COLOR_BLUE : COLOR_BLACK,
+        COLOR_RED
+    };
     for (int m = 0; m < 2; m++) {
         int i = mark_idx[m];
         bool duplicate = false;
@@ -1992,8 +2009,10 @@ static void render_weather(unsigned epoch)
 
     const int W = fb->width;
     const int H = fb->height;
-    const int MX = W * 30 / 648;
     const bool weather_583 = ((W == 600 || W == 648) && H >= 430);
+    const bool xl = ui_layout_is_xl(fb);
+    const bool weather_e6 = ui_layout_is_e6_37(fb);
+    const int MX = xl ? 42 : (weather_e6 ? 34 : W * 30 / 648);
     const bool big = ui_layout_is_wide(fb);
     const int sc = weather_583 ? 2 : ui_scale_for(fb);
 
@@ -2032,12 +2051,12 @@ static void render_weather(unsigned epoch)
     } else if (big && W >= 760 && H >= 430) {
         const int content_x = MX;
         const int content_w = W - 2 * MX;
-        const int gap = 8;
+        const int gap = xl ? 12 : 8;
         const int body_top = 28 * sc;
         const int body_bottom = H - 27 * sc;
-        const int top_h = 158;
+        const int top_h = xl ? 190 : (weather_e6 ? 168 : 158);
 
-        const int current_w = content_w * 60 / 100;
+        const int current_w = content_w * (xl ? 58 : 60) / 100;
         const int metric_w = content_w - current_w - gap;
         const int current_x = content_x;
         const int metric_x = current_x + current_w + gap;
@@ -2047,12 +2066,12 @@ static void render_weather(unsigned epoch)
         draw_metric_deck(fb, metric_x, body_top, metric_w, top_h,
                          &s_data.now);
 
-        int forecast_y = body_top + top_h + 8;
-        int forecast_h = 92;
+        int forecast_y = body_top + top_h + gap;
+        int forecast_h = xl ? 116 : (weather_e6 ? 98 : 92);
         draw_forecast_orbit(fb, content_x, forecast_y, content_w, forecast_h,
                             &s_data);
 
-        int trend_y = forecast_y + forecast_h + 8;
+        int trend_y = forecast_y + forecast_h + gap;
         int trend_h = body_bottom - trend_y;
         if (trend_h > 0)
             draw_temp_corridor(fb, content_x, trend_y, content_w, trend_h,

@@ -13,7 +13,7 @@ typedef enum {
     UI_LAYOUT_COMPACT = 0,  /* 2.9" class */
     UI_LAYOUT_42,           /* 400x300 4.2" class */
     UI_LAYOUT_583,          /* 648x480 5.83" class */
-    UI_LAYOUT_LARGE,        /* 7.5" / 800x480 class */
+    UI_LAYOUT_LARGE,        /* 7.5" / E6 3.7" / 800x480+ class */
 } ui_layout_class_t;
 
 typedef enum {
@@ -27,8 +27,11 @@ typedef enum {
 ui_layout_class_t ui_layout_for(const fb_t *fb);
 bool ui_layout_is_42(const fb_t *fb);
 bool ui_layout_is_583(const fb_t *fb);
+bool ui_layout_is_e6_37(const fb_t *fb);
 bool ui_layout_is_wide(const fb_t *fb);
+bool ui_layout_is_xl(const fb_t *fb);
 int  ui_scale_for(const fb_t *fb);
+fb_color_t ui_e6_palette_color(const fb_t *fb, int seed, fb_color_t fallback);
 int  ui_text_width(const char *s, int scale);
 int  ui_fixed_text_width(const fb_t *fb, const char *s, int scale);
 int  ui_draw_fixed_text(fb_t *fb, int x, int y, const char *s,

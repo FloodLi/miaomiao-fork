@@ -503,14 +503,16 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
     }
 
     const ui_layout_class_t layout = ui_layout_for(fb);
+    const bool xl = ui_layout_is_xl(fb);
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     const bool is_583 = (layout == UI_LAYOUT_583);
     const bool big = (layout == UI_LAYOUT_LARGE);
     const bool wide_clock = is_583 || big;
     const bool compact_clock = (!wide_clock && W >= 360 && H >= 260);
     const bool plain_compact_clock = compact_clock && !cfg_local.show_weather;
-    const int sc = wide_clock ? 2 : 1;
-    const int ds_num = is_583 ? 5 : (big ? 3 : 2);
-    const int ds_den = is_583 ? 3 : 2;
+    const int sc = xl ? 3 : (wide_clock ? 2 : 1);
+    const int ds_num = xl ? 2 : ((is_583 || is_e6) ? 5 : (big ? 3 : 2));
+    const int ds_den = xl ? 1 : ((is_583 || is_e6) ? 3 : 2);
     int dw = BASE_DW * ds_num / ds_den;
     int dh = BASE_DH * ds_num / ds_den;
     int d_gap = dw + 6 * ds_num / ds_den;
@@ -521,7 +523,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
 
     int total_w = 4 * d_gap + col_w_px - 6 * ds_num / ds_den;
     int time_x = (W - total_w) / 2;
-    int time_y = is_583 ? 56 : (H * 34 / 480);
+    int time_y = xl ? 48 : (is_583 ? 56 : (is_e6 ? 42 : (H * 34 / 480)));
     if (compact_clock && !is_583) {
         if (!plain_compact_clock)
             time_x -= 12;
@@ -530,16 +532,26 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
         time_y = plain_compact_clock ? 22 : 16;
     }
 
+    fb_color_t digit_colors[4] = { COLOR_BLACK, COLOR_BLACK, COLOR_BLACK, COLOR_BLACK };
+    fb_color_t colon_color = COLOR_BLACK;
+    if (is_e6) {
+        digit_colors[0] = COLOR_BLUE;
+        digit_colors[1] = COLOR_GREEN;
+        digit_colors[2] = COLOR_RED;
+        digit_colors[3] = COLOR_YELLOW;
+        colon_color = COLOR_BLACK;
+    }
+
     int cx = time_x;
-    draw_digit_s(fb, cx, time_y, hour / 10, COLOR_BLACK, ds_num, ds_den);
+    draw_digit_s(fb, cx, time_y, hour / 10, digit_colors[0], ds_num, ds_den);
     cx += d_gap;
-    draw_digit_s(fb, cx, time_y, hour % 10, COLOR_BLACK, ds_num, ds_den);
+    draw_digit_s(fb, cx, time_y, hour % 10, digit_colors[1], ds_num, ds_den);
     cx += d_gap;
-    draw_colon_s(fb, cx, time_y, COLOR_BLACK, ds_num, ds_den);
+    draw_colon_s(fb, cx, time_y, colon_color, ds_num, ds_den);
     cx += col_w_px;
-    draw_digit_s(fb, cx, time_y, min / 10, COLOR_BLACK, ds_num, ds_den);
+    draw_digit_s(fb, cx, time_y, min / 10, digit_colors[2], ds_num, ds_den);
     cx += d_gap;
-    draw_digit_s(fb, cx, time_y, min % 10, COLOR_BLACK, ds_num, ds_den);
+    draw_digit_s(fb, cx, time_y, min % 10, digit_colors[3], ds_num, ds_den);
 
     char date_str[64];
     snprintf(date_str, sizeof(date_str),
@@ -553,10 +565,10 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
              "\xe6\x98\x9f\xe6\x9c\x9f%s",
              weekday_zh[wday]);
 
-    int date_y = time_y + dh + (is_583 ? 20 : (compact_clock ? 10 : 18));
+    int date_y = time_y + dh + (xl ? 28 : ((is_583 || is_e6) ? 20 : (compact_clock ? 10 : 18)));
     int date_w = clock_text_px(date_str, sc);
     int week_w = clock_text_px(week_str, sc);
-    int date_gap = big ? 22 * sc : 18;
+    int date_gap = xl ? 30 * sc : (big ? 22 * sc : 18);
     if (compact_clock && !is_583)
         date_gap = 16;
     int date_x = (W - date_w - week_w - date_gap) / 2;
@@ -564,8 +576,10 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
         date_x = MX + 32;
     if (date_x < 16)
         date_x = 16;
-    clock_draw_text(fb, date_x, date_y, date_str, COLOR_BLACK, sc);
-    clock_draw_text(fb, date_x + date_w + date_gap, date_y, week_str, COLOR_RED, sc);
+    clock_draw_text(fb, date_x, date_y, date_str,
+                    is_e6 ? COLOR_BLUE : COLOR_BLACK, sc);
+    clock_draw_text(fb, date_x + date_w + date_gap, date_y, week_str,
+                    is_e6 ? COLOR_GREEN : COLOR_RED, sc);
 
     weather_summary_t wd_local = {0};
     weather_config_t wcfg = {0};
@@ -580,15 +594,16 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
     }
     const weather_summary_t *wd = &wd_local;
 
-    int sep_y = date_y + 16 * sc + (is_583 ? 18 : (compact_clock ? 9 : 12));
+    int sep_y = date_y + 16 * sc + (xl ? 24 : (is_583 ? 18 : (compact_clock ? 9 : 12)));
     if (wide_clock || has_weather || cfg_local.show_weather) {
-        ui_draw_dotted_hline(fb, MX + 12, sep_y, W - 2 * MX - 24, COLOR_BLACK, 6);
+        ui_draw_dotted_hline(fb, MX + 12, sep_y, W - 2 * MX - 24,
+                             is_e6 ? COLOR_BLUE : COLOR_BLACK, 6);
     } else {
         fb_fill_rect(fb, W / 2 - 34, sep_y, 68, 2, COLOR_RED);
     }
 
-    int bot_y = sep_y + (is_583 ? 18 : (compact_clock ? 12 : 14));
-    const int wx_head_sc = wide_clock ? 2 : 1;
+    int bot_y = sep_y + (xl ? 22 : (is_583 ? 18 : (compact_clock ? 12 : 14)));
+    const int wx_head_sc = xl ? 2 : (wide_clock ? 2 : 1);
     const int wx_body_sc = 1;
     const int wx_head_gap = 16 * wx_head_sc + 8;
 

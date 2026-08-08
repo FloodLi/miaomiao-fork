@@ -296,10 +296,12 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
     const int s = ui_scale_for(fb);
     const bool is_583 = ui_layout_is_583(fb);
     const bool large = (ui_layout_for(fb) == UI_LAYOUT_LARGE);
+    const bool xl = ui_layout_is_xl(fb);
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     const bool wide_layout = is_583 || large;
-    const int margin = is_583 ? 34 : 14 * s;
+    const int margin = is_e6 ? 30 : (is_583 ? 34 : 14 * s);
     const int card_x = margin;
-    const int card_y = is_583 ? 74 : 38 * s;
+    const int card_y = xl ? 86 : (is_e6 ? 82 : (is_583 ? 74 : 38 * s));
     const int card_w = W - 2 * margin;
     int card_h = H - card_y - 34 * s;
     if (card_h < 160)
@@ -310,7 +312,7 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
     snprintf(days_str, sizeof(days_str), "%d", abs_days);
 
     bool hot = (days >= 0 && days <= 7);
-    fb_color_t accent = hot ? COLOR_RED : COLOR_BLACK;
+    fb_color_t accent = hot ? COLOR_RED : (is_e6 ? COLOR_BLUE : COLOR_BLACK);
     ui_draw_card(fb, card_x, card_y, card_w, card_h, hot);
     ui_draw_section_label(fb, card_x + 12 * s, card_y + 10 * s,
                           "\xe5\x80\x92\xe8\xae\xa1\xe6\x97\xb6\xe7\x9b\xae\xe6\xa0\x87",
@@ -323,17 +325,17 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
                                 status_w);
     }
 
-    int title_px = is_583 ? 40 : (wide_layout ? 32 : 24);
+    int title_px = xl ? 48 : ((is_583 || is_e6) ? 40 : (wide_layout ? 32 : 24));
     int title_max = card_w - 28 * s;
     title_px = cd_fit_px(item->title, title_max, title_px, title_px);
-    int title_y = card_y + (is_583 ? 58 : 36 * s);
+    int title_y = card_y + (xl ? 70 : (is_e6 ? 62 : (is_583 ? 58 : 36 * s)));
     int title_w = cd_text_width_px(item->title, title_px);
     if (title_w <= title_max) {
         ui_draw_text_px(fb, card_x + (card_w - title_w) / 2, title_y,
-                        item->title, COLOR_BLACK, title_px);
+                        item->title, is_e6 ? COLOR_BLUE : COLOR_BLACK, title_px);
     } else {
         ui_draw_text_px_maxw(fb, card_x + 14 * s, title_y, item->title,
-                             COLOR_BLACK, title_px, title_max);
+                             is_e6 ? COLOR_BLUE : COLOR_BLACK, title_px, title_max);
     }
 
     char date_buf[11];
@@ -342,7 +344,8 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
     ui_draw_dotted_hline(fb, card_x + 12 * s, date_y - 8 * s,
                          card_w - 24 * s, accent, 6);
     cd_draw_midline_px(fb, card_x + 14 * s, date_y + 8,
-                       "\xe7\x9b\xae\xe6\xa0\x87\xe6\x97\xa5", COLOR_BLACK, 16);
+                       "\xe7\x9b\xae\xe6\xa0\x87\xe6\x97\xa5",
+                       is_e6 ? COLOR_GREEN : COLOR_BLACK, 16);
     cd_draw_ascii_midline_builtin(
         fb, card_x + card_w - 14 * s - cd_ascii_width_builtin(date_buf, 1),
         date_y + 8, date_buf, COLOR_BLACK, 1);
@@ -372,9 +375,9 @@ static void draw_hero(fb_t *fb, int W, int H, const countdown_item_t *item, int 
     } else {
         const char *prefix = (days > 0) ? "\xe8\xbf\x98\xe6\x9c\x89" : "\xe5\xb7\xb2\xe8\xbf\x87";
         const char *unit = "\xe5\xa4\xa9";
-        fb_color_t line_c = (days > 0) ? COLOR_RED : COLOR_BLACK;
+        fb_color_t line_c = (days > 0) ? COLOR_RED : (is_e6 ? COLOR_GREEN : COLOR_BLACK);
         int prefix_px = 24;
-        int num_px = is_583 ? 72 : (ui_layout_is_42(fb) ? 32 : (wide_layout ? 48 : 40));
+        int num_px = xl ? 80 : (is_e6 ? 64 : (is_583 ? 72 : (ui_layout_is_42(fb) ? 32 : (wide_layout ? 48 : 40))));
         int unit_px = 24;
         int gap2 = 8 * s;
         int prefix_w;
@@ -421,10 +424,12 @@ static void draw_cards(fb_t *fb, int W, int H,
     const int s = ui_scale_for(fb);
     const bool is_583 = ui_layout_is_583(fb);
     const bool large = (ui_layout_for(fb) == UI_LAYOUT_LARGE);
+    const bool xl = ui_layout_is_xl(fb);
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     const bool wide_layout = is_583 || large;
-    const int body_y = is_583 ? 74 : 38 * s;
-    const int margin = is_583 ? 34 : 14 * s;
-    const int gap = is_583 ? 12 : 7 * s;
+    const int body_y = xl ? 90 : (is_e6 ? 82 : (is_583 ? 74 : 38 * s));
+    const int margin = is_e6 ? 30 : (is_583 ? 34 : 14 * s);
+    const int gap = (is_583 || is_e6) ? 12 : 7 * s;
 
     int active_idx[COUNTDOWN_MAX_ITEMS];
     int n = 0;
@@ -452,7 +457,7 @@ static void draw_cards(fb_t *fb, int W, int H,
     if (card_h > 88) card_h = 88;
     if (card_h < 42) card_h = 42;
 
-    int right_col = is_583 ? 190 : (wide_layout ? 172 : (ui_layout_is_42(fb) ? 126 : 116));
+    int right_col = xl ? 230 : (is_e6 ? 205 : (is_583 ? 190 : (wide_layout ? 172 : (ui_layout_is_42(fb) ? 126 : 116))));
     int left_maxw = W - margin * 2 - right_col - 12 * s;
     if (left_maxw < 80) left_maxw = 80;
 
@@ -461,24 +466,26 @@ static void draw_cards(fb_t *fb, int W, int H,
         int i = active_idx[start + k];
         int days = days_remaining(&cfg->items[i]);
         bool hot = (days >= 0 && days <= 7);
-        fb_color_t accent = hot ? COLOR_RED : COLOR_BLACK;
+        fb_color_t accent = hot ? COLOR_RED :
+                            (is_e6 ? ui_e6_palette_color(fb, k, COLOR_BLUE) : COLOR_BLACK);
 
         ui_draw_card(fb, margin, y, W - margin * 2, card_h, hot);
         fb_fill_rect(fb, margin + 1, y + 8, 3 * s, card_h - 16, accent);
 
         bool title_builtin = ui_layout_is_42(fb);
-        int title_px = title_builtin ? 16 : ((is_583 && card_h >= 58) ? 32 : (wide_layout && card_h >= 58 ? 24 : 16));
+        int title_px = title_builtin ? 16 : (xl && card_h >= 64 ? 32 : (((is_583 || is_e6) && card_h >= 58) ? 32 : (wide_layout && card_h >= 58 ? 24 : 16)));
         if (!title_builtin)
             title_px = cd_fit_px(cfg->items[i].title, left_maxw, 24, title_px);
         int title_y = y + (title_builtin ? 10 * s : 8 * s);
         int text_x = margin + 10 * s;
         if (title_builtin) {
             ui_draw_fixed_text_maxw(fb, text_x, title_y,
-                                    cfg->items[i].title, COLOR_BLACK, 1,
+                                    cfg->items[i].title,
+                                    is_e6 ? accent : COLOR_BLACK, 1,
                                     left_maxw);
         } else {
             ui_draw_text_px_maxw(fb, text_x, title_y, cfg->items[i].title,
-                                 COLOR_BLACK, title_px, left_maxw);
+                                 is_e6 ? accent : COLOR_BLACK, title_px, left_maxw);
         }
 
         char date_buf[11];

@@ -12,14 +12,20 @@ typedef enum {
     COLOR_WHITE = 0,
     COLOR_BLACK = 1,
     COLOR_RED   = 2,
+    COLOR_YELLOW = 3,
+    COLOR_BLUE   = 4,
+    COLOR_GREEN  = 5,
 } fb_color_t;
 
-/* Built-in UI rendering is currently two-plane (black + red).
- * Native yellow panels use the third plane only in image conversion/raw output.
+/* Most panels render with two planes (black + red). E6 3.7" allocates three
+ * optional accent planes so built-in UI can use yellow, blue, and green too.
  */
 typedef struct {
     uint8_t *black;
     uint8_t *red;
+    uint8_t *yellow;
+    uint8_t *blue;
+    uint8_t *green;
     int      width;
     int      height;
     int      plane_bytes;

@@ -547,7 +547,8 @@ async function refresh(){
       bar.style.width=Math.max(pct,3)+'%';
       bar.style.background=pct<70?'var(--ok)':pct<90?'var(--wn)':'var(--er)';
     }
-    document.getElementById('panel_txt').textContent=(j.panel_name||'-')+' · '+compactPanel(j)+(j.panel_has_yellow?' · 四色':(j.panel_has_red?' · 三色':' · 黑白'));
+    const colorLabel=j.panel===43?' · 六色':(j.panel_has_yellow?' · 四色':(j.panel_has_red?' · 三色':' · 黑白'));
+    document.getElementById('panel_txt').textContent=(j.panel_name||'-')+' · '+compactPanel(j)+colorLabel;
     document.getElementById('fw_txt').textContent='v'+(j.version||'-')+' · '+(j.running||'-');
     document.getElementById('wx_txt').textContent=weatherLabel(j)+(j.weather_city?' · '+j.weather_city:'');
     document.getElementById('dev_time').textContent=j.time_synced?j.time:'未同步';

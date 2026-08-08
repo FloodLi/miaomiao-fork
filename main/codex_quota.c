@@ -487,34 +487,59 @@ static void draw_quota_bar(fb_t *fb, int x, int y, int w, int h, int percent,
 static void draw_quota_row(fb_t *fb, int y, const char *label, int percent,
                            fb_color_t color, const char *right)
 {
-    const int label_x = 18;
-    const int bar_x = 96;
-    const int pct_x = 248;
-    const int date_x = 306;
-    ui_draw_fixed_text_maxw(fb, label_x, y - 2, label, COLOR_BLACK, 1, 72);
-    draw_quota_bar(fb, bar_x, y, 142, 12, percent, color);
+    const int W = fb->width;
+    const int s = ui_scale_for(fb);
+    const bool xl = ui_layout_is_xl(fb);
+    const int margin = 18 * s;
+    const int label_w = xl ? 132 : 72 * s;
+    const int right_w = xl ? 210 : (s > 1 ? 140 : 84);
+    const int pct_w = xl ? 62 : 50;
+    const int bar_h = xl ? 22 : (s > 1 ? 16 : 12);
+    const int label_x = margin;
+    const int bar_x = label_x + label_w + 8 * s;
+    const int date_x = W - margin - right_w;
+    const int pct_x = date_x - pct_w - 8 * s;
+    int bar_w = pct_x - bar_x - 8 * s;
+    if (bar_w < 48)
+        bar_w = 48;
+
+    int text_y = y + (bar_h - 16) / 2;
+    ui_draw_fixed_text_maxw(fb, label_x, text_y, label, COLOR_BLACK, 1, label_w);
+    draw_quota_bar(fb, bar_x, y, bar_w, bar_h, percent, color);
 
     char pct[10];
     snprintf(pct, sizeof(pct), "%d%%", percent);
-    ui_draw_fixed_text(fb, pct_x, y - 2, pct, color == COLOR_RED ? COLOR_RED : COLOR_BLACK, 1);
-    ui_draw_fixed_text_maxw(fb, date_x, y - 2, right ? right : "--", COLOR_BLACK, 1, 84);
+    ui_draw_fixed_text(fb, pct_x, text_y, pct, color == COLOR_RED ? COLOR_RED : COLOR_BLACK, 1);
+    ui_draw_fixed_text_maxw(fb, date_x, text_y, right ? right : "--", COLOR_BLACK, 1, right_w);
 }
 
 static void draw_quota_value_row(fb_t *fb, int y, const char *label,
                                  const char *value, fb_color_t color,
                                  const char *right)
 {
-    const int label_x = 18;
-    const int value_x = 96;
-    const int date_x = 306;
-    ui_draw_fixed_text_maxw(fb, label_x, y - 2, label, COLOR_BLACK, 1, 72);
-    ui_draw_fixed_text_maxw(fb, value_x, y - 2, value ? value : "--", color, 1, 200);
-    ui_draw_fixed_text_maxw(fb, date_x, y - 2, right ? right : "--", COLOR_BLACK, 1, 84);
+    const int W = fb->width;
+    const int s = ui_scale_for(fb);
+    const bool xl = ui_layout_is_xl(fb);
+    const int margin = 18 * s;
+    const int label_w = xl ? 132 : 72 * s;
+    const int right_w = xl ? 210 : (s > 1 ? 140 : 84);
+    const int label_x = margin;
+    const int value_x = label_x + label_w + 8 * s;
+    const int date_x = W - margin - right_w;
+    int value_w = date_x - value_x - 8 * s;
+    if (value_w < 48)
+        value_w = 48;
+
+    ui_draw_fixed_text_maxw(fb, label_x, y, label, COLOR_BLACK, 1, label_w);
+    ui_draw_fixed_text_maxw(fb, value_x, y, value ? value : "--", color,
+                            xl ? 2 : 1, value_w);
+    ui_draw_fixed_text_maxw(fb, date_x, y, right ? right : "--", COLOR_BLACK, 1, right_w);
 }
 
 static void draw_section_title(fb_t *fb, int x, int y, const char *title)
 {
-    ui_draw_fixed_text(fb, x, y, title, COLOR_BLACK, 2);
+    ui_draw_fixed_text(fb, x, y, title, COLOR_BLACK,
+                       ui_layout_is_xl(fb) ? 3 : 2);
 }
 
 static int quota_percent_from_data(const codex_quota_data_t *data)
@@ -580,8 +605,6 @@ static void render_quota_page(const codex_quota_config_t *cfg,
     if (!fb)
         return;
 
-    const int H = fb->height;
-    const int W = fb->width;
     char refresh_label[32];
     quota_refresh_label(cfg, refresh_label, sizeof(refresh_label));
 
@@ -590,9 +613,7 @@ static void render_quota_page(const codex_quota_config_t *cfg,
 
     if (error) {
         ui_draw_empty_state(fb, "\xe9\xa2\x9d\xe5\xba\xa6\xe4\xb8\x8d\xe5\x8f\xaf\xe7\x94\xa8", error);
-        fb_hline(fb, 14, H - 28, W - 28, COLOR_BLACK);
-        ui_draw_fixed_text(fb, 20, H - 20, refresh_label, COLOR_BLACK, 1);
-        ui_draw_fixed_text(fb, W - 44, H - 20, "1/1", COLOR_BLACK, 1);
+        ui_draw_footer(fb, refresh_label, "1/1");
         epd_display_fb_free(fb);
         return;
     }
@@ -616,30 +637,32 @@ static void render_quota_page(const codex_quota_config_t *cfg,
     format_request_count(req, sizeof(req), data->request_count);
     format_token_count(tokens, sizeof(tokens), data->have_total_tokens, data->total_tokens);
 
-    int y = 56;
-    draw_section_title(fb, 18, y, "额度");
-    y += 42;
+    const int s = ui_scale_for(fb);
+    const bool xl = ui_layout_is_xl(fb);
+    const int margin = 18 * s;
+    const int row_gap = xl ? 50 : (s > 1 ? 34 : 26);
+    const int value_gap = xl ? 46 : (s > 1 ? 34 : 24);
+
+    int y = xl ? 104 : (s > 1 ? 76 : 56);
+    draw_section_title(fb, margin, y, "额度");
+    y += xl ? 66 : 42;
     draw_quota_row(fb, y, "余额", remain_pct,
                    remain_pct <= 30 ? COLOR_RED : COLOR_BLACK, remain);
-    y += 26;
+    y += row_gap;
     draw_quota_row(fb, y, "已用", used_pct,
                    used_pct >= 90 ? COLOR_RED : COLOR_BLACK, used);
-    y += 26;
+    y += row_gap;
     draw_quota_row(fb, y, "今日", today_pct,
                    today_pct >= 80 ? COLOR_RED : COLOR_BLACK, today);
-    y += 26;
+    y += row_gap;
     draw_quota_row(fb, y, "总计", used_pct,
                    used_pct >= 90 ? COLOR_RED : COLOR_BLACK, used);
-    y += 30;
+    y += xl ? 54 : 30;
     draw_quota_value_row(fb, y, "请求", req, COLOR_BLACK, reset);
-    y += 24;
+    y += value_gap;
     draw_quota_value_row(fb, y, "令牌", tokens, COLOR_BLACK, reset);
 
-    ui_draw_dotted_hline(fb, 14, H - 32, W - 28, COLOR_BLACK, 4);
-    ui_draw_fixed_text(fb, 20, H - 22, refresh_label, COLOR_BLACK, 1);
-    ui_draw_fixed_text(fb, W / 2 - 16, H - 22, "[Zz]", COLOR_BLACK, 1);
-    ui_draw_fixed_text(fb, W - 44, H - 22, cfg && cfg->enabled ? "1/1" : "0/1",
-                       COLOR_BLACK, 1);
+    ui_draw_footer(fb, refresh_label, cfg && cfg->enabled ? "1/1" : "0/1");
     epd_display_fb_free(fb);
 }
 

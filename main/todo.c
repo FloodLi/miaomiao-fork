@@ -68,6 +68,7 @@ static void draw_todo_stat_card(fb_t *fb, int x, int y, int w, int h,
                                 const char *label, const char *value,
                                 fb_color_t accent, int value_scale)
 {
+    const bool is_e6 = ui_layout_is_e6_37(fb);
     if (value_scale > 1 && h < 58)
         value_scale = 1;
     ui_draw_card(fb, x, y, w, h, accent == COLOR_RED);
@@ -88,7 +89,7 @@ static void draw_todo_stat_card(fb_t *fb, int x, int y, int w, int h,
 
     ui_draw_fixed_text_maxw(fb, inner_x, label_y, label, accent, 1, inner_w);
     ui_draw_fixed_text_maxw(fb, inner_x, value_y, value,
-                            COLOR_BLACK, value_scale, inner_w);
+                            is_e6 ? accent : COLOR_BLACK, value_scale, inner_w);
 }
 
 /* Select visible rows by usefulness when the screen cannot show every item. */
@@ -124,8 +125,9 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
     const int W = fb->width;
     const int H = fb->height;
     const bool is_583 = ui_layout_is_583(fb);
-    const bool large = (ui_layout_for(fb) == UI_LAYOUT_LARGE);
-    const int s = (is_583 || large) ? 2 : 1;
+    const bool xl = ui_layout_is_xl(fb);
+    const bool is_e6 = ui_layout_is_e6_37(fb);
+    const int s = ui_scale_for(fb);
     const int pad = 14 * s;
 
     int done_n = 0;
@@ -163,9 +165,9 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
             important_n++;
     }
 
-    int summary_y = is_583 ? 58 : 32 * s;
-    int summary_h = is_583 ? 78 : 42 * s;
-    int gap = is_583 ? 12 : 6 * s;
+    int summary_y = xl ? 88 : (is_e6 ? 72 : (is_583 ? 58 : 32 * s));
+    int summary_h = xl ? 104 : (is_e6 ? 88 : (is_583 ? 78 : 42 * s));
+    int gap = xl ? 18 : ((is_583 || is_e6) ? 12 : 6 * s);
     int stat_w = (W - 2 * pad - 2 * gap) / 3;
 
     char pending_str[16];
@@ -178,31 +180,34 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
 
     draw_todo_stat_card(fb, pad, summary_y, stat_w, summary_h,
                         "\xe5\x89\xa9\xe4\xbd\x99", pending_str,
-                        pending_n ? COLOR_RED : COLOR_BLACK, 2);
+                        is_e6 ? COLOR_BLUE : (pending_n ? COLOR_RED : COLOR_BLACK), 2);
     draw_todo_stat_card(fb, pad + stat_w + gap, summary_y, stat_w, summary_h,
                         "\xe5\xae\x8c\xe6\x88\x90\xe7\x8e\x87", done_str,
-                        pct >= 100 ? COLOR_BLACK : COLOR_RED, 2);
+                        is_e6 ? COLOR_GREEN : (pct >= 100 ? COLOR_BLACK : COLOR_RED), 2);
     draw_todo_stat_card(fb, pad + (stat_w + gap) * 2, summary_y, stat_w, summary_h,
                         "\xe7\xb4\xa7\xe6\x80\xa5/\xe9\x87\x8d\xe8\xa6\x81",
-                        focus_str, urgent_n ? COLOR_RED : COLOR_BLACK, 2);
+                        focus_str,
+                        is_e6 ? (urgent_n ? COLOR_RED : COLOR_YELLOW)
+                              : (urgent_n ? COLOR_RED : COLOR_BLACK), 2);
 
-    int bar_y = summary_y + summary_h + (is_583 ? 10 : 5 * s);
-    ui_draw_progress_bar(fb, pad, bar_y, W - 2 * pad, is_583 ? 8 : 5 * s, pct,
-                         (pct >= 100) ? COLOR_BLACK : COLOR_RED);
+    int bar_y = summary_y + summary_h + (xl ? 14 : (is_583 ? 10 : 5 * s));
+    ui_draw_progress_bar(fb, pad, bar_y, W - 2 * pad, xl ? 12 : (is_583 ? 8 : 5 * s), pct,
+                         is_e6 ? COLOR_RED : ((pct >= 100) ? COLOR_BLACK : COLOR_RED));
 
-    int list_y = bar_y + (is_583 ? 18 : 9 * s);
+    int list_y = bar_y + (xl ? 26 : (is_583 ? 18 : 9 * s));
     int footer_h = 22 * s;
-    int avail  = H - list_y - footer_h - (is_583 ? 14 : 6 * s);
-    int item_gap = is_583 ? 8 : 4 * s;
-    const int min_item_h = is_583 ? 50 : 20 * s;
-    const int max_item_h = is_583 ? 62 : 32 * s;
+    int avail  = H - list_y - footer_h - (xl ? 16 : (is_583 ? 14 : 6 * s));
+    int item_gap = xl ? 10 : (is_583 ? 8 : 4 * s);
+    const int min_item_h = xl ? 54 : (is_e6 ? 48 : (is_583 ? 50 : 20 * s));
+    const int max_item_h = xl ? 72 : (is_e6 ? 66 : (is_583 ? 62 : 32 * s));
     if (avail < min_item_h)
         avail = min_item_h;
 
     int max_fit = (avail + item_gap) / (min_item_h + item_gap);
     if (max_fit < 1) max_fit = 1;
     if (max_fit > 6) max_fit = 6;
-    if (is_583 && max_fit > 4) max_fit = 4;
+    if ((xl || is_e6) && max_fit > 5) max_fit = 5;
+    else if (is_583 && max_fit > 4) max_fit = 4;
     else if (W <= 400 && max_fit > 5) max_fit = 5;
 
     int n_show = cfg->count < max_fit ? (int)cfg->count : max_fit;
@@ -211,7 +216,7 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
     int item_h = (avail - item_gap * (n_show - 1)) / n_show;
     if (item_h > max_item_h) item_h = max_item_h;
     if (item_h < min_item_h) item_h = min_item_h;
-    int sc   = (s > 1 && item_h >= (is_583 ? 50 : 54)) ? 2 : 1;
+    int sc   = (s > 1 && item_h >= (xl ? 64 : (is_583 ? 50 : 54))) ? 2 : 1;
     int ch_h = 16 * sc;
     const int pri_sc = 1;
 
@@ -226,9 +231,10 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
         if (it->priority >= 2)
             fb_fill_rect(fb, pad + 1, y + 5, 3 * s, item_h - 10, COLOR_RED);
         else if (it->priority == 1)
-            fb_fill_rect(fb, pad + 1, y + 5, 3 * s, item_h - 10, COLOR_BLACK);
+            fb_fill_rect(fb, pad + 1, y + 5, 3 * s, item_h - 10,
+                         is_e6 ? COLOR_YELLOW : COLOR_BLACK);
 
-        int cb_x  = pad + (is_583 ? 18 : 12 * s);
+        int cb_x  = pad + (xl ? 22 : (is_583 ? 18 : 12 * s));
         int cb_sz = ch_h - 2;
         if (cb_sz > 14 * s) cb_sz = 14 * s;
         if (cb_sz < 10) cb_sz = 10;
@@ -251,7 +257,7 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
             fb_rect(fb, cb_x, cb_y, cb_sz, cb_sz, COLOR_BLACK);
         }
 
-        int tx    = cb_x + cb_sz + (is_583 ? 14 : 8 * s);
+        int tx    = cb_x + cb_sz + (xl ? 18 : (is_583 ? 14 : 8 * s));
         bool show_pri = (it->priority > 0);
         int pri_w = show_pri ? (2 * 16 * pri_sc + 12 * s) : 0;
         int max_w = W - tx - pri_w - 16 * s;
@@ -276,7 +282,8 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
                                "\xe7\xb4\xa7\xe6\x80\xa5", COLOR_RED, pri_sc);
         else if (show_pri && it->priority == 1)
             ui_draw_fixed_text(fb, pri_x, text_y,
-                               "\xe9\x87\x8d\xe8\xa6\x81", COLOR_BLACK, pri_sc);
+                               "\xe9\x87\x8d\xe8\xa6\x81",
+                               is_e6 ? COLOR_YELLOW : COLOR_BLACK, pri_sc);
     }
 
     char foot[48];

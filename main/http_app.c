@@ -316,6 +316,8 @@ static const char *http_panel_name(epd_panel_t panel)
     case EPD_PANEL_REF_SSD1683_42_LEGACY: return "SSD1683 4.2 BWR";
     case EPD_PANEL_REF_SSD1683_42_BW: return "SSD1683 4.2 BW";
     case EPD_PANEL_FPC194_SSD1683_42_BWR: return "FPC-194 4.2 BWR SSD1683";
+    case EPD_PANEL_REF_SSD1667_102_BWR: return "SSD1667 10.2 BWR";
+    case EPD_PANEL_E6_37_6C: return "E6 3.7 six-color";
     default: return "Unknown panel";
     }
 }
