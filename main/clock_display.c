@@ -39,11 +39,9 @@ static const char *NVS_NS = "clock";
  * （比如外部 clock_display_show 把模式切回时钟），但不强制渲染。 */
 #define BIT_WAKE          BIT2
 
-/* 时钟自动刷新的分钟粒度。
- * 1 = 每分钟全刷（时间始终准确，4.2" 约 10s / 5.83" 约 18s 刷新一次）；
- * 5 = 每 5 分钟全刷（23:00/05/10/15...）；
- * 整点/跨日/配置/天气变更仍立即全刷，与此值无关。 */
-#define CLOCK_FULL_REFRESH_STEP_MIN   1
+/* Automatic clock refresh interval. The driver resolves PARTIAL to FULL on
+ * panels whose experimental partial-refresh capability is disabled. */
+#define CLOCK_REFRESH_STEP_MIN   1
 
 static clock_config_t s_cfg = {
     .enabled      = false,
@@ -461,9 +459,10 @@ static void nvs_save_snapshot(const clock_config_t *cfg)
 /**
  * 渲染时钟到帧缓冲并送屏。
  *
- * 三色屏不同控制器波形差异较大，本模块统一走全屏刷新，画面质量优先。
+ * Manual page entry uses FULL; automatic same-page updates request PARTIAL.
  */
-static esp_err_t render_clock(unsigned epoch, bool notify_scheduler)
+static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
+                              epd_refresh_mode_t refresh_mode)
 {
     if (s_render_mutex && xSemaphoreTake(s_render_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
         ESP_LOGW(TAG, "render_clock: another render in progress, skip");
@@ -852,7 +851,7 @@ clock_render_done:
     }
 
     /* Display directly from RAM; clock refreshes should not rewrite /spiffs/image.bin. */
-    esp_err_t err = epd_display_fb_free(fb);
+    esp_err_t err = epd_display_fb_free_mode(fb, refresh_mode);
     if (err != ESP_OK) {
         if (s_render_mutex)
             xSemaphoreGive(s_render_mutex);
@@ -896,7 +895,7 @@ clock_render_done:
  *   - 等 bits（带 30~60s 超时，对齐到下一分钟边界）；
  *   - 唤醒后核对：分钟变化 / 整点 / 日期 / 配置 / 天气可见性 / 天气数据签名 /
  *     force_full_next（时间重同步等）；
- *   - 时钟一律全刷（BWR 局刷在 SSD1619/UC8179 上质量不可靠，已移除）；
+ *   - same-page updates request PARTIAL; unsupported panels fall back to FULL;
  *   - 收到 BIT_WEATHER_DATA 但天气数据签名没变 → 不刷。
  *
  * 状态镜像 s_state 由 render_clock() 在每次成功渲染时同步，使外部
@@ -975,9 +974,9 @@ static void clock_task(void *arg)
             weather_data_changed = (sig != s_last_sig);
         }
 
-        bool full_step_due = minute_changed &&
-                             (CLOCK_FULL_REFRESH_STEP_MIN <= 1 ||
-                              (tm.tm_min % CLOCK_FULL_REFRESH_STEP_MIN) == 0);
+        bool refresh_step_due = minute_changed &&
+                                (CLOCK_REFRESH_STEP_MIN <= 1 ||
+                                 (tm.tm_min % CLOCK_REFRESH_STEP_MIN) == 0);
 
         if (calendar_may_refresh && minute_changed &&
             calendar_display_needs_midnight_refresh()) {
@@ -1010,7 +1009,7 @@ static void clock_task(void *arg)
         if (sw_visibility_changed)                need_render = true;
         if (hour_changed || day_changed)          need_render = true;
         if (show_weather && weather_data_changed) need_render = true;
-        if (full_step_due)                        need_render = true;
+        if (refresh_step_due)                     need_render = true;
         if (s_force_full)                         need_render = true;
 
         if (!need_render) {
@@ -1027,14 +1026,17 @@ static void clock_task(void *arg)
         }
 
         unsigned epoch = display_policy_display_epoch();
+        epd_refresh_mode_t refresh_mode = s_force_full
+                                              ? EPD_REFRESH_FULL
+                                              : EPD_REFRESH_PARTIAL;
         ESP_LOGI(TAG,
-                 "tick %02d:%02d -> render clock refresh=full min=%d full_step=%d "
+                 "tick %02d:%02d -> render clock refresh=%s min=%d step=%d "
                  "hr=%d day=%d cfg=%d sw_vis=%d wx=%d ff=%d",
-                 tm.tm_hour, tm.tm_min,
-                 minute_changed, full_step_due,
+                 tm.tm_hour, tm.tm_min, epd_refresh_mode_name(refresh_mode),
+                 minute_changed, refresh_step_due,
                  hour_changed, day_changed, cfg_changed,
                  sw_visibility_changed, weather_data_changed, s_force_full);
-        render_clock(epoch, false);
+        render_clock(epoch, false, refresh_mode);
     }
 }
 
@@ -1125,7 +1127,7 @@ esp_err_t clock_display_show(void)
     /* 同步渲染（耗时 ~18.8s 全刷）。render_clock 末尾会更新 s_state，
      * 任务循环看到 s_state.last_minute 已是当前分钟 → 不会立即重复刷。 */
     unsigned epoch = display_policy_display_epoch();
-    esp_err_t err = render_clock(epoch, true);
+    esp_err_t err = render_clock(epoch, true, EPD_REFRESH_FULL);
     if (err != ESP_OK)
         return err;
 

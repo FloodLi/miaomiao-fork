@@ -50,6 +50,20 @@ typedef enum {
     EPD_PANEL_COUNT
 } epd_panel_t;
 
+typedef enum {
+    EPD_REFRESH_FULL = 0,
+    EPD_REFRESH_FAST,
+    EPD_REFRESH_PARTIAL,
+} epd_refresh_mode_t;
+
+typedef enum {
+    EPD_REFRESH_CAP_FULL          = 1u << 0,
+    EPD_REFRESH_CAP_FAST_BW       = 1u << 1,
+    EPD_REFRESH_CAP_PARTIAL_BW    = 1u << 2,
+    EPD_REFRESH_CAP_FAST_COLOR    = 1u << 3,
+    EPD_REFRESH_CAP_PARTIAL_COLOR = 1u << 4,
+} epd_refresh_capability_t;
+
 /**
  * 从 NVS 读取面板类型 / busy_idle（不写 SPI、不初始化墨水屏）。
  * 在 epd_init() 之前调用，便于 HTTP 已启动后 /panel_config 与网页使用正确分辨率；
@@ -66,6 +80,10 @@ esp_err_t    epd_display_from_file(const char *path);
 esp_err_t    epd_display_from_buffer(const fb_t *fb);
 /** 同上，但 SPI 传输完成后立即释放 fb，再等待 EPD 刷新——节省 18s 内存占用 */
 esp_err_t    epd_display_fb_free(fb_t *fb);
+/** Mode-aware variants. Unsupported modes safely fall back to a supported mode. */
+esp_err_t    epd_display_from_file_mode(const char *path, epd_refresh_mode_t mode);
+esp_err_t    epd_display_from_buffer_mode(const fb_t *fb, epd_refresh_mode_t mode);
+esp_err_t    epd_display_fb_free_mode(fb_t *fb, epd_refresh_mode_t mode);
 /** Force the next framebuffer/file display to reload the full refresh setup. */
 void         epd_request_full_refresh_next(void);
 esp_err_t    epd_clear_screen(void);
@@ -88,3 +106,6 @@ int          epd_height(void);
 int          epd_plane_bytes(void);
 bool         epd_has_red(void);
 bool         epd_has_yellow(void);
+uint32_t     epd_refresh_capabilities(void);
+bool         epd_refresh_mode_supported(epd_refresh_mode_t mode);
+const char  *epd_refresh_mode_name(epd_refresh_mode_t mode);

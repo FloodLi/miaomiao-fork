@@ -714,7 +714,7 @@ static void do_render(unsigned epoch)
         return;
     }
 
-    esp_err_t err = epd_display_fb_free(fb);
+    esp_err_t err = epd_display_fb_free_mode(fb, EPD_REFRESH_FAST);
     if (err == ESP_OK) {
         display_policy_set_manual_screen_active(true);
         scheduler_notify_manual_show();
@@ -1004,7 +1004,7 @@ esp_err_t canvas_board_show_queued(unsigned *out_epoch)
         ESP_LOGW(TAG, "EPD not ready");
         return ESP_ERR_INVALID_STATE;
     }
-    unsigned epoch = display_policy_begin_manual_display();
+    unsigned epoch = display_policy_begin_manual_display_mode(EPD_REFRESH_FAST);
     if (out_epoch)
         *out_epoch = epoch;
     if (xSemaphoreTake(s_mutex, 0) != pdTRUE) {

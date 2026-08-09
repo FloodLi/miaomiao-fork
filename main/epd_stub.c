@@ -56,6 +56,7 @@
 #define HINK29_LOGICAL_W 128
 #define HINK29_LOGICAL_H 296
 #define EPD_REPAIR_MAX_CYCLES      8
+#define UC8176_EXPERIMENTAL_REFRESH_LIMIT  8
 
 static const char *TAG = "epd";
 
@@ -71,6 +72,13 @@ static bool s_epd_ready;
 
 static atomic_bool s_force_full_refresh_next = ATOMIC_VAR_INIT(false);
 static atomic_int s_busy_timeout_streak = ATOMIC_VAR_INIT(0);
+
+static uint8_t    *s_previous_bw;
+static int         s_previous_bw_bytes;
+static epd_panel_t s_previous_bw_panel = EPD_PANEL_COUNT;
+static bool        s_previous_bw_valid;
+static unsigned    s_experimental_refresh_count;
+static bool        s_uc8176_register_lut_active;
 
 /**
  * NVS 键 busy_idle：0 = 空闲时 BUSY 为低；1 = 空闲时为高。
@@ -112,6 +120,8 @@ typedef struct epd_panel_desc {
     uint16_t x_offset;
     bool mirror_v;
     bool has_yellow;
+    /* FULL is always available; optional modes stay disabled unless whitelisted. */
+    uint32_t optional_refresh_caps;
 } epd_panel_desc_t;
 
 static void ssd1619_init_sequence(void);
@@ -183,7 +193,7 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_ATC_UC8179_74_BWR]  = { 800, 480, true,  1, false, EPD_CMD_DATA_10_13, "ATC/Solum 7.4\" BWR UC8179", atc_uc8179_init, refresh_power_on_12, cursor_none },
     [EPD_PANEL_ATC_SSD_97_BWR]     = { 960, 672, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 9.7\" BWR SSD", atc_unissd_97_init, refresh_22_f7_20, atc_unissd_97_cursor_home },
     [EPD_PANEL_ATC_PEGHOOK_13_BWR] = { 144, 200, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 1.3\" peghook BWR SSD", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
-    [EPD_PANEL_REF_UC8176_42_BW]      = { 400, 300, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "UC8176 4.2\" BW", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+    [EPD_PANEL_REF_UC8176_42_BW]      = { 400, 300, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "UC8176 4.2\" BW", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home, .optional_refresh_caps = EPD_REFRESH_CAP_FAST_BW | EPD_REFRESH_CAP_PARTIAL_BW },
     [EPD_PANEL_REF_UC8176_42_BWR]     = { 400, 300, true,  1, false, EPD_CMD_DATA_UC81XX_REF, "UC 4.2\" BWR reference", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
     [EPD_PANEL_REF_UC8179_75_BW]      = { 800, 480, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "UC8179 7.5\" BW", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
     [EPD_PANEL_REF_UC8179_75_BWR]     = { 800, 480, true,  1, true,  EPD_CMD_DATA_UC81XX_REF, "UC8179 7.5\" BWR", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
@@ -229,6 +239,86 @@ int  epd_plane_bytes(void) { return panel_desc()->w * panel_desc()->h / 8; }
 bool epd_has_red(void)     { return panel_desc()->has_red; }
 bool epd_has_yellow(void)  { return panel_desc()->has_yellow; }
 epd_panel_t epd_get_panel(void) { return s_panel; }
+
+uint32_t epd_refresh_capabilities(void)
+{
+    return EPD_REFRESH_CAP_FULL | panel_desc()->optional_refresh_caps;
+}
+
+bool epd_refresh_mode_supported(epd_refresh_mode_t mode)
+{
+    const epd_panel_desc_t *d = panel_desc();
+    const bool color = d->has_red || d->has_yellow;
+    switch (mode) {
+    case EPD_REFRESH_FULL:
+        return true;
+    case EPD_REFRESH_FAST:
+        return (d->optional_refresh_caps &
+                (color ? EPD_REFRESH_CAP_FAST_COLOR : EPD_REFRESH_CAP_FAST_BW)) != 0;
+    case EPD_REFRESH_PARTIAL:
+        return (d->optional_refresh_caps &
+                (color ? EPD_REFRESH_CAP_PARTIAL_COLOR : EPD_REFRESH_CAP_PARTIAL_BW)) != 0;
+    default:
+        return false;
+    }
+}
+
+const char *epd_refresh_mode_name(epd_refresh_mode_t mode)
+{
+    switch (mode) {
+    case EPD_REFRESH_FULL: return "full";
+    case EPD_REFRESH_FAST: return "fast";
+    case EPD_REFRESH_PARTIAL: return "partial";
+    default: return "invalid";
+    }
+}
+
+static void previous_bw_invalidate(void)
+{
+    s_previous_bw_valid = false;
+    s_experimental_refresh_count = 0;
+}
+
+static void previous_bw_release(void)
+{
+    free(s_previous_bw);
+    s_previous_bw = NULL;
+    s_previous_bw_bytes = 0;
+    s_previous_bw_panel = EPD_PANEL_COUNT;
+    previous_bw_invalidate();
+}
+
+static bool previous_bw_store(const uint8_t *data, int bytes)
+{
+    if (!data || bytes <= 0)
+        return false;
+
+    if (!s_previous_bw || s_previous_bw_bytes != bytes ||
+        s_previous_bw_panel != s_panel) {
+        previous_bw_release();
+        s_previous_bw = heap_caps_malloc((size_t)bytes,
+                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_previous_bw)
+            s_previous_bw = heap_caps_malloc((size_t)bytes, MALLOC_CAP_8BIT);
+        if (!s_previous_bw) {
+            ESP_LOGW(TAG, "previous-frame cache allocation failed: %d bytes", bytes);
+            return false;
+        }
+        s_previous_bw_bytes = bytes;
+        s_previous_bw_panel = s_panel;
+    }
+
+    memcpy(s_previous_bw, data, (size_t)bytes);
+    s_previous_bw_valid = true;
+    return true;
+}
+
+static bool previous_bw_matches_current_panel(void)
+{
+    return s_previous_bw_valid && s_previous_bw &&
+           s_previous_bw_panel == s_panel &&
+           s_previous_bw_bytes == epd_plane_bytes();
+}
 
 static bool panel_is_atc_29_flexible(void)
 {
@@ -377,6 +467,8 @@ esp_err_t epd_set_panel(epd_panel_t panel)
 
     if (s_panel != panel) {
         fb_release_reserved_planes();
+        previous_bw_release();
+        s_uc8176_register_lut_active = false;
         s_panel_seq_done = false;
         ESP_LOGW(TAG, "Panel changed to %s, will re-init on next display",
                  s_specs[panel].name);
@@ -792,7 +884,8 @@ static void ref_send_tres(void)
          (uint8_t)(d->h >> 8), (uint8_t)d->h);
 }
 
-static void ref_uc81xx_set_window(int x, int y, int w, int h)
+static void ref_uc81xx_set_window_scan(int x, int y, int w, int h,
+                                      uint8_t scan_control)
 {
     int xe = (x + w - 1) | 0x07;
     int ye = y + h - 1;
@@ -807,7 +900,12 @@ static void ref_uc81xx_set_window(int x, int y, int w, int h)
     epd_dat((uint8_t)y);
     epd_dat((uint8_t)(ye >> 8));
     epd_dat((uint8_t)ye);
-    epd_dat(0x00);
+    epd_dat(scan_control);
+}
+
+static void ref_uc81xx_set_window(int x, int y, int w, int h)
+{
+    ref_uc81xx_set_window_scan(x, y, w, h, 0x00);
 }
 
 static void ref_uc81xx_full_window(void)
@@ -1002,6 +1100,252 @@ static void ref_uc81xx_refresh(void)
     } else {
         delay_ms(200);
     }
+}
+
+/*
+ * UC8176/GDEW042T2 register LUT from Waveshare epd4in2.cpp (2017).
+ * Copyright (C) Waveshare
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+static const uint8_t s_uc8176_lut_vcom[] = {
+    0x00, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x00, 0x0F, 0x0F, 0x00, 0x00, 0x01,
+    0x00, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t s_uc8176_lut_ww[] = {
+    0x50, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x90, 0x0F, 0x0F, 0x00, 0x00, 0x01,
+    0xA0, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t s_uc8176_lut_bw[] = {
+    0x50, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x90, 0x0F, 0x0F, 0x00, 0x00, 0x01,
+    0xA0, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t s_uc8176_lut_wb[] = {
+    0xA0, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x90, 0x0F, 0x0F, 0x00, 0x00, 0x01,
+    0x50, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+static const uint8_t s_uc8176_lut_bb[] = {
+    0x20, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x90, 0x0F, 0x0F, 0x00, 0x00, 0x01,
+    0x10, 0x08, 0x08, 0x00, 0x00, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+typedef struct {
+    int x;
+    int y;
+    int w;
+    int h;
+} epd_dirty_rect_t;
+
+static void uc8176_load_stable_register_lut(void)
+{
+    if (s_uc8176_register_lut_active)
+        return;
+
+    cmd4(0x01, 0x03, 0x00, 0x2B, 0x2B);
+    cmd3(0x06, 0x17, 0x17, 0x17);
+    cmd1(0x00, 0x3F);
+    cmd1(0x30, 0x3C);
+    ref_send_tres();
+    cmd1(0x82, 0x12);
+    cmd1(0x50, 0x97);
+
+    epd_cmd(0x20); epd_bulk(s_uc8176_lut_vcom, sizeof(s_uc8176_lut_vcom));
+    epd_cmd(0x21); epd_bulk(s_uc8176_lut_ww, sizeof(s_uc8176_lut_ww));
+    epd_cmd(0x22); epd_bulk(s_uc8176_lut_bw, sizeof(s_uc8176_lut_bw));
+    epd_cmd(0x23); epd_bulk(s_uc8176_lut_wb, sizeof(s_uc8176_lut_wb));
+    epd_cmd(0x24); epd_bulk(s_uc8176_lut_bb, sizeof(s_uc8176_lut_bb));
+    s_uc8176_register_lut_active = true;
+    ESP_LOGI(TAG, "UC8176 experimental GDEW042T2 register LUT loaded");
+}
+
+static bool uc8176_find_dirty_rect(const uint8_t *old_data,
+                                   const uint8_t *new_data,
+                                   epd_dirty_rect_t *rect)
+{
+    const int rb = epd_width() / 8;
+    const int height = epd_height();
+    int min_xb = rb;
+    int max_xb = -1;
+    int min_y = height;
+    int max_y = -1;
+
+    for (int y = 0; y < height; y++) {
+        const size_t row = (size_t)y * (size_t)rb;
+        for (int xb = 0; xb < rb; xb++) {
+            if (old_data[row + (size_t)xb] == new_data[row + (size_t)xb])
+                continue;
+            if (xb < min_xb) min_xb = xb;
+            if (xb > max_xb) max_xb = xb;
+            if (y < min_y) min_y = y;
+            if (y > max_y) max_y = y;
+        }
+    }
+
+    if (max_xb < min_xb || max_y < min_y)
+        return false;
+
+    rect->x = min_xb * 8;
+    rect->y = min_y;
+    rect->w = (max_xb - min_xb + 1) * 8;
+    rect->h = max_y - min_y + 1;
+    return true;
+}
+
+static esp_err_t uc8176_write_region(uint8_t command, const uint8_t *data,
+                                     const epd_dirty_rect_t *rect)
+{
+    const int rb = epd_width() / 8;
+    const int row_bytes = rect->w / 8;
+    const int x_byte = rect->x / 8;
+
+    epd_cmd(0x91);
+    ref_uc81xx_set_window_scan(rect->x, rect->y, rect->w, rect->h, 0x01);
+    epd_cmd(command);
+
+    if (rect->x == 0 && rect->w == epd_width()) {
+        epd_bulk(data + (size_t)rect->y * (size_t)rb,
+                 (size_t)rect->h * (size_t)rb);
+        epd_cmd(0x92);
+        return ESP_OK;
+    }
+
+    uint8_t *row = heap_caps_malloc((size_t)row_bytes, MALLOC_CAP_DMA);
+    if (!row) {
+        epd_cmd(0x92);
+        return ESP_ERR_NO_MEM;
+    }
+
+    gpio_set_level(PIN_EPD_DC, 1);
+    esp_err_t err = ESP_OK;
+    for (int y = 0; y < rect->h; y++) {
+        size_t offset = (size_t)(rect->y + y) * (size_t)rb + (size_t)x_byte;
+        memcpy(row, data + offset, (size_t)row_bytes);
+        err = spi_tx(row, (size_t)row_bytes);
+        if (err != ESP_OK)
+            break;
+    }
+    free(row);
+    epd_cmd(0x92);
+    return err;
+}
+
+static esp_err_t uc8176_refresh_region(const uint8_t *old_data,
+                                       const uint8_t *new_data,
+                                       const epd_dirty_rect_t *rect)
+{
+    int64_t start_us = esp_timer_get_time();
+    uc8176_load_stable_register_lut();
+
+    epd_cmd(0x04);
+    delay_ms(20);
+    epd_wait_ready(false);
+
+    esp_err_t err = uc8176_write_region(0x10, old_data, rect);
+    if (err == ESP_OK)
+        err = uc8176_write_region(0x13, new_data, rect);
+
+    bool update_ready = false;
+    if (err == ESP_OK) {
+        epd_cmd(0x91);
+        ref_uc81xx_set_window_scan(rect->x, rect->y, rect->w, rect->h, 0x01);
+        epd_cmd(0x12);
+        delay_ms(100);
+        update_ready = epd_wait_ready(true);
+        epd_cmd(0x92);
+    }
+
+    epd_cmd(0x02);
+    delay_ms(100);
+    bool power_off_ready = epd_wait_ready(true);
+    delay_ms(100);
+    ESP_LOGI(TAG,
+             "UC8176 experimental refresh done: update_ready=%d power_off=%s elapsed=%lld ms",
+             update_ready ? 1 : 0, power_off_ready ? "ready" : "fallback",
+             (long long)((esp_timer_get_time() - start_us) / 1000LL));
+    return err;
+}
+
+static esp_err_t uc8176_display_experimental(const uint8_t *new_data,
+                                              epd_refresh_mode_t mode,
+                                              bool *did_refresh)
+{
+    epd_dirty_rect_t dirty;
+    *did_refresh = false;
+    if (!uc8176_find_dirty_rect(s_previous_bw, new_data, &dirty)) {
+        ESP_LOGI(TAG, "UC8176 refresh requested=%s actual=skip dirty=none count=%u/%u",
+                 epd_refresh_mode_name(mode), s_experimental_refresh_count,
+                 UC8176_EXPERIMENTAL_REFRESH_LIMIT);
+        return ESP_OK;
+    }
+
+    epd_dirty_rect_t update = dirty;
+    if (mode == EPD_REFRESH_FAST) {
+        update.x = 0;
+        update.y = 0;
+        update.w = epd_width();
+        update.h = epd_height();
+    }
+
+    ESP_LOGI(TAG,
+             "UC8176 refresh requested=%s actual=%s dirty=%d,%d %dx%d update=%d,%d %dx%d count=%u/%u",
+             epd_refresh_mode_name(mode), epd_refresh_mode_name(mode),
+             dirty.x, dirty.y, dirty.w, dirty.h,
+             update.x, update.y, update.w, update.h,
+             s_experimental_refresh_count + 1,
+             UC8176_EXPERIMENTAL_REFRESH_LIMIT);
+
+    esp_err_t err = uc8176_refresh_region(s_previous_bw, new_data, &update);
+    if (err != ESP_OK) {
+        previous_bw_invalidate();
+        return err;
+    }
+
+    if (previous_bw_store(new_data, epd_plane_bytes()))
+        s_experimental_refresh_count++;
+    else
+        previous_bw_invalidate();
+    *did_refresh = true;
+    return ESP_OK;
 }
 
 static void ref_ssd16xx_refresh(void)
@@ -2809,6 +3153,7 @@ static void ws_583_bwr_init(void)
 static void panel_run_full_init(void)
 {
     panel_desc()->init();
+    s_uc8176_register_lut_active = false;
     s_panel_seq_done = true;
 }
 
@@ -2819,6 +3164,7 @@ static bool consume_force_full_refresh_request(void)
 
 static void prepare_for_forced_full_refresh(void)
 {
+    previous_bw_invalidate();
     s_panel_seq_done = false;
 }
 
@@ -2870,6 +3216,8 @@ static bool fb_matches_current_panel(const fb_t *fb)
 esp_err_t epd_init(void)
 {
     s_epd_ready = false;
+    previous_bw_release();
+    s_uc8176_register_lut_active = false;
 
     if (!s_epd_mutex) {
         s_epd_mutex = xSemaphoreCreateMutex();
@@ -2962,6 +3310,11 @@ esp_err_t epd_clear_screen(void)
         return ESP_ERR_INVALID_STATE;
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+    bool force_full = consume_force_full_refresh_request();
+    if (force_full || s_uc8176_register_lut_active)
+        prepare_for_forced_full_refresh();
+    if (s_panel == EPD_PANEL_REF_UC8176_42_BW)
+        previous_bw_invalidate();
     epd_clear_to_white_locked();
     xSemaphoreGive(s_epd_mutex);
     return ESP_OK;
@@ -3115,6 +3468,11 @@ esp_err_t epd_display_test_pattern(void)
         }
     }
 
+    bool force_full = consume_force_full_refresh_request();
+    if (force_full || s_uc8176_register_lut_active)
+        prepare_for_forced_full_refresh();
+    if (s_panel == EPD_PANEL_REF_UC8176_42_BW)
+        previous_bw_invalidate();
     panel_ensure_ready();
 
     if (epd_has_yellow() && panel_uses_bwry_2bpp()) {
@@ -3242,6 +3600,11 @@ esp_err_t epd_repair_ghosting(int cycles, int pattern)
 
     ESP_LOGI(TAG, "ghost repair start: cycles=%d, pattern=%d, panel=%s",
              cycles, pattern, panel_desc()->name);
+    bool force_full = consume_force_full_refresh_request();
+    if (force_full || s_uc8176_register_lut_active)
+        prepare_for_forced_full_refresh();
+    if (s_panel == EPD_PANEL_REF_UC8176_42_BW)
+        previous_bw_invalidate();
     panel_ensure_ready();
 
     for (int i = 0; i < cycles; i++) {
@@ -3285,37 +3648,172 @@ esp_err_t epd_repair_ghosting(int cycles, int pattern)
     return ESP_OK;
 }
 
-esp_err_t epd_display_from_file(const char *path)
+static epd_refresh_mode_t resolve_refresh_mode(epd_refresh_mode_t requested,
+                                               bool force_full,
+                                               const char **fallback_reason)
 {
-    if (!path) return ESP_ERR_INVALID_ARG;
+    *fallback_reason = NULL;
+    if (requested < EPD_REFRESH_FULL || requested > EPD_REFRESH_PARTIAL) {
+        *fallback_reason = "invalid-request";
+        return EPD_REFRESH_FULL;
+    }
+    if (force_full) {
+        *fallback_reason = "forced-full";
+        return EPD_REFRESH_FULL;
+    }
+
+    epd_refresh_mode_t actual = requested;
+    if (requested == EPD_REFRESH_PARTIAL &&
+        !epd_refresh_mode_supported(EPD_REFRESH_PARTIAL)) {
+        if (epd_refresh_mode_supported(EPD_REFRESH_FAST)) {
+            actual = EPD_REFRESH_FAST;
+            *fallback_reason = "partial-unsupported";
+        } else {
+            actual = EPD_REFRESH_FULL;
+            *fallback_reason = "mode-unsupported";
+        }
+    } else if (requested == EPD_REFRESH_FAST &&
+               !epd_refresh_mode_supported(EPD_REFRESH_FAST)) {
+        actual = EPD_REFRESH_FULL;
+        *fallback_reason = "mode-unsupported";
+    }
+
+    if (actual == EPD_REFRESH_FULL)
+        return actual;
+    if (s_panel != EPD_PANEL_REF_UC8176_42_BW) {
+        *fallback_reason = "driver-not-enabled";
+        return EPD_REFRESH_FULL;
+    }
+    if (!s_panel_seq_done) {
+        *fallback_reason = "controller-uninitialized";
+        return EPD_REFRESH_FULL;
+    }
+    if (!previous_bw_matches_current_panel()) {
+        *fallback_reason = "previous-frame-unavailable";
+        return EPD_REFRESH_FULL;
+    }
+    if (s_experimental_refresh_count >= UC8176_EXPERIMENTAL_REFRESH_LIMIT) {
+        *fallback_reason = "maintenance-full";
+        return EPD_REFRESH_FULL;
+    }
+    return actual;
+}
+
+static esp_err_t display_framebuffer_locked(const fb_t *fb,
+                                            epd_refresh_mode_t requested,
+                                            bool force_full,
+                                            bool *did_refresh)
+{
+    const char *fallback_reason = NULL;
+    epd_refresh_mode_t actual = resolve_refresh_mode(requested, force_full,
+                                                     &fallback_reason);
+    ESP_LOGI(TAG,
+             "refresh plan: panel=%s requested=%s actual=%s fallback=%s caps=0x%02X count=%u/%u",
+             panel_desc()->name, epd_refresh_mode_name(requested),
+             epd_refresh_mode_name(actual),
+             fallback_reason ? fallback_reason : "none",
+             (unsigned)epd_refresh_capabilities(),
+             s_experimental_refresh_count,
+             UC8176_EXPERIMENTAL_REFRESH_LIMIT);
+
+    if (actual != EPD_REFRESH_FULL)
+        return uc8176_display_experimental(fb->black, actual, did_refresh);
+
+    if (force_full || s_uc8176_register_lut_active)
+        prepare_for_forced_full_refresh();
+    if (s_panel == EPD_PANEL_REF_UC8176_42_BW)
+        previous_bw_invalidate();
+    panel_ensure_ready();
+
+    const int pb = epd_plane_bytes();
+    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
+        panel_write_e6_37_6c(fb->black, fb->red, fb->yellow, fb->blue, fb->green,
+                             0xFF, 0x00, 0x00, 0x00, 0x00);
+        panel_desc()->refresh();
+    } else if (panel_uses_bwry_2bpp() && epd_has_yellow()) {
+        if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
+            panel_write_ssd2677_2bpp(fb->black, fb->red, fb->yellow,
+                                     0xFF, 0x00, 0x00);
+        else
+            panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
+                                     0xFF, 0x00, 0x00);
+        panel_desc()->refresh();
+    } else {
+        panel_write_bw_red_data(fb->black, fb->red, pb);
+        panel_desc()->refresh();
+    }
+
+    if (s_panel == EPD_PANEL_REF_UC8176_42_BW) {
+        (void)previous_bw_store(fb->black, pb);
+        s_experimental_refresh_count = 0;
+    }
+    *did_refresh = true;
+    return ESP_OK;
+}
+
+static esp_err_t display_buffer_common(fb_t *fb, epd_refresh_mode_t mode,
+                                       bool destroy_fb)
+{
+    if (!fb)
+        return ESP_ERR_INVALID_ARG;
+    if (!s_epd_mutex || !s_epd_ready) {
+        if (destroy_fb)
+            fb_destroy(fb);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
+    if (!fb_matches_current_panel(fb)) {
+        ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
+                 fb->width, fb->height, fb->plane_bytes,
+                 epd_width(), epd_height(), epd_plane_bytes());
+        xSemaphoreGive(s_epd_mutex);
+        if (destroy_fb)
+            fb_destroy(fb);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    bool did_refresh = false;
+    bool force_full = consume_force_full_refresh_request();
+    esp_err_t err = display_framebuffer_locked(fb, mode, force_full, &did_refresh);
+    if (destroy_fb)
+        fb_destroy(fb);
+    if (err == ESP_OK && did_refresh)
+        power_mgr_note_epd_refresh_complete();
+    xSemaphoreGive(s_epd_mutex);
+
+    if (err == ESP_OK)
+        ESP_LOGI(TAG, "display from buffer requested=%s refreshed=%d",
+                 epd_refresh_mode_name(mode), did_refresh ? 1 : 0);
+    return err;
+}
+
+esp_err_t epd_display_from_file_mode(const char *path, epd_refresh_mode_t mode)
+{
+    if (!path)
+        return ESP_ERR_INVALID_ARG;
     if (!s_epd_mutex || !s_epd_ready)
         return ESP_ERR_INVALID_STATE;
 
-    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
+    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C ||
+        s_panel == EPD_PANEL_REF_UC8176_42_BW) {
         int64_t t0 = esp_timer_get_time();
-        ESP_LOGI(TAG, "E6 3.7: import raw file to framebuffer begin: %s", path);
         fb_t *fb = fb_create();
         if (!fb)
             return ESP_ERR_NO_MEM;
         esp_err_t err = fb_import(fb, path);
-        int64_t t_import = esp_timer_get_time();
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "E6 3.7: import raw file failed after %lld ms: %s",
-                     (long long)((t_import - t0) / 1000LL), esp_err_to_name(err));
             fb_destroy(fb);
             return err;
         }
-        ESP_LOGI(TAG, "E6 3.7: import raw file done in %lld ms, framebuffer display begin",
-                 (long long)((t_import - t0) / 1000LL));
-        err = epd_display_fb_free(fb);
-        ESP_LOGI(TAG, "E6 3.7: framebuffer display from file finished in %lld ms: %s",
-                 (long long)((esp_timer_get_time() - t0) / 1000LL),
+        err = epd_display_fb_free_mode(fb, mode);
+        ESP_LOGI(TAG, "framebuffer display from %s finished in %lld ms: %s",
+                 path, (long long)((esp_timer_get_time() - t0) / 1000LL),
                  esp_err_to_name(err));
         return err;
     }
 
     int pb = epd_plane_bytes();
-
     FILE *f = fopen(path, "rb");
     if (!f) {
         ESP_LOGE(TAG, "open %s failed", path);
@@ -3337,12 +3835,6 @@ esp_err_t epd_display_from_file(const char *path)
         ESP_LOGW(TAG, "red plane missing, zero fill");
     if (epd_has_yellow() && !has_yellow_file)
         ESP_LOGW(TAG, "yellow plane missing, zero fill");
-    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
-        if (!has_blue_file)
-            ESP_LOGW(TAG, "blue plane missing, zero fill");
-        if (!has_green_file)
-            ESP_LOGW(TAG, "green plane missing, zero fill");
-    }
 
     xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
     if (pb != epd_plane_bytes()) {
@@ -3352,7 +3844,22 @@ esp_err_t epd_display_from_file(const char *path)
         fclose(f);
         return ESP_ERR_INVALID_SIZE;
     }
-    if (consume_force_full_refresh_request())
+
+    bool force_full = consume_force_full_refresh_request();
+    const char *fallback_reason = NULL;
+    epd_refresh_mode_t actual = resolve_refresh_mode(mode, force_full,
+                                                     &fallback_reason);
+    if (actual != EPD_REFRESH_FULL) {
+        actual = EPD_REFRESH_FULL;
+        fallback_reason = "streaming-file-full-only";
+    }
+    ESP_LOGI(TAG, "refresh plan: panel=%s requested=%s actual=%s fallback=%s caps=0x%02X",
+             panel_desc()->name, epd_refresh_mode_name(mode),
+             epd_refresh_mode_name(actual),
+             fallback_reason ? fallback_reason : "none",
+             (unsigned)epd_refresh_capabilities());
+
+    if (force_full)
         prepare_for_forced_full_refresh();
     panel_ensure_ready();
     esp_err_t ret = panel_write_bw_red_file(f, pb, has_red_file, has_yellow_file,
@@ -3368,92 +3875,27 @@ esp_err_t epd_display_from_file(const char *path)
     return ESP_OK;
 }
 
+esp_err_t epd_display_from_file(const char *path)
+{
+    return epd_display_from_file_mode(path, EPD_REFRESH_FULL);
+}
+
+esp_err_t epd_display_from_buffer_mode(const fb_t *fb, epd_refresh_mode_t mode)
+{
+    return display_buffer_common((fb_t *)fb, mode, false);
+}
+
 esp_err_t epd_display_from_buffer(const fb_t *fb)
 {
-    if (!fb) return ESP_ERR_INVALID_ARG;
-    if (!s_epd_mutex || !s_epd_ready)
-        return ESP_ERR_INVALID_STATE;
+    return epd_display_from_buffer_mode(fb, EPD_REFRESH_FULL);
+}
 
-    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
-    if (!fb_matches_current_panel(fb)) {
-        ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
-                 fb->width, fb->height, fb->plane_bytes,
-                 epd_width(), epd_height(), epd_plane_bytes());
-        xSemaphoreGive(s_epd_mutex);
-        return ESP_ERR_INVALID_SIZE;
-    }
-    int pb = epd_plane_bytes();
-    if (consume_force_full_refresh_request())
-        prepare_for_forced_full_refresh();
-    panel_ensure_ready();
-
-    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
-        panel_write_e6_37_6c(fb->black, fb->red, fb->yellow, fb->blue, fb->green,
-                             0xFF, 0x00, 0x00, 0x00, 0x00);
-        panel_desc()->refresh();
-    } else if (panel_uses_bwry_2bpp() && epd_has_yellow()) {
-        if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
-            panel_write_ssd2677_2bpp(fb->black, fb->red, fb->yellow,
-                                     0xFF, 0x00, 0x00);
-        else
-            panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
-                                     0xFF, 0x00, 0x00);
-        panel_desc()->refresh();
-    } else {
-        panel_write_bw_red(fb->black, fb->red, pb);
-    }
-
-    power_mgr_note_epd_refresh_complete();
-    xSemaphoreGive(s_epd_mutex);
-
-    ESP_LOGI(TAG, "display from buffer");
-    return ESP_OK;
+esp_err_t epd_display_fb_free_mode(fb_t *fb, epd_refresh_mode_t mode)
+{
+    return display_buffer_common(fb, mode, true);
 }
 
 esp_err_t epd_display_fb_free(fb_t *fb)
 {
-    if (!fb) return ESP_ERR_INVALID_ARG;
-    if (!s_epd_mutex || !s_epd_ready) {
-        fb_destroy(fb);
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    xSemaphoreTake(s_epd_mutex, portMAX_DELAY);
-    if (!fb_matches_current_panel(fb)) {
-        ESP_LOGE(TAG, "fb/panel mismatch: fb=%dx%d/%d current=%dx%d/%d",
-                 fb->width, fb->height, fb->plane_bytes,
-                 epd_width(), epd_height(), epd_plane_bytes());
-        xSemaphoreGive(s_epd_mutex);
-        fb_destroy(fb);
-        return ESP_ERR_INVALID_SIZE;
-    }
-    int pb = epd_plane_bytes();
-    bool force_full = consume_force_full_refresh_request();
-    if (force_full)
-        prepare_for_forced_full_refresh();
-    panel_ensure_ready();
-
-    if (panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
-        panel_write_e6_37_6c(fb->black, fb->red, fb->yellow, fb->blue, fb->green,
-                             0xFF, 0x00, 0x00, 0x00, 0x00);
-        panel_desc()->refresh();
-    } else if (panel_uses_bwry_2bpp() && epd_has_yellow()) {
-        if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
-            panel_write_ssd2677_2bpp(fb->black, fb->red, fb->yellow,
-                                     0xFF, 0x00, 0x00);
-        else
-            panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
-                                     0xFF, 0x00, 0x00);
-        panel_desc()->refresh();
-    } else {
-        panel_write_bw_red_data(fb->black, fb->red, pb);
-        panel_desc()->refresh();
-    }
-    fb_destroy(fb);
-
-    power_mgr_note_epd_refresh_complete();
-    xSemaphoreGive(s_epd_mutex);
-
-    ESP_LOGI(TAG, "display from buffer");
-    return ESP_OK;
+    return epd_display_fb_free_mode(fb, EPD_REFRESH_FULL);
 }

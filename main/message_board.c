@@ -312,7 +312,7 @@ static void render_message(unsigned epoch)
     if (err == ESP_OK && epd_is_ready() && display_policy_epoch_is_current(epoch)) {
         ESP_LOGI(TAG, "FB exported, sending to EPD (%d lines, scale=%d px=%d)...",
                  line_count, scale, target_px);
-        esp_err_t disp_err = epd_display_from_file(raw_path);
+        esp_err_t disp_err = epd_display_from_file_mode(raw_path, EPD_REFRESH_FAST);
         if (disp_err == ESP_OK) {
             display_policy_set_manual_screen_active(true);
             scheduler_notify_manual_show();
@@ -395,7 +395,7 @@ esp_err_t message_board_show_queued(unsigned *out_epoch)
     if (!s_render_mutex)
         return ESP_ERR_INVALID_STATE;
 
-    unsigned epoch = display_policy_begin_manual_display();
+    unsigned epoch = display_policy_begin_manual_display_mode(EPD_REFRESH_FAST);
     if (out_epoch)
         *out_epoch = epoch;
 

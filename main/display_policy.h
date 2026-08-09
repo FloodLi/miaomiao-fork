@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include "epd.h"
 
 /**
  * 墨水屏显示仲裁：幻灯片 / 时钟 / 天气全页 / 留言与日历等「手动全屏」互斥，
@@ -37,6 +38,7 @@ bool display_policy_weather_may_render_full_page(void);
 void display_policy_set_manual_screen_active(bool active);
 bool display_policy_manual_screen_active(void);
 unsigned display_policy_begin_manual_display(void);
+unsigned display_policy_begin_manual_display_mode(epd_refresh_mode_t mode);
 bool display_policy_epoch_is_current(unsigned epoch);
 
 /** 每次用户主动发起全屏显示时递增；长耗时显示可用它判断自己是否已过期。 */

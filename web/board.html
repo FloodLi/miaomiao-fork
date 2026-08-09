@@ -66,7 +66,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;
   background:repeating-conic-gradient(var(--sf) 0% 25%,var(--bg) 0% 50%) 0 0/24px 24px}
 #canvas-outer{position:relative;display:inline-block;border-radius:4px;overflow:hidden;
   box-shadow:0 0 0 1px var(--cb),0 8px 32px rgba(0,0,0,.15)}
-#canvas{display:block;background:#fff;image-rendering:pixelated}
+#canvas{display:block;background:#fff;image-rendering:pixelated;touch-action:none}
 #overlay{position:absolute;top:0;left:0;pointer-events:none;image-rendering:pixelated}
 
 /* 右侧面板 */
@@ -176,6 +176,18 @@ body .epd-credit strong{color:var(--tx);font-weight:700}
 body .epd-credit a{color:var(--ac);font-weight:600;text-decoration:none}
 body .epd-credit a:hover{text-decoration:underline}
 @media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
+@media(max-width:900px){
+  body.page-board{height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto}
+  body.page-board #app{display:flex;flex:none;flex-direction:column;overflow:visible;min-height:0;width:100%}
+  #toolbar{width:100%;min-width:0;flex-direction:row;gap:5px;padding:6px 8px;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--cb);-webkit-overflow-scrolling:touch}
+  #toolbar .tool-btn{flex:0 0 48px;min-width:48px;min-height:44px;padding:5px 3px}
+  #toolbar .tool-sep{width:1px;height:34px;min-width:1px;margin:5px 1px}
+  #canvas-wrap{flex:none;width:100%;padding:12px;overflow:hidden;align-items:flex-start;justify-content:center}
+  #canvas-outer{width:min(100%,var(--canvas-native-width,100%));aspect-ratio:var(--canvas-aspect,4 / 3)}
+  #canvas,#overlay{width:100%;height:100%}
+  #sidebar{width:100%;min-width:0;overflow:visible;border-left:0;border-top:1px solid var(--cb)}
+  #sidebar .panel{padding:12px 14px}
+}
 </style>
 </head>
 <body class="page-shell page-wide page-board">
@@ -1013,6 +1025,9 @@ async function init() {
     canvas.height = EPD_H * SCALE;
     overlay.width  = canvas.width;
     overlay.height = canvas.height;
+    const canvasOuter = document.getElementById('canvas-outer');
+    canvasOuter.style.setProperty('--canvas-native-width', canvas.width + 'px');
+    canvasOuter.style.setProperty('--canvas-aspect', canvas.width + ' / ' + canvas.height);
 
     await loadUserIcons();
     await loadCanvasImageList();
@@ -2117,16 +2132,27 @@ function bindEvents() {
     const imgFit = document.getElementById('img-fit');
     if (imgFit) imgFit.onchange = () => scheduleActiveImagePreview();
 
-    // 画布事件——mousedown 在 canvas，move/up 在 document（防止拖出丢失）
-    canvas.addEventListener('mousedown',  onDown);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup',   onUp);
-    canvas.addEventListener('mouseleave', () => { if (!mouseDown) octx.clearRect(0,0,overlay.width,overlay.height); });
-
-    // 触摸
-    canvas.addEventListener('touchstart', e=>{e.preventDefault(); onDown(touch2mouse(e));}, {passive:false});
-    canvas.addEventListener('touchmove',  e=>{e.preventDefault(); onMove(touch2mouse(e));}, {passive:false});
-    canvas.addEventListener('touchend',   e=>{ onUp(touch2mouse(e)); });
+    // Pointer Events 同时覆盖鼠标、触摸和触控笔；捕获指针可避免拖出画布后丢失结束事件。
+    canvas.addEventListener('pointerdown', e => {
+        if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        onDown(e);
+        if (mouseDown && canvas.setPointerCapture) {
+            try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        }
+    });
+    canvas.addEventListener('pointermove', e => {
+        if (e.isPrimary) onMove(e);
+    });
+    const finishPointer = e => {
+        if (!e.isPrimary) return;
+        onUp(e);
+        if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+            try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+        }
+    };
+    canvas.addEventListener('pointerup', finishPointer);
+    canvas.addEventListener('pointercancel', finishPointer);
+    canvas.addEventListener('pointerleave', () => { if (!mouseDown) octx.clearRect(0,0,overlay.width,overlay.height); });
 
     // 键盘
     document.addEventListener('keydown', e => {
@@ -2167,11 +2193,6 @@ function switchTool(t) {
     });
     updatePanels();
     canvas.style.cursor = (t==='select')?'default':(t==='pencil'?'crosshair':'crosshair');
-}
-
-function touch2mouse(e) {
-    const t = e.touches[0]||e.changedTouches[0];
-    return {clientX:t.clientX, clientY:t.clientY, buttons:1};
 }
 
 function canvasXY(e) {
@@ -2360,7 +2381,7 @@ function onUp(e) {
     /* 绘制提交 */
     if (!drawStart) return;
     octx.clearRect(0,0,overlay.width,overlay.height);
-    // onUp 在 document 上，e 可能没有画布坐标（如 touchend），需要安全取坐标
+    // 指针结束事件通常带有画布坐标；缺失时退回绘制起点。
     let ex = drawStart.x, ey = drawStart.y;
     if (e && e.clientX != null) {
         const pos = canvasXY(e);

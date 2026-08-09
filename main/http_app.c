@@ -1315,14 +1315,16 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    const epd_refresh_mode_t refresh_mode = EPD_REFRESH_FAST;
     bool was_manual = display_policy_manual_screen_active();
-    unsigned epoch = display_policy_begin_manual_display();
+    unsigned epoch = display_policy_begin_manual_display_mode(refresh_mode);
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
     fb_t *fast_fb = NULL;
     esp_err_t cerr = image_convert_to_epd_fb(img, (size_t)total, &fast_fb);
     if (cerr == ESP_OK) {
-        ESP_LOGI(TAG, "Upload fast framebuffer convert selected");
+        ESP_LOGI(TAG, "Upload framebuffer convert selected, refresh requested=%s",
+                 epd_refresh_mode_name(refresh_mode));
     } else {
         if (cerr != ESP_ERR_NOT_SUPPORTED)
             ESP_LOGI(TAG, "Upload fast framebuffer convert unavailable: %s",
@@ -1332,9 +1334,8 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
     free(img);
     esp_err_t derr = ESP_OK;
     if (cerr == ESP_OK && display_policy_epoch_is_current(epoch)) {
-        epd_request_full_refresh_next();
         if (fast_fb) {
-            derr = epd_display_fb_free(fast_fb);
+            derr = epd_display_fb_free_mode(fast_fb, refresh_mode);
             fast_fb = NULL;
         } else {
             fb_t *fb = fb_create();
@@ -1343,7 +1344,7 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
             } else {
                 derr = fb_import(fb, raw_path);
                 if (derr == ESP_OK)
-                    derr = epd_display_fb_free(fb);
+                    derr = epd_display_fb_free_mode(fb, refresh_mode);
                 else
                     fb_destroy(fb);
             }

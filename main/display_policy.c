@@ -101,9 +101,21 @@ bool display_policy_manual_screen_active(void)
 
 unsigned display_policy_begin_manual_display(void)
 {
+    return display_policy_begin_manual_display_mode(EPD_REFRESH_FULL);
+}
+
+unsigned display_policy_begin_manual_display_mode(epd_refresh_mode_t mode)
+{
     atomic_store(&s_manual_screen, true);
     unsigned epoch = atomic_fetch_add(&s_display_epoch, 1) + 1;
-    epd_request_full_refresh_next();
+    bool mode_falls_back_to_full =
+        (mode == EPD_REFRESH_FAST &&
+         !epd_refresh_mode_supported(EPD_REFRESH_FAST)) ||
+        (mode == EPD_REFRESH_PARTIAL &&
+         !epd_refresh_mode_supported(EPD_REFRESH_PARTIAL) &&
+         !epd_refresh_mode_supported(EPD_REFRESH_FAST));
+    if (mode == EPD_REFRESH_FULL || mode_falls_back_to_full)
+        epd_request_full_refresh_next();
     scheduler_notify_manual_show();
     return epoch;
 }
