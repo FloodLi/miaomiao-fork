@@ -1,19 +1,19 @@
 # 喵哎-MiaooAim 实现文档
 
-## 实现状态快照（2026-08-08）
+## 实现状态快照（2026-08-09）
 
 当前实现已经覆盖图片转换、图库、轮播、天气、时钟、日历、课程表、待办、倒计时、Codex 额度看板、留言板、画布、OTA、低功耗和外置 fontfs 字库。稳定性基线包括：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容；挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志；低功耗正常启动与 RTC 定时器 quick-refresh 已分离。
 
 v2.3.5 在现有屏幕参考驱动和低功耗逻辑上，增加 BUSY 超时回退、UC 4.2 三色屏刷新后高压关断，以及实体按键可切换页面配置。
 
-v2.3.6 增加 E6 六色与 JD79665/JD79668/SSD2677 黑白红黄数据路径，按面板能力扩展 framebuffer、图片量化和画廊显示，并把天气配置扩展为 Open-Meteo/和风天气双数据源。
+v2.3.6 增加 E6 六色与 JD79665/JD79668/SSD2677 黑白红黄数据路径，按面板能力扩展 framebuffer、图片量化和画廊显示，并把天气配置扩展为 Open-Meteo/和风天气双数据源。UC8176 4.2 寸黑白实验面板增加快刷/局刷、前一帧缓存和维护性全刷，画板输入统一为 Pointer Events。
 
 后续实现重点：OTA 与低功耗长稳测试、更多屏幕型号适配，以及在源码、分区表或字库资源变化后保持 Release 包与校验信息同步。
 
 > 项目代号：**epaper_uploader**
 > 硬件平台：ESP32-S3 + SSD1619(4.2" 400×300) / UC8179(5.83" 648×480) 三色墨水屏
 > 技术栈：ESP-IDF（**最低 v5.5.1**）/ C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
-> 固件版本：v2.3.6（`PROJECT_VER`） | 文档版本：v2.3.6-docs | 2026-08-08
+> 固件版本：v2.3.6（`PROJECT_VER`） | 文档版本：v2.3.6-docs | 2026-08-09
 
 ---
 

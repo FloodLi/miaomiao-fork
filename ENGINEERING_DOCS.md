@@ -12,7 +12,7 @@
 
 2026-07-13 同步 v2.3.5：BUSY 超时后切换到固定等待，UC 4.2 三色参考驱动刷新后执行高压关断和深睡，并新增实体按键可切换页面配置及 `/button_modes` 接口。
 
-2026-08-08 同步 v2.3.6：新增 E6 六色、JD79665/JD79668/SSD2677 多色面板路径，补齐 BUSY/启动刷新策略，并允许天气在 Open-Meteo 与和风天气之间切换。
+2026-08-09 同步 v2.3.6：新增 E6 六色、JD79665/JD79668/SSD2677 多色面板路径，补齐 BUSY/启动刷新策略，允许天气在 Open-Meteo 与和风天气之间切换，并为 UC8176 4.2 寸黑白实验面板增加快刷/局刷。
 
 建议复刻和二次开发时重点验证 OTA 成功/失败/回滚流程、低功耗唤醒、轮播与天气长时间运行、连续上传抢占场景，以及实际屏幕驱动 IC 和 BUSY 电平。发布新固件前必须在 ESP-IDF 终端重新执行完整 `idf.py build`。
 
@@ -375,7 +375,7 @@ EPD 初始化失败时，完整启动路径不再直接 `ESP_ERROR_CHECK()` 重�
 - 除已验证微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已移除，旧 NVS 面板编号会回退默认 4.2"
 - SPI DMA 批量传输
 - BUSY 信号处理
-- 全刷为当前稳定路径；快刷 / 局部刷新入口已从当前固件移除，优先保证三色屏显示稳定性
+- 全刷为默认稳定路径；快刷 / 局部刷新仅对白名单中的 UC8176 4.2 寸黑白实验面板启用
 
 **关键函数:**
 ```c
@@ -383,6 +383,8 @@ esp_err_t epd_init(void);
 esp_err_t epd_display_from_buffer(const fb_t *fb);          /* 全刷，BWR */
 esp_err_t epd_display_fb_free(fb_t *fb);                    /* 同上，SPI 完成立即释放 fb */
 esp_err_t epd_display_from_file(const char *path);
+esp_err_t epd_display_from_buffer_mode(const fb_t *fb, epd_refresh_mode_t mode);
+esp_err_t epd_display_fb_free_mode(fb_t *fb, epd_refresh_mode_t mode);
 esp_err_t epd_repair_ghosting(int cycles, int pattern);     /* 残影修复：普通翻转 / 图案 / 强力组合 */
 esp_err_t epd_set_panel(epd_panel_t panel);
 epd_panel_t epd_get_panel(void);
@@ -393,15 +395,16 @@ epd_panel_t epd_get_panel(void);
 2. BUSY 极性自动检测 + NVS `epd/busy_idle` 覆盖（4.2" 默认 0、5.83" 默认 1）
 3. 多面板参数自动适配（`s_specs[]` 表）；`/panel_config` 当前只保存 NVS 并提示重启生效，避免热切换期间旧 framebuffer/raw 文件按新尺寸读取
 4. ATC/Solum 移植参考 atc1441/Tag_FW_nRF52811 的控制器序列；EPD-nRF5 参考入口按参考工程的控制器命令模型重写接入；两类实验入口只保留 ESP32 当前硬件可表达的 SPI/BUSY/帧缓冲路径，UC8159 缺少源项目外部 EPD EEPROM/3 线回读脚位，使用默认 VCOM/PLL，需实机验证
-5. 刷新策略：当前固件只暴露稳定全刷路径。4.2" SSD1619/SSD1683 与 5.83" UC8179 的局刷/快刷实验路径均不作为上线功能开放。
-6. **局部刷新策略**：
+5. 刷新策略：调用方可请求 `FULL`、`FAST` 或 `PARTIAL`，驱动按面板能力解析；不支持的模式自动回退稳定全刷。
+6. **实验刷新策略**：
    - 4.2" SSD1619/SSD1683 与 5.83" UC8179 都验证过局刷或快刷实验路径，但三色屏画面稳定性不达上线要求。
-   - 当前固件不暴露快刷 / 局刷 HTTP 入口，也不提供局部刷新 API；时钟等自动页面统一走稳定全刷。
+   - UC8176 4.2 寸黑白实验面板保存前一帧，`FAST` 更新全屏，`PARTIAL` 只更新变化字节覆盖的矩形；首次显示、强制全刷、控制器重置或累计 8 次实验刷新后执行维护性全刷。
+   - 时钟自动更新请求 `PARTIAL`，画板、留言和上传图片请求 `FAST`；手动时钟显示请求 `FULL`。其它面板由能力检查统一回退全刷。
 7. **残影管理**：配置页提供手动“刷屏修复”，支持普通全屏翻转、棋盘格/条纹图案和强力组合，轮数 1/2/3/5/8。
 
 #### 5.1.1 时钟任务事件循环（`clock_task` in `clock_display.c`）
 
-时钟模块当前统一走稳定全刷，事件循环主要决定何时需要刷新以及如何避免重复全刷。
+时钟模块手动进入时使用稳定全刷，自动同页更新时间时请求局部刷新；不支持实验刷新能力的面板由驱动回退全刷。
 
 **核心数据**：
 - `s_state` 渲染状态镜像（`s_state_mux` 自旋锁保护），记录上次成功渲染时的
@@ -425,7 +428,7 @@ epd_panel_t epd_get_panel(void);
    │
    ▼
 任意"涉及下半屏"信号 → force_full = true
-仅 minute_changed → 按 `CLOCK_FULL_REFRESH_STEP_MIN` 判断是否到达全刷间隔
+仅 minute_changed → 按 `CLOCK_REFRESH_STEP_MIN` 判断是否到达刷新间隔
    │
    ▼
 render_clock()（成功后内部更新 s_state）
@@ -440,7 +443,7 @@ render_clock()（成功后内部更新 s_state）
    任务唤醒后通过 `s_state` 已是最新而跳过冗余刷屏。
 
 **渲染日志**：每次决定渲染前打印
-`tick HH:MM -> render clock refresh=full min=X full_step=X hr=X day=X cfg=X sw_vis=X wx=X ff=X`，
+`tick HH:MM -> render clock refresh=<mode> min=X step=X hr=X day=X cfg=X sw_vis=X wx=X ff=X`，
 便于定位"为什么本分钟触发刷新"。
 
 ### 5.2 图片转换模块 (`image_convert.c`)
