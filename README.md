@@ -11,7 +11,7 @@ Gitee 固件仓库:       https://gitee.com/gxp666111/miaomiao
 
 ## 固件文件
 
-> **发布状态说明（2026-06-26）**：本目录已按当前源码重新构建并合并 `epaper_uploader_full_16MB.bin`。若源码、分区表或 fontfs 字库在此后继续变化，发布前必须在 ESP-IDF 终端重新 `idf.py build` 并重新合并整包。
+> **v2.3.6 发布状态说明（2026-08-10）**：本目录已按 v2.3.6 源码重新构建并合并 `epaper_uploader_full_16MB.bin`。若源码、分区表或 fontfs 字库在此后继续变化，发布前必须在 ESP-IDF 终端重新 `idf.py build` 并重新合并整包。
 
 推荐下载入口：
 
@@ -37,7 +37,7 @@ ZIP 内只包含上述整包固件文件；解压后的 bin 校验信息以本�
 
 ```text
 Size:   12713984 bytes
-SHA256: 8C6BD90515F991CC6F5A64E8A87B22465C8DB651DE6F0235B88ED5CABD1D52AD
+SHA256: D896E241C9567F83C0E0F7E0DFF430E4490726E9D1CE88B9D938B6E996AAE80E
 ```
 
 说明：`firmware-download.zip` 是 Gitee 按分支动态打包生成的下载文件，不建议固定校验 ZIP 本身；请以解压后的 `epaper_uploader_full_16MB.bin` SHA256 为准。
