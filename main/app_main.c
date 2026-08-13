@@ -39,7 +39,7 @@
 
 static const char *TAG = "app";
 
-#define BOOT_WELCOME_HOLD_MS 1000
+#define BOOT_WELCOME_HOLD_MS 10000
 
 static int count_bits8(uint8_t v)
 {
@@ -373,7 +373,50 @@ static void boot_display_route(void)
         ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");
         return;
     }
-    ESP_LOGI(TAG, "boot_display_route: done, normal boot keeps welcome/IP screen");
+
+    int saved_mode = power_mgr_load_mode();
+    int n = display_mode_count();
+    bool write_mode_back = false;
+    int mode = normalize_saved_mode(saved_mode, n, &write_mode_back);
+    ESP_LOGI(TAG, "boot_display_route: switching to mode %d (%s)",
+             mode, display_mode_name(mode));
+
+    boot_epoch = 0;
+    esp_err_t err = display_mode_show_request(mode, &boot_epoch);
+    if (err == ESP_OK && mode == DISPLAY_MODE_CALENDAR)
+        calendar_display_wait_render_idle();
+    if (display_policy_display_epoch() != boot_epoch) {
+        ESP_LOGI(TAG, "boot_display_route: mode restore canceled by newer display request");
+        return;
+    }
+
+    /* Keep the saved preference when a mode is temporarily unavailable. */
+    if (err != ESP_OK && mode != DISPLAY_MODE_CLOCK) {
+        ESP_LOGW(TAG, "boot_display_route: mode %d unavailable (%s), falling back to clock",
+                 mode, esp_err_to_name(err));
+        esp_err_t fallback_err = display_mode_show_request(DISPLAY_MODE_CLOCK, &boot_epoch);
+        if (fallback_err == ESP_OK) {
+            mode = DISPLAY_MODE_CLOCK;
+            err = ESP_OK;
+        } else {
+            ESP_LOGW(TAG, "boot_display_route: clock fallback failed (%s)",
+                     esp_err_to_name(fallback_err));
+            err = fallback_err;
+        }
+    }
+
+    if (err == ESP_OK)
+        button_set_current_mode(mode);
+    if (write_mode_back && err == ESP_OK)
+        power_mgr_save_mode(mode);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "boot_display_route: done, mode %d active%s",
+                 mode, (mode != saved_mode) ? " (fallback)" : "");
+    } else {
+        ESP_LOGW(TAG, "boot_display_route: no active mode (%s)",
+                 esp_err_to_name(err));
+    }
 }
 
 static void start_mdns(void)

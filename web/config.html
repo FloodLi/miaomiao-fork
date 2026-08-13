@@ -1648,6 +1648,61 @@ body.page-gallery .wrap>.row,body.page-gallery .wrap>.log,body.page-timetable .w
 body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
 @media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
 </style>
+<style id="mobile-comfort-v1">
+body.page-config .theme-row{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight:800;white-space:nowrap}
+@media(max-width:760px){
+  html{scroll-padding-top:12px}
+  body.page-config{overflow-x:hidden}
+  body.page-config .page{width:calc(100vw - 20px)!important;margin:10px auto 26px!important;padding:0!important}
+  body.page-config .shell{gap:12px}
+  body.page-config .topbar{padding:12px!important;border-radius:18px!important;gap:10px!important}
+  body.page-config .brand{grid-template-columns:48px minmax(0,1fr)!important;gap:10px!important}
+  body.page-config .brand-mark,body.page-config .brand-mark img{width:48px!important;height:48px!important;border-radius:14px!important}
+  body.page-config h1{font-size:24px!important}
+  body.page-config .eyebrow{font-size:10px}
+  body.page-config .brand-desc{font-size:12px;line-height:1.4}
+  body.page-config .top-actions{display:grid!important;gap:8px!important}
+  body.page-config .summary{display:grid!important;grid-template-columns:minmax(0,1.45fr) repeat(2,minmax(0,1fr))!important;width:100%;gap:0!important;overflow:hidden;padding:5px!important;border:1px solid var(--ui-line);border-radius:16px;background:rgba(255,255,255,.64);box-shadow:inset 0 1px 0 rgba(255,255,255,.88)}
+  body.page-config .summary-chip{display:grid!important;grid-template-columns:8px minmax(0,1fr);grid-template-rows:auto auto;column-gap:7px;min-width:0;min-height:52px!important;padding:6px 10px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;white-space:normal!important}
+  body.page-config .summary-chip:first-child{border-radius:11px!important;background:rgba(47,167,110,.08)!important}
+  body.page-config .summary-chip:nth-child(3){border-left:1px solid var(--ui-line)!important}
+  body.page-config .summary-chip .dot{grid-row:1;align-self:center;width:8px;height:8px}
+  body.page-config .summary-label{align-self:center;overflow:hidden;color:var(--ui-muted);font-size:10px;font-weight:750;line-height:1.15;text-overflow:ellipsis;white-space:nowrap}
+  body.page-config .summary-value{display:block;grid-column:1/-1;min-width:0;overflow:hidden;color:var(--ui-text);font-size:12px;font-weight:900;line-height:1.2;text-align:left;text-overflow:ellipsis;white-space:nowrap}
+  body.page-config .summary-chip:not(:first-child) .summary-value{text-align:center}
+  body.page-config .theme-row{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;width:100%;gap:8px;padding:4px;border:1px solid var(--ui-line);border-radius:15px;background:rgba(255,255,255,.48)}
+  body.page-config .theme-caption{padding-left:8px;color:var(--ui-muted);font-size:10px;font-weight:800;white-space:nowrap}
+  body.page-config .theme-switch{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:3px!important;overflow:visible!important;padding:0!important}
+  body.page-config .theme-pill{width:100%;min-width:0;min-height:44px!important;padding:0 6px!important;justify-content:center;border-color:transparent!important;background:transparent!important;box-shadow:none!important;touch-action:manipulation}
+  body.page-config .theme-pill.on,body.page-config .theme-pill[aria-pressed="true"]{border-color:rgba(241,111,152,.20)!important;background:rgba(255,255,255,.92)!important;box-shadow:0 3px 10px rgba(92,50,70,.09)!important}
+  body.page-config .theme-pill.on::after,body.page-config .theme-pill[aria-pressed="true"]::after{content:"✓";margin-left:1px;color:var(--ui-green);font-size:11px;font-weight:950}
+  body.page-config .theme-pill:focus-visible{outline:2px solid var(--ui-pink);outline-offset:1px}
+  body.page-config .nav{width:100%!important;max-width:none!important;margin:0 0 14px!important;padding:6px!important;gap:7px!important;justify-content:flex-start!important;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;scroll-padding-inline:6px;-webkit-overflow-scrolling:touch}
+  body.page-config .nav a{flex:0 0 auto!important;width:auto!important;min-width:76px!important;max-width:none!important;min-height:44px!important;padding:0 11px!important;gap:5px!important;font-size:13px!important;scroll-snap-align:center;touch-action:manipulation}
+  body.page-config .quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+  body.page-config .quick-card{grid-template-columns:36px minmax(0,1fr)!important;gap:8px!important;min-height:72px!important;padding:10px!important;border-radius:16px!important}
+  body.page-config .quick-card .icon{width:36px!important;height:36px!important;border-radius:11px!important}
+  body.page-config .quick-card b{font-size:14px!important}
+  body.page-config .quick-card span span{display:none}
+  body.page-config .section,body.page-config .side-panel{border-radius:18px!important}
+  body.page-config .section-head,body.page-config .side-head{padding:15px 14px 9px!important}
+  body.page-config .section-body,body.page-config .side-body{padding:0 14px 15px!important}
+  body.page-config input:not([type=checkbox]):not([type=radio]):not([type=range]),body.page-config select,body.page-config textarea{width:100%;max-width:none!important;min-height:44px;font-size:16px!important}
+  body.page-config .btn,body.page-config label.btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 13px!important;font-size:14px!important;touch-action:manipulation}
+  body.page-config .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  body.page-config .actions .btn{width:100%;min-width:0}
+  body.page-config .side-col>.side-panel:first-child .side-head{padding:13px 14px 6px!important}
+  body.page-config .side-col>.side-panel:first-child .side-head p{display:none}
+  body.page-config .side-col>.side-panel:first-child .side-body{padding:0 12px 12px!important}
+  body.page-config .overview{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}
+  body.page-config .overview-item{min-width:0;min-height:64px!important;padding:9px 10px!important;border-radius:13px!important}
+  body.page-config .overview-item small{display:block;margin-bottom:3px!important;font-size:11px!important;line-height:1.2}
+  body.page-config .overview-item b{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:13px!important;line-height:1.25;white-space:nowrap}
+  body.page-config .overview-item .meter{height:5px!important;margin-top:7px!important}
+}
+@media(max-width:380px){body.page-config .brand-desc{display:none}body.page-config .nav a{min-width:72px!important;padding:0 9px!important}}
+</style>
 </head>
 <body class="page-shell page-config page-wide config-page">
 <main class="page">
@@ -1664,15 +1719,18 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
         </div>
       </div>
       <div class="top-actions">
-        <div class="summary" aria-label="设备概览">
-          <span class="summary-chip"><i class="dot"></i><span id="topStatusIp">等待设备状态</span></span>
-          <span class="summary-chip"><i class="dot blue"></i><span id="topStatusPanel">屏幕未加载</span></span>
-          <span class="summary-chip"><i class="dot gold"></i><span id="topStatusFw">固件版本读取中</span></span>
+        <div class="summary" aria-label="设备状态摘要">
+          <span class="summary-chip"><i class="dot"></i><small class="summary-label" id="topStatusNetworkLabel">设备网络</small><b class="summary-value" id="topStatusIp">读取中</b></span>
+          <span class="summary-chip"><i class="dot blue"></i><small class="summary-label">屏幕</small><b class="summary-value" id="topStatusPanel">读取中</b></span>
+          <span class="summary-chip"><i class="dot gold"></i><small class="summary-label">固件</small><b class="summary-value" id="topStatusFw">读取中</b></span>
         </div>
-        <div class="theme-switch tsw" id="themeSw" aria-label="主题">
-          <button class="theme-pill" type="button" data-t="loopy" aria-pressed="false" onclick="setTheme('loopy')"><span class="swatch" style="background:linear-gradient(135deg,#FF9BB3,#8CC8F0)"></span>Loopy</button>
-          <button class="theme-pill" type="button" data-t="kitty" aria-pressed="false" onclick="setTheme('kitty')"><span class="swatch" style="background:linear-gradient(135deg,#FF4D6D,#FFB347)"></span>Kitty</button>
-          <button class="theme-pill" type="button" data-t="lotso" aria-pressed="false" onclick="setTheme('lotso')"><span class="swatch" style="background:linear-gradient(135deg,#B74678,#E8A0B8)"></span>草莓熊</button>
+        <div class="theme-row">
+          <span class="theme-caption">主题</span>
+          <div class="theme-switch tsw" id="themeSw" aria-label="主题">
+            <button class="theme-pill" type="button" data-t="loopy" aria-pressed="false" onclick="setTheme('loopy')"><span class="swatch" style="background:linear-gradient(135deg,#FF9BB3,#8CC8F0)"></span>Loopy</button>
+            <button class="theme-pill" type="button" data-t="kitty" aria-pressed="false" onclick="setTheme('kitty')"><span class="swatch" style="background:linear-gradient(135deg,#FF4D6D,#FFB347)"></span>Kitty</button>
+            <button class="theme-pill" type="button" data-t="lotso" aria-pressed="false" onclick="setTheme('lotso')"><span class="swatch" style="background:linear-gradient(135deg,#B74678,#E8A0B8)"></span>草莓熊</button>
+          </div>
         </div>
       </div>
     </section>
@@ -2148,7 +2206,8 @@ async function loadStatus(silent){
     document.getElementById('st_ip').textContent=j.sta_ip||'-';
     document.getElementById('st_ap_ssid').textContent=j.ap_ssid||'-';
     document.getElementById('st_id6').textContent=j.id6||'-';
-    setText('topStatusIp',j.sta_connected?(j.sta_ip||'已连接'):'AP 模式：192.168.4.1');
+    setText('topStatusNetworkLabel',j.sta_connected?'已联网':'热点模式');
+    setText('topStatusIp',j.sta_connected?(j.sta_ip||'已连接'):'192.168.4.1');
     setText('ov_conn',j.sta_connected?'已联网':'AP 模式');
     const mh=j.mdns_host||'epd';
     document.getElementById('st_mdns').innerHTML='<a href="http://'+mh+'.local/" style="color:var(--ac)">'+mh+'.local</a>';
@@ -2322,7 +2381,8 @@ async function loadVersion(){
     document.getElementById('fw_idf').textContent=j.idf;
     document.getElementById('fw_part').textContent=j.running;
     document.getElementById('fw_next').textContent=j.next_ota||'none';
-    setText('topStatusFw',j.version||'-');
+    const shortVersion=String(j.version||'').replace(/^v/i,'');
+    setText('topStatusFw',shortVersion?('v'+shortVersion):'-');
     setText('ov_fw',j.version||'-');
   }catch(e){document.getElementById('fw_ver').textContent='获取失败';}
 }
@@ -2421,7 +2481,7 @@ async function loadPanel(){
     document.getElementById('pn_current').textContent=panelNames[active]||'未知';
     document.getElementById('pn_res').textContent=j.width+'×'+j.height+(j.has_red?' (BW+R)':' (BW)');
     document.getElementById('pn_busy_current').textContent='当前 '+j.busy_idle+' / 待生效 '+pendingBusy;
-    setText('topStatusPanel',panelNames[active]||'未知');
+    setText('topStatusPanel',j.width+'×'+j.height);
     setText('ov_panel',j.width+'×'+j.height);
     if(j.reboot_required) pnLog('注意：下次重启会切到 '+(panelNames[pending]||pending)+'，BUSY='+pendingBusy+'；当前仍在运行 '+(panelNames[active]||active)+'。如果这是误选，请点“改回当前屏幕”。','bad');
     else pnLog('已加载当前屏幕配置。');
@@ -2708,5 +2768,15 @@ initConfigPage();
 // keep the live overview (memory / time / connection) fresh without noisy logs
 setInterval(function(){ loadStatus(true); }, 30000);
 </script>
+<style id="mobile-page-picker-v2">
+.mobile-page-picker-wrap{display:none}
+@media(max-width:760px){
+  body:not(.page-board) .nav{display:none!important}
+  body:not(.page-board) .mobile-page-picker-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;width:100%;min-height:48px;margin:0 0 14px;padding:0 8px 0 14px;border:1px solid var(--line,#eadde3);border-radius:14px;background:var(--card,#fff);box-shadow:0 5px 16px rgba(55,35,45,.06)}
+  .mobile-page-picker-label{padding-right:12px;border-right:1px solid var(--line,#eadde3);color:var(--t2,#8b7882);font-size:12px;font-weight:700;white-space:nowrap}
+  .mobile-page-picker{width:100%;min-height:46px;padding:0 8px 0 12px!important;border:0!important;outline:0;background:transparent;color:var(--t1,#2d2428);font:inherit;font-size:15px!important;font-weight:700}
+}
+</style>
+<script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
 </body>
 </html>

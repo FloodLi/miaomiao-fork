@@ -147,6 +147,31 @@ body.page-gallery .wrap>.row,body.page-gallery .wrap>.log,body.page-timetable .w
 body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
 @media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
 </style>
+<style id="mobile-comfort-v1">
+@media(max-width:760px){
+  html{scroll-padding-top:12px}
+  body{overflow-x:hidden}
+  body .wrap{width:calc(100vw - 20px)!important;padding:12px 0 26px!important}
+  body .hdr{min-height:0!important;margin-bottom:12px!important;gap:10px}
+  body .hdr .title{font-size:19px}
+  body .nav{width:100%!important;max-width:none!important;margin:0 0 14px!important;padding:6px!important;gap:7px!important;justify-content:flex-start!important;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;scroll-padding-inline:6px;-webkit-overflow-scrolling:touch}
+  body .nav a{flex:0 0 auto!important;width:auto!important;min-width:76px!important;max-width:none!important;min-height:44px!important;padding:0 11px!important;gap:5px!important;font-size:13px!important;scroll-snap-align:center;touch-action:manipulation}
+  body .card .hd{padding:15px!important}
+  body .card .bd{padding:14px 15px 16px!important}
+  body input:not([type=checkbox]):not([type=radio]):not([type=range]),body select,body textarea{min-height:44px;font-size:16px!important}
+  body .btn,body a.btn,body label.btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 13px!important;font-size:14px!important;touch-action:manipulation}
+  body.page-timetable .row-btns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  body.page-timetable .row-btns .btn,body.page-timetable .row-btns select,body.page-timetable .row-btns label{width:100%;min-height:44px;font-size:14px!important}
+  body.page-timetable .period-row{display:grid;grid-template-columns:auto 44px 7px 44px 14px 44px 7px 44px 44px;gap:3px;padding:8px 6px;overflow-x:auto}
+  body.page-timetable .period-row input{width:44px!important;min-height:44px;padding:4px!important;font-size:16px!important}
+  body.page-timetable .period-row .btn{width:44px;padding:0!important}
+  body.page-timetable .modal-bg{align-items:flex-end;padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+  body.page-timetable .modal{width:100%;max-width:none;max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:18px 18px 12px 12px}
+  body.page-timetable .modal .actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  body.page-timetable .modal .actions .btn{width:100%;margin:0!important}
+}
+@media(max-width:380px){body .nav a{min-width:72px!important;padding:0 9px!important}}
+</style>
 </head>
 <body class="page-shell page-wide page-timetable">
 <div class="wrap">
@@ -505,5 +530,15 @@ async function showOnEpd(){
 document.getElementById('selDays').addEventListener('change',renderGrid);
 loadConfig();
 </script>
+<style id="mobile-page-picker-v2">
+.mobile-page-picker-wrap{display:none}
+@media(max-width:760px){
+  body:not(.page-board) .nav{display:none!important}
+  body:not(.page-board) .mobile-page-picker-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;width:100%;min-height:48px;margin:0 0 14px;padding:0 8px 0 14px;border:1px solid var(--line,#eadde3);border-radius:14px;background:var(--card,#fff);box-shadow:0 5px 16px rgba(55,35,45,.06)}
+  .mobile-page-picker-label{padding-right:12px;border-right:1px solid var(--line,#eadde3);color:var(--t2,#8b7882);font-size:12px;font-weight:700;white-space:nowrap}
+  .mobile-page-picker{width:100%;min-height:46px;padding:0 8px 0 12px!important;border:0!important;outline:0;background:transparent;color:var(--t1,#2d2428);font:inherit;font-size:15px!important;font-weight:700}
+}
+</style>
+<script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
 </body>
 </html>

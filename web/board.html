@@ -120,6 +120,9 @@ input[type=checkbox]{accent-color:var(--ac);margin-right:4px}
 .lbtn:hover{color:var(--tx);background:var(--hv)}
 .lbtn.del{color:var(--er)}
 .lbtn.del:hover{background:rgba(200,0,0,.08)}
+.layer-actions{display:flex;align-items:center;gap:3px;min-width:0}
+.tpl-close{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--t2);cursor:pointer;font-size:1.2rem;line-height:1}
+.tpl-close:hover{background:var(--hv);color:var(--tx)}
 
 /* 按钮 */
 .btn{display:block;width:100%;padding:7px 10px;border:1px solid var(--cb);border-radius:8px;
@@ -188,6 +191,37 @@ body .epd-credit a:hover{text-decoration:underline}
   #sidebar{width:100%;min-width:0;overflow:visible;border-left:0;border-top:1px solid var(--cb)}
   #sidebar .panel{padding:12px 14px}
 }
+</style>
+<style id="mobile-comfort-v1">
+@media(max-width:760px){
+  body.page-board{overflow-x:hidden}
+  body.page-board #topbar{display:flex;align-items:center;gap:7px;padding:7px 8px;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;scroll-padding-inline:8px;-webkit-overflow-scrolling:touch}
+  body.page-board #topbar h1{position:sticky;left:0;z-index:2;display:flex;align-items:center;min-height:44px;margin:0 3px 0 0;padding:0 10px 0 2px;background:var(--cd);font-size:.82rem}
+  body.page-board #topbar a.back,body.page-board #topbar .tb-btn{flex:0 0 auto;min-height:44px;padding:0 12px;font-size:.78rem;display:inline-flex;align-items:center;justify-content:center;scroll-snap-align:center;touch-action:manipulation}
+  body.page-board #topbar .tb-sep{height:30px;flex:0 0 1px}
+  body.page-board #toolbar{scroll-snap-type:x proximity;scroll-padding-inline:8px;gap:6px}
+  body.page-board #toolbar .tool-btn{flex:0 0 52px;min-width:52px;min-height:48px;scroll-snap-align:start}
+  body.page-board #canvas-wrap{padding:10px}
+  body.page-board #sidebar .panel{padding:13px 12px}
+  body.page-board #sidebar .panel h3{min-height:36px;margin-bottom:8px;font-size:.76rem}
+  body.page-board input:not([type=checkbox]):not([type=radio]):not([type=range]),body.page-board select,body.page-board textarea{min-height:44px;font-size:16px;margin-bottom:8px}
+  body.page-board textarea{min-height:96px}
+  body.page-board .color-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+  body.page-board .color-btn{min-height:44px;padding:0 4px;font-size:.78rem}
+  body.page-board .btn,body.page-board .btn.sml{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px;font-size:.82rem;touch-action:manipulation}
+  body.page-board .row2{gap:8px}
+  body.page-board #icon-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+  body.page-board .icon-item{min-height:50px}
+  body.page-board .layer-item{display:grid;grid-template-columns:auto minmax(0,1fr);min-height:44px;gap:5px;padding:7px 5px}
+  body.page-board .layer-actions{grid-column:1/-1;width:100%;gap:5px;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;padding:2px 0 3px;-webkit-overflow-scrolling:touch}
+  body.page-board .lbtn{flex:0 0 44px;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;scroll-snap-align:start;border:1px solid var(--cb);border-radius:9px;background:var(--sf);touch-action:manipulation}
+  body.page-board .tpl-close{width:44px;height:44px;flex:0 0 44px;touch-action:manipulation}
+  body.page-board #send-preview-overlay,body.page-board #tpl-overlay{align-items:flex-end!important;padding:12px!important;padding-bottom:max(12px,env(safe-area-inset-bottom))!important}
+  body.page-board #send-preview-overlay>div,body.page-board #tpl-overlay>div{width:100%!important;max-width:none!important;max-height:calc(100dvh - 24px)!important;border-radius:18px 18px 12px 12px!important;padding:14px!important}
+  body.page-board #send-preview-overlay>div>div:last-child{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important}
+  body.page-board #send-preview-overlay .tb-btn{width:100%;min-height:44px}
+}
+@media(max-width:380px){body.page-board #topbar h1{font-size:.76rem}body.page-board #icon-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
 </head>
 <body class="page-shell page-wide page-board">
@@ -421,7 +455,7 @@ body .epd-credit a:hover{text-decoration:underline}
   <div style="background:var(--cd);border-radius:14px;padding:20px;width:340px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.3)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <b style="font-size:.95rem">选择模板</b>
-      <span onclick="closeTpl()" style="cursor:pointer;font-size:1.2rem;color:var(--t2)">✕</span>
+      <button class="tpl-close" type="button" onclick="closeTpl()" aria-label="关闭模板选择">✕</button>
     </div>
     <div id="tpl-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
     <div class="hint" style="margin-top:10px">⚠ 加载模板会替换当前画布</div>
@@ -2517,8 +2551,10 @@ function updateLayerList() {
         const dl=document.createElement('span'); dl.className='lbtn del'; dl.title='删除'; dl.textContent='×';
         dl.onclick=ev=>{ev.stopPropagation();elements.splice(i,1);if(selected>=elements.length)selected=elements.length-1;render();updateLayerList();snapshot();};
 
-        div.appendChild(up); div.appendChild(dn); div.appendChild(top); div.appendChild(bot);
-        div.appendChild(cp); div.appendChild(rn); div.appendChild(ey); div.appendChild(lk); div.appendChild(dl);
+        const actions=document.createElement('div'); actions.className='layer-actions';
+        actions.appendChild(up); actions.appendChild(dn); actions.appendChild(top); actions.appendChild(bot);
+        actions.appendChild(cp); actions.appendChild(rn); actions.appendChild(ey); actions.appendChild(lk); actions.appendChild(dl);
+        div.appendChild(actions);
         list.appendChild(div);
     });
 }

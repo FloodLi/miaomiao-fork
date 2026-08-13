@@ -240,7 +240,7 @@ fontfs,      data, spiffs,   0x940000,  0x2E0000    # 2.875MB — 内置字库
 spiffs,      data, spiffs,   0xC20000,  0x3E0000    # 3.875MB — 用户图片/画布/运行时文件
 ```
 
-> 已实现 factory + 双 OTA 三槽布局，支持空中固件升级与回滚保护。当前分区表把系统崩溃日志、内置字库和用户文件分离：`coredump` 用于 panic / watchdog 复盘，`fontfs` 用于 16/24/32px MEF 字库，用户 `spiffs` 固定在 `0xC20000` 以减少分区调整对图库/配置的影响。分区表或 `fontfs` 地址变化后，发布包需要同时更新 `partition_table.bin` 与 `fontfs.bin`，不能只 OTA app。
+> 已实现 factory + 双 OTA 三槽布局，支持空中固件升级与回滚保护。当前分区表把系统崩溃日志、外置字库和用户文件分离：`coredump` 用于 panic / watchdog 复盘，`fontfs` 用于 24/32px MEF 字库，16px 清晰位图随 app 内置；用户 `spiffs` 固定在 `0xC20000` 以减少分区调整对图库/配置的影响。分区表或 `fontfs` 地址变化后，发布包需要同时更新 `partition_table.bin` 与 `fontfs.bin`，不能只 OTA app。
 
 ---
 

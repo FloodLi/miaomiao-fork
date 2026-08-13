@@ -2919,7 +2919,7 @@ static void ref_jd79668_init(void)
     ref_jd796xx_full_window();
     epd_cmd(0x04);
     epd_wait_ready(false);
-    ESP_LOGW(TAG, "%s init OK (JD79668 BWRY 2bpp)", d->name);
+    ESP_LOGI(TAG, "%s init OK (JD79668 BWRY 2bpp)", d->name);
 }
 
 /* ═══════════════════════════════════════════════════════════════════

@@ -50,6 +50,36 @@ body.page-gallery .wrap>.row,body.page-gallery .wrap>.log,body.page-timetable .w
 body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
 @media(max-width:760px){body .wrap,body.page-upload .wrap{width:calc(100vw - 24px);padding:16px 0 28px!important}body.page-config .page{width:calc(100vw - 24px)!important;margin-top:16px!important}body.page-panel .card .bd{grid-template-columns:1fr}body .nav{margin-bottom:16px!important;justify-content:flex-start!important}}
 </style>
+<style id="mobile-comfort-v1">
+@media(max-width:760px){
+  html{scroll-padding-top:12px}
+  body{overflow-x:hidden}
+  body .wrap{width:calc(100vw - 20px)!important;padding:12px 0 26px!important}
+  body .hdr{min-height:0!important;margin-bottom:12px!important;gap:10px}
+  body .hdr .title{font-size:19px}
+  body .nav{width:100%!important;max-width:none!important;margin:0 0 14px!important;padding:6px!important;gap:7px!important;justify-content:flex-start!important;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;scroll-padding-inline:6px;-webkit-overflow-scrolling:touch}
+  body .nav a{flex:0 0 auto!important;width:auto!important;min-width:76px!important;max-width:none!important;min-height:44px!important;padding:0 11px!important;gap:5px!important;font-size:13px!important;scroll-snap-align:center;touch-action:manipulation}
+  body .card .hd,body.page-panel .card .hd,body.page-task .card .hd{padding:15px 15px 9px!important}
+  body .card .bd,body.page-panel .card .bd,body.page-task .card .bd{padding:14px 15px 16px!important}
+  body input:not([type=checkbox]):not([type=radio]):not([type=range]),body select,body textarea{width:100%;max-width:none!important;min-height:44px;font-size:16px!important}
+  body textarea{min-height:104px}
+  body .btn,body a.btn,body label.btn,body .pill{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 14px!important;font-size:14px!important;touch-action:manipulation}
+  body.page-panel .card .bd>.row,body.page-gallery .card .bd>.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;width:100%}
+  body.page-panel .card .bd>.row>.btn:first-child,body.page-gallery .card .bd>.row>.btn:first-child{grid-column:1/-1}
+  body.page-panel .card .bd>.row>.btn,body.page-panel .card .bd>.row>a.btn,body.page-gallery .card .bd>.row>.btn,body.page-gallery .card .bd>.row>a.btn{width:100%}
+  body.page-panel .kv{grid-template-columns:92px minmax(0,1fr);font-size:13px}
+  body.page-task>.wrap>.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  body.page-task>.wrap>.row>.btn:first-child{grid-column:1/-1}
+  body.page-task>.wrap>.row>.btn{width:100%}
+  body.page-task .add-row{display:grid;grid-template-columns:minmax(0,1fr) 84px;gap:8px;padding:10px 12px}
+  body.page-task .todo-check,body.page-task .todo-pri,body.page-task .todo-del,body.page-task .cd-del{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  body.page-task .todo-item{gap:5px;padding:8px 10px}
+  body.page-task .cd-row{padding:10px;gap:8px}
+  body.page-task .cd-row .cd-title{flex:1 0 100%}
+  body.page-task .cd-row .cd-date{width:auto;flex:1 1 170px}
+}
+@media(max-width:380px){body .nav a{min-width:72px!important;padding:0 9px!important}}
+</style>
 </head>
 <body class="page-shell page-panel page-codex">
 <div class="wrap">
@@ -95,5 +125,15 @@ async function showCodexQuota(){cqLog('正在请求额度接口并渲染…墨�
 (function(){var ce=document.getElementById('cqEnabled');if(ce)ce.addEventListener('change',function(e){document.getElementById('cqLabel').textContent=e.target.checked?'已开启':'已关闭';});})();
 loadCodexQuota();
 </script>
+<style id="mobile-page-picker-v2">
+.mobile-page-picker-wrap{display:none}
+@media(max-width:760px){
+  body:not(.page-board) .nav{display:none!important}
+  body:not(.page-board) .mobile-page-picker-wrap{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;width:100%;min-height:48px;margin:0 0 14px;padding:0 8px 0 14px;border:1px solid var(--line,#eadde3);border-radius:14px;background:var(--card,#fff);box-shadow:0 5px 16px rgba(55,35,45,.06)}
+  .mobile-page-picker-label{padding-right:12px;border-right:1px solid var(--line,#eadde3);color:var(--t2,#8b7882);font-size:12px;font-weight:700;white-space:nowrap}
+  .mobile-page-picker{width:100%;min-height:46px;padding:0 8px 0 12px!important;border:0!important;outline:0;background:transparent;color:var(--t1,#2d2428);font:inherit;font-size:15px!important;font-weight:700}
+}
+</style>
+<script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
 </body>
 </html>
