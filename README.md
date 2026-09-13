@@ -2,6 +2,8 @@
 
 本文档面向不准备自行编译的复刻用户。只需要下载整包固件文件，并使用 Espressif Flash Download Tool 写入 ESP32-S3，即可完成基础烧录。
 
+本次更新原先误标为v3.7，正确版本为 **v2.3.7**。下载包及固件内部版本已一并更正，功能没有回退；已有设备保留配置升级请使用网页OTA。
+
 ## 项目入口
 
 ```text
@@ -11,7 +13,7 @@ Gitee 固件仓库:       https://gitee.com/gxp666111/miaomiao
 
 ## 固件文件
 
-> **v3.7 正式版（2026-09-13）**：本目录提供与源码主分支 `release/` 一致的完整烧录包，包含多屏图片工作区、黄色留言与显示回执等修复。分区表和字库保持不变；软件回归通过，未覆盖型号的实屏验收仍保留原标记。更新内容见[主仓库更新日志](https://gitee.com/gxp666111/miaomiao/blob/master/CHANGELOG.md)。
+> **v2.3.7 正式版（2026-09-13）**：本目录提供与源码主分支 `release/` 一致的完整烧录包，包含多屏图片工作区、黄色留言与显示回执等修复。分区表和字库保持不变；软件回归通过，未覆盖型号的实屏验收仍保留原标记。更新内容见[主仓库更新日志](https://gitee.com/gxp666111/miaomiao/blob/master/CHANGELOG.md)。
 
 已有设备需要保留 WiFi、面板等配置时，优先下载[网页 OTA 包](https://gitee.com/gxp666111/miaomiao/blob/master/release/web_upgrade.zip)，在设备配置页升级。下方完整烧录会覆盖 NVS，操作前请备份配置和图片。
 
@@ -39,7 +41,7 @@ epaper_uploader_full_16MB.bin
 
 ```text
 Size:   12713984 bytes
-SHA256: 390682D1C35FA23CA338BD2D953C152B6D9FD2F07981F870D37CE5835ED30DFA
+SHA256: 9D054AF8CFA6071F256A8FED979E1361E7A2CA047B61AEAA6DF06EDF65C7BD08
 ```
 
 说明：`firmware-download.zip` 是 Gitee 按分支动态打包生成的下载文件，不建议固定校验 ZIP 本身；请以解压后的 `epaper_uploader_full_16MB.bin` SHA256 为准。
