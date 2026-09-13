@@ -349,12 +349,30 @@ bool timetable_get_next_course(char *name_buf, size_t name_len,
 
 /* ── EPD: today's course card view ──────────────────────────────── */
 
-static const char *const TT_DAY_FULL[] = {
+static const char *const TT_DAY_FULL_ZH[] = {
     "\xe5\x91\xa8\xe4\xb8\x80", "\xe5\x91\xa8\xe4\xba\x8c",
     "\xe5\x91\xa8\xe4\xb8\x89", "\xe5\x91\xa8\xe5\x9b\x9b",
     "\xe5\x91\xa8\xe4\xba\x94", "\xe5\x91\xa8\xe5\x85\xad",
     "\xe5\x91\xa8\xe6\x97\xa5",
 };
+
+static const char *const TT_DAY_SHORT_ZH[] = {
+    "一", "二", "三", "四", "五", "六", "日",
+};
+
+static const char *tt_day_full(int monday_zero)
+{
+    if (monday_zero < 0 || monday_zero >= TT_DAYS)
+        monday_zero = 0;
+    return TT_DAY_FULL_ZH[monday_zero];
+}
+
+static const char *tt_day_short(int monday_zero)
+{
+    if (monday_zero < 0 || monday_zero >= TT_DAYS)
+        monday_zero = 0;
+    return TT_DAY_SHORT_ZH[monday_zero];
+}
 
 static int tt_collect_today_in(const timetable_config_t *cfg,
                                int wd, int week, int *out, int max)
@@ -444,7 +462,9 @@ static void tt_draw_header(fb_t *fb, const char *title, const char *right,
     const int line_y = is_42 ? 29 : header_h + 6 * s;
 
     if (red_accent)
-        fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, COLOR_RED);
+        fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s,
+                     ui_color_resolve(UI_COLOR_PAGE_TIMETABLE,
+                                      UI_COLOR_ROLE_ACCENT, COLOR_RED));
 
     int title_w = 0;
     if (title && title[0]) {
@@ -458,7 +478,8 @@ static void tt_draw_header(fb_t *fb, const char *title, const char *right,
     }
 
     int battery_right = W - 14 * s;
-    int battery_w = ui_draw_battery_badge(fb, battery_right, y);
+    int battery_w = ui_draw_battery_badge_for(fb, UI_COLOR_PAGE_TIMETABLE,
+                                               battery_right, y);
     int right_limit = battery_right - battery_w - 8 * s;
 
     if (right && right[0]) {
@@ -512,7 +533,20 @@ static void tt_draw_footer(fb_t *fb, const char *left, const char *right)
 
 static void tt_draw_empty_state(fb_t *fb, const char *title, const char *hint)
 {
-    ui_draw_empty_state_compact(fb, title, hint);
+    ui_draw_empty_state_for(fb, UI_COLOR_PAGE_TIMETABLE, title, hint,
+                            UI_COLOR_ROLE_NOTICE);
+}
+
+static esp_err_t tt_display_fb_if_current(fb_t *fb, unsigned epoch)
+{
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
+    if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
+        return ESP_ERR_INVALID_STATE;
+    return err;
 }
 
 /* ── EPD: full-week grid view (for 5.83" 648x480) ────────────────── */
@@ -525,19 +559,18 @@ static esp_err_t tt_show_hint_page(const char *title, const char *hint,
         return ESP_ERR_NO_MEM;
 
     fb_clear(fb);
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    tt_draw_header(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
-                   footer_right, true);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_TIMETABLE,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    tt_draw_header(fb, "课程表", footer_right, true);
     tt_draw_empty_state(fb, title, hint);
-    tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
-                   footer_right ? footer_right : "\xe8\xae\xbe\xe7\xbd\xae");
+    tt_draw_footer(fb, "课程表", footer_right ? footer_right : "设置");
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
         return ESP_ERR_INVALID_STATE;
     }
 
-    return epd_display_fb_free(fb);
+    return tt_display_fb_if_current(fb, epoch);
 }
 
 static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
@@ -560,31 +593,27 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
     {
         char title[64];
         if (week > 0)
-            snprintf(title, sizeof(title),
-                     "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8 \xc2\xb7 \xe7\xac\xac%d\xe5\x91\xa8",
-                     week);
+            snprintf(title, sizeof(title), "课程表 · 第%d周", week);
         else
-            snprintf(title, sizeof(title),
-                     "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8");
+            snprintf(title, sizeof(title), "%s", "课程表");
 
         char ts[64];
         snprintf(ts, sizeof(ts), "%d/%02d/%02d %02d:%02d",
                  tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                  tm->tm_hour, tm->tm_min);
-        ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+        ui_draw_page_frame_for(fb, UI_COLOR_PAGE_TIMETABLE,
+                               UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
         tt_draw_header(fb, title, ts, true);
     }
 
     int pc = cfg->period_count;
     if (pc == 0) {
-        tt_draw_empty_state(fb,
-                            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae",
-                            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae");
+        tt_draw_empty_state(fb, "课程表未配置", "网页课程表设置");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             return ESP_ERR_INVALID_STATE;
         }
-        esp_err_t err = epd_display_fb_free(fb);
+        esp_err_t err = tt_display_fb_if_current(fb, epoch);
         return err;
     }
 
@@ -606,27 +635,28 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
 
     /* ── day header row ── */
     {
-        const char *jie = "\xe8\x8a\x82\xe6\xac\xa1";
+        const char *jie = "节次";
         int jw = tt_text_px(fb, jie, 1);
         tt_draw_text(fb, margin + (pcol_w - jw) / 2,
                      y_start + (hdr_h - 16) / 2, jie, COLOR_BLACK, 1);
     }
 
-    static const char *const DAY_SHORT[] = {
-        "\xe4\xb8\x80", "\xe4\xba\x8c", "\xe4\xb8\x89",
-        "\xe5\x9b\x9b", "\xe4\xba\x94", "\xe5\x85\xad", "\xe6\x97\xa5",
-    };
     for (int d = 0; d < cols; d++) {
         int cx = margin + pcol_w + d * cell_w;
 
         char label[16];
-        snprintf(label, sizeof(label), "\xe5\x91\xa8%s", DAY_SHORT[d]);
+        snprintf(label, sizeof(label), "周%s", tt_day_short(d));
         int lw = tt_text_px(fb, label, 1);
-        fb_color_t lc = (d == today) ? COLOR_RED : COLOR_BLACK;
+        fb_color_t lc = (d == today)
+                        ? ui_color_resolve(UI_COLOR_PAGE_TIMETABLE,
+                                           UI_COLOR_ROLE_ACCENT, COLOR_RED)
+                        : COLOR_BLACK;
         tt_draw_text(fb, cx + (cell_w - lw) / 2,
                      y_start + (hdr_h - 16) / 2, label, lc, 1);
         if (d == today)
-            fb_fill_rect(fb, cx + 12, y_start + hdr_h - 4, cell_w - 24, 2, COLOR_RED);
+            fb_fill_rect(fb, cx + 12, y_start + hdr_h - 4, cell_w - 24, 2,
+                         ui_color_resolve(UI_COLOR_PAGE_TIMETABLE,
+                                          UI_COLOR_ROLE_ACCENT, COLOR_RED));
     }
     ui_draw_dotted_hline(fb, margin, body_y - 1, grid_right - margin,
                          COLOR_BLACK, 6);
@@ -685,11 +715,24 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
 
             bool is_cur = (d == today &&
                            p == tt_current_period_idx_in(cfg, today, now_min));
+            int start_min = tt_minutes(cfg->periods[p].start_hour,
+                                       cfg->periods[p].start_minute);
+            bool is_next = d == today && start_min > now_min &&
+                           start_min - now_min <= 60;
+            fb_color_t state_color = is_cur
+                ? ui_color_resolve(UI_COLOR_PAGE_TIMETABLE,
+                                   UI_COLOR_ROLE_WARNING, COLOR_RED)
+                : (is_next
+                    ? ui_color_resolve(UI_COLOR_PAGE_TIMETABLE,
+                                       UI_COLOR_ROLE_NOTICE, COLOR_BLACK)
+                    : COLOR_BLACK);
 
             if (is_cur)
-                fb_fill_rect(fb, cx + 2, ry + 5, 3, cell_h - 10, COLOR_RED);
+                fb_fill_rect(fb, cx + 2, ry + 5, 3, cell_h - 10, state_color);
+            else if (is_next)
+                fb_fill_rect(fb, cx + 2, ry + 5, 2, cell_h - 10, state_color);
 
-            fb_color_t nc = is_cur ? COLOR_RED : COLOR_BLACK;
+            fb_color_t nc = (is_cur || is_next) ? state_color : COLOR_BLACK;
             fb_color_t rc = COLOR_BLACK;
 
             int pad = 8;
@@ -740,10 +783,9 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
                     week_courses++;
 
         char foot[96];
-        snprintf(foot, sizeof(foot),
-                 "%s %d\xe8\x8a\x82 / \xe6\x9c\xac\xe5\x91\xa8%d\xe8\x8a\x82",
-                 TT_DAY_FULL[today], today_courses, week_courses);
-        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8", foot);
+        snprintf(foot, sizeof(foot), "%s %d节 / 本周%d节",
+                 tt_day_full(today), today_courses, week_courses);
+        tt_draw_footer(fb, "课程表", foot);
     }
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -751,7 +793,7 @@ static esp_err_t timetable_show_week_grid(const timetable_config_t *cfg,
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t err = epd_display_fb_free(fb);
+    esp_err_t err = tt_display_fb_if_current(fb, epoch);
 
     if (err == ESP_OK)
         ESP_LOGI(TAG, "show week grid: %d periods, %d days (week=%d)", pc, cols, week);
@@ -767,7 +809,7 @@ esp_err_t timetable_show_day(int day)
     if (day < 0 || day >= TT_DAYS)
         return ESP_ERR_INVALID_ARG;
 
-    unsigned epoch = display_policy_display_epoch();
+    unsigned epoch = display_mode_render_epoch();
 
     /* Take one heap snapshot first; all rendering below uses this stable copy. */
     timetable_config_t *snap = malloc(sizeof(*snap));
@@ -779,10 +821,8 @@ esp_err_t timetable_show_day(int day)
     }
     if (!snap->enabled) {
         free(snap);
-        return tt_show_hint_page(
-            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe5\x90\xaf\xe7\x94\xa8",
-            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae",
-            "\xe8\xae\xbe\xe7\xbd\xae", epoch);
+        return tt_show_hint_page("课程表未启用", "网页课程表设置",
+                                 "设置", epoch);
     }
 
     struct tm tm;
@@ -790,10 +830,8 @@ esp_err_t timetable_show_day(int day)
     if (!have_time) {
         ESP_LOGW(TAG, "time not synced");
         free(snap);
-        return tt_show_hint_page(
-            "\xe7\xad\x89\xe5\xbe\x85\xe6\x97\xb6\xe9\x97\xb4\xe5\x90\x8c\xe6\xad\xa5",
-            "\xe8\x81\x94\xe7\xbd\x91\xe5\x90\x8e\xe6\x98\xbe\xe7\xa4\xba\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
-            "\xe6\x97\xb6\xe9\x97\xb4", epoch);
+        return tt_show_hint_page("等待时间同步", "联网后显示课程表",
+                                 "时间", epoch);
     }
 
     int W = epd_width();
@@ -829,17 +867,17 @@ esp_err_t timetable_show_day(int day)
 
     char title[64];
     if (week > 0)
-        snprintf(title, sizeof(title), "%s \xc2\xb7 \xe7\xac\xac%d\xe5\x91\xa8",
-                 TT_DAY_FULL[day], week);
+        snprintf(title, sizeof(title), "%s · 第%d周", tt_day_full(day), week);
     else
-        snprintf(title, sizeof(title), "%s", TT_DAY_FULL[day]);
+        snprintf(title, sizeof(title), "%s", tt_day_full(day));
 
     char right[16] = "";
     if (is_today) {
         snprintf(right, sizeof(right), "%02d:%02d", tm.tm_hour, tm.tm_min);
     }
 
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_TIMETABLE,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     tt_draw_header(fb, title, right, true);
 
     /* ── collect courses for the requested day ── */
@@ -847,33 +885,27 @@ esp_err_t timetable_show_day(int day)
     int count = tt_collect_today_in(snap, day, week, order, TT_MAX_PERIODS);
 
     if (snap->period_count == 0) {
-        tt_draw_empty_state(fb,
-                            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae",
-                            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae");
-        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
-                       "\xe8\xae\xbe\xe7\xbd\xae");
+        tt_draw_empty_state(fb, "课程表未配置", "网页课程表设置");
+        tt_draw_footer(fb, "课程表", "设置");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             free(snap);
             return ESP_ERR_INVALID_STATE;
         }
-        esp_err_t err = epd_display_fb_free(fb);
+        esp_err_t err = tt_display_fb_if_current(fb, epoch);
         free(snap);
         return err;
     }
 
     if (!tt_has_any_course_in(snap)) {
-        tt_draw_empty_state(fb,
-                            "\xe6\x9a\x82\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b",
-                            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\xb7\xbb\xe5\x8a\xa0");
-        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
-                       "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b");
+        tt_draw_empty_state(fb, "暂无课程", "网页课程表添加");
+        tt_draw_footer(fb, "课程表", "无课程");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             free(snap);
             return ESP_ERR_INVALID_STATE;
         }
-        esp_err_t err = epd_display_fb_free(fb);
+        esp_err_t err = tt_display_fb_if_current(fb, epoch);
         free(snap);
         return err;
     }
@@ -881,21 +913,19 @@ esp_err_t timetable_show_day(int day)
     if (count == 0) {
         /* "X无课" */
         char msg[32];
-        snprintf(msg, sizeof(msg), "%s\xe6\x97\xa0\xe8\xaf\xbe", TT_DAY_FULL[day]);
+        snprintf(msg, sizeof(msg), "%s无课", tt_day_full(day));
         int mw = tt_text_px(fb, msg, s + 1);
         int mx = (W - mw) / 2;
         (void)mw;
         (void)mx;
-        tt_draw_empty_state(fb, msg,
-                            "\xe4\xbb\x8a\xe5\xa4\xa9\xe6\xb2\xa1\xe6\x9c\x89\xe8\xaf\xbe\xe7\xa8\x8b");
-        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
-                       "\xe6\x97\xa0\xe8\xaf\xbe\xe7\xa8\x8b");
+        tt_draw_empty_state(fb, msg, "今天没有课程");
+        tt_draw_footer(fb, "课程表", "无课程");
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             free(snap);
             return ESP_ERR_INVALID_STATE;
         }
-        esp_err_t err = epd_display_fb_free(fb);
+        esp_err_t err = tt_display_fb_if_current(fb, epoch);
         free(snap);
         return err;
     }
@@ -929,6 +959,16 @@ esp_err_t timetable_show_day(int day)
         const tt_cell_t *cell = &snap->grid[day][p];
         const tt_period_def_t *pd = &snap->periods[p];
         bool is_now = (p == cur_p);
+        int start_min = tt_minutes(pd->start_hour, pd->start_minute);
+        bool is_next = is_today && start_min > now_min &&
+                       start_min - now_min <= 60;
+        fb_color_t state_color = is_now
+            ? ui_color_resolve(UI_COLOR_PAGE_TIMETABLE,
+                               UI_COLOR_ROLE_WARNING, COLOR_RED)
+            : (is_next
+                ? ui_color_resolve(UI_COLOR_PAGE_TIMETABLE,
+                                   UI_COLOR_ROLE_NOTICE, COLOR_BLACK)
+                : COLOR_BLACK);
 
         int by = y_top + i * block_h;
         if (by + 16 * s > H - footer_h)
@@ -938,22 +978,22 @@ esp_err_t timetable_show_day(int day)
             int text_h = 16 * s + 2 * s + 16 * name_sc;
             int ty = by + (block_h - text_h) / 2;
 
-            if (is_now)
+            if (is_now || is_next)
                 fb_fill_rect(fb, lm - bar_w - bar_gap, ty,
-                             bar_w, text_h, COLOR_RED);
+                             bar_w, text_h, state_color);
 
             char info[48];
             snprintf(info, sizeof(info),
-                     "\xe7\xac\xac%d\xe8\x8a\x82  %02d:%02d-%02d:%02d",
+                     "第%d节  %02d:%02d-%02d:%02d",
                      p + 1,
                      pd->start_hour, pd->start_minute,
                      pd->end_hour, pd->end_minute);
             tt_draw_text(fb, lm, ty, info, COLOR_BLACK, s);
 
             if (is_now) {
-                const char *tag = "\xe8\xbf\x9b\xe8\xa1\x8c\xe4\xb8\xad";
+                const char *tag = "进行中";
                 int tw = tt_text_px(fb, tag, s);
-                tt_draw_text(fb, W - rm - tw, ty, tag, COLOR_RED, s);
+                tt_draw_text(fb, W - rm - tw, ty, tag, state_color, s);
             }
 
             int ny = ty + 16 * s + 2 * s;
@@ -981,9 +1021,9 @@ esp_err_t timetable_show_day(int day)
         } else {
             int ly = by + (block_h - 16 * s) / 2;
 
-            if (is_now)
+            if (is_now || is_next)
                 fb_fill_rect(fb, lm - bar_w - bar_gap, ly,
-                             bar_w, 16 * s, COLOR_RED);
+                             bar_w, 16 * s, state_color);
 
             char prefix[24];
             snprintf(prefix, sizeof(prefix), "%d %02d:%02d",
@@ -1014,10 +1054,8 @@ esp_err_t timetable_show_day(int day)
     /* ── footer ── */
     {
         char foot[48];
-        snprintf(foot, sizeof(foot),
-                 "%s %d \xe8\x8a\x82\xe8\xaf\xbe",
-                 TT_DAY_FULL[day], count);
-        tt_draw_footer(fb, "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8", foot);
+        snprintf(foot, sizeof(foot), "%s %d 节课", tt_day_full(day), count);
+        tt_draw_footer(fb, "课程表", foot);
     }
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -1026,7 +1064,7 @@ esp_err_t timetable_show_day(int day)
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t err = epd_display_fb_free(fb);
+    esp_err_t err = tt_display_fb_if_current(fb, epoch);
     free(snap);
 
     if (err != ESP_OK) {
@@ -1039,23 +1077,19 @@ esp_err_t timetable_show_day(int day)
 
 esp_err_t timetable_show(void)
 {
-    unsigned epoch = display_policy_display_epoch();
+    unsigned epoch = display_mode_render_epoch();
 
     timetable_config_t snap;
     if (timetable_get_config(&snap) == ESP_OK && !snap.enabled) {
-        return tt_show_hint_page(
-            "\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe6\x9c\xaa\xe5\x90\xaf\xe7\x94\xa8",
-            "\xe7\xbd\x91\xe9\xa1\xb5\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8\xe8\xae\xbe\xe7\xbd\xae",
-            "\xe8\xae\xbe\xe7\xbd\xae", epoch);
+        return tt_show_hint_page("课程表未启用", "网页课程表设置",
+                                 "设置", epoch);
     }
 
     struct tm tm;
     if (!time_sync_get_local_relaxed(&tm)) {
         ESP_LOGW(TAG, "time not synced");
-        return tt_show_hint_page(
-            "\xe7\xad\x89\xe5\xbe\x85\xe6\x97\xb6\xe9\x97\xb4\xe5\x90\x8c\xe6\xad\xa5",
-            "\xe8\x81\x94\xe7\xbd\x91\xe5\x90\x8e\xe6\x98\xbe\xe7\xa4\xba\xe8\xaf\xbe\xe7\xa8\x8b\xe8\xa1\xa8",
-            "\xe6\x97\xb6\xe9\x97\xb4", epoch);
+        return tt_show_hint_page("等待时间同步", "联网后显示课程表",
+                                 "时间", epoch);
     }
     return timetable_show_day(tt_weekday_mon0(&tm));
 }
@@ -1211,10 +1245,12 @@ esp_err_t timetable_http_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_CONFIG_MS);
     int received = 0;
     while (received < total) {
-        int r = httpd_req_recv(req, buf + received, total - received);
-        if (r <= 0) { free(buf); httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "recv fail"); return ESP_OK; }
+        int r = http_receive_chunk(req, &receive, buf + received, total - received);
+        if (r <= 0) { free(buf); return ESP_FAIL; }
         received += r;
     }
     buf[received] = '\0';
@@ -1329,36 +1365,31 @@ esp_err_t timetable_show_http_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"EPD not ready\"}");
         return ESP_OK;
     }
+    if (!http_require_mode_available(req, DISPLAY_MODE_TIMETABLE))
+        return ESP_OK;
 
     /* parse optional {"day":0..6} from body */
     int show_day = -1;
     int body_remaining = req->content_len;
     if (body_remaining > 0 && body_remaining < 128) {
         char buf[128];
-        int r = httpd_req_recv(req, buf, sizeof(buf) - 1);
-        if (r > 0) {
-            body_remaining -= r;
-            buf[r] = '\0';
-            cJSON *root = cJSON_Parse(buf);
-            if (root) {
-                cJSON *jd = cJSON_GetObjectItem(root, "day");
-                if (cJSON_IsNumber(jd))
-                    show_day = jd->valueint;
-                cJSON_Delete(root);
-            }
+        if (!http_read_request_body(req, buf, sizeof(buf), "invalid day body"))
+            return ESP_FAIL;
+        body_remaining = 0;
+        cJSON *root = cJSON_Parse(buf);
+        if (root) {
+            cJSON *jd = cJSON_GetObjectItem(root, "day");
+            if (cJSON_IsNumber(jd))
+                show_day = jd->valueint;
+            cJSON_Delete(root);
         }
     }
 
     /* drain remaining body */
-    char tmp[64];
-    while (body_remaining > 0) {
-        int to_recv = body_remaining < (int)sizeof(tmp) ? body_remaining : (int)sizeof(tmp);
-        int r = httpd_req_recv(req, tmp, to_recv);
-        if (r <= 0) break;
-        body_remaining -= r;
-    }
+    if (body_remaining > 0 && !http_receive_drain(req)) return ESP_FAIL;
 
-    display_policy_begin_manual_display();
+    display_request_token_t token = display_policy_begin_request(
+        DISPLAY_MODE_TIMETABLE, EPD_REFRESH_FULL);
 
     esp_err_t err;
     if (show_day >= 0 && show_day < TT_DAYS)
@@ -1366,7 +1397,10 @@ esp_err_t timetable_show_http_handler(httpd_req_t *req)
     else
         err = timetable_show();
 
-    if (err == ESP_OK) {
+    if (!display_policy_finish_request(&token, err, true))
+        err = ESP_ERR_INVALID_STATE;
+
+    if (err == ESP_OK && display_policy_epoch_is_current(token.epoch)) {
         button_set_current_mode(DISPLAY_MODE_TIMETABLE);
         power_mgr_save_mode(DISPLAY_MODE_TIMETABLE);
     }

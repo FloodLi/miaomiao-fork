@@ -1,12 +1,46 @@
 # 喵哎-MiaooAim 实现文档
 
+## 多屏图片工作区（2026-09-13）
+
+提交前补充：图库`POST /show`保留`ok/queued`并返回`epoch`，`GET /status?display_epoch=N`增加`display_result`（epoch、pending/ok/error/canceled/unavailable状态、错误名），不带参数时兼容原响应。网页按1秒间隔查询，单次10秒、总计5分钟；旧固件无回执、超时和断网不视为成功。所有首页显示/删除/上传操作以UI序号隔离迟到提示，离开页面停止查询。
+
+删除文件不存在返回404，I/O错误返回500；组合删除/清屏如实说明部分结果，抢占返回409。清屏与图库预清屏在显示锁内校验epoch，旧任务不执行GPIO/SPI操作。绘图快速横线分支与单像素保持相同颜色降级，支持的四色/E6像素编码不变。对应测试使用可公开夹具，不再强依赖本机照片。
+
+选择图片后进入独立工作区，返回管理页或Esc退出保留编辑状态。桌面大画布配默认300px、260至380px可调参数栏；手机竖屏固定预览、下方独立参数滚动，横屏左右排列。编辑区使用Shadow DOM隔离旧页面布局和装饰，按钮、滑块、选中态及焦点框通过`--editor-accent`等变量跟随三套主题；预览背景始终中性灰白，主题不改变图片或调色参数。按用户浅粉参考，Loopy按钮/选中底色为`#FFE6EE`，其他主题使用相应浅色底，配深色文字和焦点框，不使用大块深红。其他标签页修改主题也会同步。360px窄屏将上传命令显示为带提示和可访问名称的图标，避免工具栏换成第三行。
+
+`/status.image_profile`包含`id`、`color_type`和`inks`，宽高沿用`panel_width/panel_height`。`epd_panel_image_profile()`仅从驱动描述读取逻辑画布及墨色，按明确ID区分JD79665、JD79668、SSD2677、E6；六色不按分辨率推断，128x250 RAM画布及已有驱动/图片方向补偿保持。HTTP路由仍81条，嵌入资源仍12HTML、2JS、1PNG，无新增路由。
+
+所有图片处理放在`web/image_processor.js`：黑白/文字共用线性亮度；三色和四色采用受允许墨色约束的覆盖比例量化，保护中性灰及纯黑白端点；E6保留既有色板和独立扩散核心。色彩、黑白、文字各自保存参数，不适用的调节项隐藏。默认不增强对比度、饱和度或锐化，ID34沿用样稿偏色抑制35、ID37为0；非JD四色默认标准扩散，不自动套用JD柔化参数。
+
+单在途及最新待处理任务携带原图epoch、参数revision、面板和处理配置身份；换图、换屏清除旧结果及拖动状态，Worker和同步回退调用同一函数。上传编码当前完整点阵，完成后检查版本，再读取设备状态复核目标；离线、无效能力、坏图、处理失败或编码期间改图不会发送旧帧。面积平均缓冲只用于显示，查看缩放及原图对比不影响上传。
+
+存储使用`upload_editor_v4_panel_<id>`，保留v3及旧`upload_img_opts*`键。命名风格映射三种新模式并恢复中性调色；自定义/v3导入兼容调色值，不导入上一张图片的裁剪。每种模式独立参数、最多50步历史、单项/分组重置保留。旧量化核心存入测试夹具，不再随生产页面加载。
+
+网页UI配色不等于实屏校色。内置页面仍沿用原有规则：ID37的平衡、暖黄、醒目红、黑白主题及黑色正文、红色警告、黄色提示；其他型号保留原有内置页面颜色。本轮不改变日历、时钟等页面，不修改电压、LUT、BUSY、刷新时序、分区或字体。用户随后报告4.2寸实测“效果挺好的”，记录为ID37样图的正向实测反馈，不扩大为全型号或测色验收；本次网页主题调整不改图像算法和参数。
+
+## 彩色文字留言修复（2026-09-13）
+
+网页字体先在白底上以黑色绘制字形，用阈值选择笔画像素后再填入用户选择的墨色。旧实现先绘制彩色文字，再用亮度判断笔画；黄色`[255,232,0]`的加权亮度约213，高于默认170阈值，导致整段被清成白色，红绿等颜色也会丢失部分边缘。当前阈值只控制字形粗细，与墨色亮度无关，RGB墨色编码不变。
+
+留言页E6仅通过明确ID43及颜色能力识别，取消分辨率推断；不支持的颜色仍按原规则降为黑色。浏览器回归覆盖不同阈值下各色字形一致、上传PNG与预览一致、错误恢复、空文字及移动布局；生产图片转换主机回归验证黄色PNG的raw和framebuffer两条路径。没有改动图片编辑算法、内置字库留言模式、驱动、电压或LUT。
+
+## 历史：ID34 编辑器（2026-09-10）
+
+JD79665 7.5寸采用独立v3图片编辑状态：色彩、黑白、文字三种模式分别记住参数，构图与观看缩放分离，裁剪中心采用旋转/镜像后的归一化坐标。桌面大画布和320px参数栏并排，展开整个编辑器后仍可调参和上传；手机使用固定预览及独立参数滚动。
+
+`image_processor.js` 为窗口和Worker共用的无DOM处理模块，包含四色覆盖比例量化、黑白、文字、暗部曲线和裁剪约束。图像预处理使用读取型Canvas上下文保证重复操作结果稳定。默认参数中性，色彩模式保留前一轮量化黄金输出；文字禁用抖动、锐化和暗部提升，黑白使用统一亮度流程而非旧风格预设。
+
+编辑器队列最多一个在途及一个最新待处理任务，使用原图epoch和参数revision校验返回结果；Worker失败或超时后同步回退。上传只编码最新完整帧，在异步PNG编码完成后再次校验版本，处理中、坏图或错误状态禁止发送旧帧。显示面积平均缓冲不参与上传。
+
+`upload_editor_v3_panel_34` 仅保存模式和各模式调色参数，旧存储键不覆盖；新图重置构图及观看状态，不保存原图。撤销/重做最多50个参数快照，一次拖动算一步。其他面板保持旧参数和量化路径。新增静态`GET /image_processor.js`，HTTP接口共81条，嵌入JS为2个。
+
 ## 实现状态快照（2026-08-10）
 
-当前实现已经覆盖图片转换、图库、轮播、天气、时钟、日历、课程表、待办、倒计时、Codex 额度看板、留言板、画布、OTA、低功耗和外置 fontfs 字库。稳定性基线包括：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 只保存配置并提示重启；`format_if_mount_failed=false` 保护 SPIFFS 用户内容；挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志；低功耗正常启动与 RTC 定时器 quick-refresh 已分离。
+当前实现已经覆盖图片转换、图库、轮播、天气、时钟、日历、课程表、待办、倒计时、Codex 额度看板、留言板、画布、OTA、低功耗和外置 fontfs 字库。稳定性基线包括：`display_policy_begin_manual_display()` 统一手动显示 epoch，主要显示入口在最终刷屏前校验 epoch；`/calendar_show`、`/canvas_show`、`/msg_show` 等异步渲染入口等待任务完成后再返回，并在被新请求抢占时返回 `canceled=true`；API/配置/媒体 GET 接口补齐 Basic Auth；`/panel_config` 保存面板配置后按实际变化自动延迟重启，避免热切换期间旧 framebuffer/raw 文件按新尺寸读取；`format_if_mount_failed=false` 保护 SPIFFS 用户内容；挂载失败时完整启动保留 AP/Web，若 EPD 可用会显示 `文件系统恢复` 恢复页；配置备份/恢复排除 Basic Auth；图库上传转换失败会删除坏图；正常启动时 EPD 初始化失败保留 AP/Web；AP 密码不再进入串口日志；低功耗正常启动与 RTC 定时器 quick-refresh 已分离。
 
 v2.3.5 在现有屏幕参考驱动和低功耗逻辑上，增加 BUSY 超时回退、UC 4.2 三色屏刷新后高压关断，以及实体按键可切换页面配置。
 
-v2.3.6 增加 E6 六色与 JD79665/JD79668/SSD2677 黑白红黄数据路径，按面板能力扩展 framebuffer、图片量化和画廊显示，并把天气配置扩展为 Open-Meteo/和风天气双数据源。UC8176 4.2 寸黑白实验面板增加快刷/局刷、前一帧缓存和维护性全刷，画板输入统一为 Pointer Events。
+v2.3.6 增加 E6 六色与 JD79665/JD79668/SSD2677 黑白红黄数据路径，按面板能力扩展 framebuffer、图片量化和画廊显示，并把天气配置扩展为 Open-Meteo/和风天气双数据源。后续维护版第一阶段只为 JD79668 4.2 寸增加九类页面语义色策略和双色天气图标；JD79665 7.5 寸仅增加独立图片预设和普通图片备用量化配置，不改变内置页面颜色和驱动波形。UC8176 4.2 寸黑白实验面板增加快刷/局刷、前一帧缓存和维护性全刷，画板输入统一为 Pointer Events。
 
 后续实现重点：OTA 与低功耗长稳测试、更多屏幕型号适配，以及在源码、分区表或字库资源变化后保持 Release 包与校验信息同步。
 
@@ -97,7 +131,7 @@ msp/
 │   ├── app_main.c              # 入口：双启动路径（完整启动 / 深睡快速刷新）
 │   ├── epd_stub.c / epd.h     # EPD 驱动（SSD1619 / UC8179 / ATC-Solum / EPD-nRF5 参考面板，SPI DMA）
 │   ├── image_convert.c/h      # 图片解码（JPEG/PNG/BMP → Floyd-Steinberg 抖色）
-│   ├── http_app.c/h           # HTTP 服务器（75 条路由 + Basic Auth + OTA）
+│   ├── http_app.c/h           # HTTP 服务器（81 条路由 + Basic Auth + OTA）
 │   ├── http_gallery.c         # 画廊 HTTP 路由
 │   ├── http_features.c        # 功能模块 HTTP 路由
 │   ├── http_canvas.c          # 画布留言板 HTTP 路由与素材管理
@@ -122,6 +156,7 @@ msp/
 │   ├── fb_render.c/h          # 帧缓冲渲染引擎
 │   ├── font_data.h            # 点阵字库（ASCII + 中文）
 │   ├── ui_theme.c/h           # 墨水屏页面通用 UI 主题组件
+│   ├── ui_color_theme.c/h     # JD79668 九类页面语义色策略与 NVS 配置
 │   ├── display_policy.c/h     # 显示策略协调
 │   ├── display_mode.c/h       # 显示模式注册与切换
 │   ├── device_identity.c/h    # 设备标识
@@ -135,7 +170,8 @@ msp/
 │   ├── timetable.html         # 课程表编辑
 │   ├── todo.html              # 待办事项管理
 │   ├── countdown.html         # 倒计时配置
-│   └── board.html             # 画布留言板可视化编辑器
+│   ├── board.html             # 画布留言板可视化编辑器
+│   └── feature_help.js        # 12 个页面共享的功能说明组件
 ├── README.md
 ├── IMPLEMENTATION.md           # 本文档
 └── ROADMAP.md                  # 当前维护路线图
@@ -148,7 +184,7 @@ msp/
 | **应用入口** | `app_main.c` | 双启动路径：完整启动（WiFi+HTTP+全功能）/ 深睡快速刷新 |
 | **EPD 驱动** | `epd_stub.c` / `epd.h` | SSD1619 + UC8179 双屏支持，SPI DMA，BWR 三色 |
 | **图片转换** | `image_convert.c/h` | JPEG/PNG/BMP 解码、拉伸全屏、Floyd-Steinberg 抖色 |
-| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 75 条路由 + Basic Auth + OTA |
+| **HTTP 服务器** | `http_app.c/h` + `http_gallery.c` + `http_features.c` + `http_canvas.c` | 81 条路由 + Basic Auth + OTA |
 | **WiFi 管理** | `wifi_manager.c/h` | AP+STA 共存、NVS 凭据、自动重连 |
 | **轮播调度** | `scheduler.c/h` | 画廊顺序/随机自动轮播 |
 | **天气** | `weather.c/h` | 和风天气 HTTPS，实时+3 天预报 |
@@ -169,13 +205,20 @@ msp/
 | **SPIFFS 存储** | `spiffs_mount.c/h` | 挂载/健康检查/画廊目录，挂载失败不自动格式化用户数据 |
 | **设备标识** | `device_identity.c/h` | MAC → AP SSID / mDNS |
 | **PNG 解码** | `lodepng.c/h` | 第三方纯 C 库（编译时裁剪）|
-| **Web 前端** | `web/*.html` | `index` / `config` / `timetable` / `todo` / `countdown` + 三套主题 |
+| **Web 前端** | `web/*.html` + `web/feature_help.js` | 12 个中文页面、共享说明组件和三套主题 |
 
 ### 3.2.1 显示请求仲裁与异步语义
 
 当前版本把“谁有资格最终刷屏”收敛到 `display_policy`：用户主动触发的显示入口先调用 `display_policy_begin_manual_display()` 获取 epoch，并在最终 `epd_display_*()` 前调用 `display_policy_epoch_is_current(epoch)`。如果用户又上传图片、点画布、按键切换或触发其它显示，新请求会 bump epoch，旧任务在刷屏前退出，避免旧画面反盖新画面。
 
 日历、画布、留言板仍使用内部渲染任务以免阻塞 HTTP 服务器过久，但 HTTP 层已经不再把“任务创建成功”当作“屏幕显示成功”：`/calendar_show`、`/canvas_show`、`/msg_show` 会等待对应渲染任务结束，被新请求抢占时返回 `canceled=true`。后续若做统一 display queue，应保持同样的 epoch 和取消语义。
+
+### 3.2.2 界面语言边界
+
+- 当前公开源码的 Web 管理端和设备固定文案统一使用简体中文。
+- 课程、待办、倒计时、留言、SSID、城市和图片文件名等用户数据保持原文。
+- 其它定制功能独立维护，不进入本目录的 CMake、HTTP 路由和配置备份。
+
 ### 3.3 数据流详解
 
 ```
@@ -417,6 +460,8 @@ if (is_red_pixel(r, g, b)) {
 - 灰度使用 **BT.601 加权公式**：`Y = 0.30R + 0.59G + 0.11B`
 - 红色像素标记后灰度设为白色，防止其参与黑白抖动
 - 红色检测使用 **多维阈值**，避免棕色、橙色等被误判
+
+JD79665 ID34 和 JD79668 ID37按精确编号选择图片量化配置。中性源像素（最大最小通道差不超过20）只输出黑白：阈值128、全强度蛇形误差扩散，残差使用Q4精度保留暗部层次；纯黑白文字和边框不接收邻近误差。ID34有彩色区域保留阈值104、误差增益192/256及红黄增益280/256、288/256；ID37彩色区域使用阈值104与单位增益。Bayer低内存路径对中性灰使用无偏阈值。其它面板保留原路径；已经量化为当前面板受支持墨色的PNG优先直通，普通中间灰不作为预量化点阵处理。
 
 #### 第四步：Floyd-Steinberg 抖动
 
@@ -663,6 +708,7 @@ httpd_resp_send(req, (const char *)index_html_start,
 | POST | `/delete` | 清屏 |
 | GET/POST | `/wifi_*`, `/scan` | WiFi 配网 API |
 | GET/POST | `/panel_config` | 屏幕型号配置；保存后需重启生效 |
+| GET/POST | `/ui_color_config` | JD79668 九类页面语义配色 |
 | GET/POST | `/weather_*` | 天气配置 API |
 | GET/POST | `/clock_*` | 时钟配置 API |
 | GET/POST | `/slideshow` | 轮播配置 API |
@@ -678,7 +724,7 @@ httpd_resp_send(req, (const char *)index_html_start,
 | POST | `/ota` | 固件升级 |
 | GET | `/version` | 固件版本 |
 | POST | `/spiffs_remount` / `/spiffs_format` | 文件系统诊断恢复；格式化必须提交 `{"confirm":"FORMAT_SPIFFS"}` |
-| *… 共 75 条路由，以 `http_app.c` 为准* | | |
+| *… 共 81 条路由，以 `http_app.c` 为准* | | |
 
 ---
 
@@ -736,7 +782,7 @@ image_convert_file_to_epd_raw(input_path, out_path);
 httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 config.recv_wait_timeout  = 5;      // 接收超时 5 秒，快速释放空闲连接
 config.send_wait_timeout  = 5;      // 发送超时 5 秒
-config.max_uri_handlers   = 80;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前 75）
+config.max_uri_handlers   = 88;     // esp_http_server 可注册句柄上限（须 ≥ 实际 URI 条数；当前 81）
 config.stack_size         = 16384;  // HTTP 任务栈 16KB（图片转换需要较深调用栈）
 config.lru_purge_enable   = true;   // 当连接数满时，关闭最久未使用的连接
 ```
@@ -904,11 +950,14 @@ idf.py -p COMx flash
 1. 点击「选择文件」按钮，选择一张 JPEG、PNG 或 BMP 图片
 2. 点击「上传并显示」按钮
 3. 浏览器按当前面板尺寸生成预处理 PNG
+   - JD79665 7.5 寸和 JD79668 4.2 寸分别使用专属照片/动漫/文字/柔和/黑白照片参数，可独立选择四色或黑白；各面板的手动调整分别保存在浏览器中
 4. 上传到 ESP32 后，系统自动进行：
    - 按文件魔数保存画廊副本（`.png` / `.bmp` / `.jpg`）
    - 固件识别 JPEG / PNG / BMP 后转换为当前面板 raw 平面
    - 通过 SPI DMA 传输到墨水屏
 5. 等待墨水屏完成全刷新；实际耗时随 4.2"/5.83" 面板、温度和 BUSY 状态变化，常见约 10~35 秒
+
+> 已经存入图库的预量化 PNG 不包含原始连续色阶，不能通过再次量化恢复细节。升级后需要重新选择原图上传，才能使用 JD79665/JD79668 新参数。
 
 ### 8.3 画廊管理
 
@@ -966,9 +1015,9 @@ app_main()
     │
     ├─ 内容模块初始化                天气/时钟/日历/课程表/待办/留言板/画布/轮播
     │
-    ├─ http_app_start()              HTTP 服务器（75 条路由，Basic Auth）
+    ├─ http_app_start()              HTTP 服务器（81 条路由，Basic Auth）
     │
-    ├─ 显示欢迎屏
+    ├─ 显示欢迎屏（JD79665 7.5" BWRY 为避免连续慢速全刷，直接恢复上次页面）
     │
     └─ power_mgr_arm()               启动闲置监控（超时 → 深度睡眠）
 ```

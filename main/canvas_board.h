@@ -26,6 +26,7 @@
  */
 
 #include "esp_err.h"
+#include "display_policy.h"
 #include "fb_render.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -66,6 +67,7 @@ esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path);
  */
 esp_err_t canvas_board_show(void);
 esp_err_t canvas_board_show_queued(unsigned *out_epoch);
+display_result_t canvas_board_wait_result(unsigned epoch);
 
 /**
  * 等待当前渲染任务完成（阻塞）。

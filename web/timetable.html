@@ -203,12 +203,6 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
       </div>
     </div>
     <div class="bd">
-      <div class="row row-cfg">
-        <label style="font-size:13px;font-weight:600">学期开始日期</label>
-        <input type="date" id="inpSemStart" style="width:160px">
-        <label style="font-size:13px;font-weight:600;margin-left:12px">显示天数</label>
-        <select id="selDays"><option value="5">周一至周五</option><option value="7">周一至周日</option></select>
-      </div>
       <div class="row" style="margin-top:6px">
         <span class="sub" id="weekInfo"></span>
       </div>
@@ -226,27 +220,38 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
           <option value="6">周日</option>
         </select>
         <button class="btn ghost" onclick="showOnEpd()">推送到屏幕</button>
-        <button class="btn ghost" onclick="exportTimetable()">导出</button>
-        <label class="btn ghost" style="cursor:pointer">导入<input type="file" accept=".json" style="display:none" onchange="importTimetable(this)"></label>
-        <button class="btn ghost" onclick="clearAll()" style="color:var(--er)">清空</button>
       </div>
+      <details class="more-settings" id="timetableMoreSettings">
+        <summary>更多设置</summary>
+        <div class="more-settings-body">
+          <div class="row row-cfg">
+            <label class="help-label" style="font-size:13px;font-weight:600"><span>学期开始日期</span><button type="button" class="info-dot" aria-label="查看学期开始日期说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="用于计算当前是第几教学周。通常填写第一周周一的日期；日期不准确会导致按周次过滤的课程显示错误。"></button></label>
+            <input type="date" id="inpSemStart" style="width:160px">
+            <label class="help-label" style="font-size:13px;font-weight:600;margin-left:12px"><span>显示天数</span><button type="button" class="info-dot" aria-label="查看课程表显示天数说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="选择五天时只显示周一至周五；选择七天时包含周末。此设置同时影响网页课程格和墨水屏课程表。"></button></label>
+            <select id="selDays"><option value="5">周一至周五</option><option value="7">周一至周日</option></select>
+          </div>
+          <div class="row">
+            <button class="btn ghost" onclick="exportTimetable()">导出</button>
+            <label class="btn ghost" style="cursor:pointer">导入<input type="file" accept=".json" style="display:none" onchange="importTimetable(this)"></label>
+            <button class="btn ghost" onclick="clearAll()" style="color:var(--er)">清空</button>
+          </div>
+        </div>
+      </details>
       <div class="log" id="log">就绪。</div>
     </div>
   </div>
 
   <!-- period definitions -->
-  <div class="card">
-    <div class="hd">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><div class="title" style="font-size:16px">节次时间</div><div class="sub">定义每节课的上下课时间（所有天共用）</div></div>
-        <div style="display:flex;gap:6px">
+  <details class="card more-settings" id="timetablePeriodsSettings">
+    <summary><span><strong>节次时间</strong><small style="display:block;margin-top:3px;color:var(--t2);font-size:12px;font-weight:600">定义所有天共用的上下课时间</small></span></summary>
+    <div class="more-settings-body">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn sm ghost" onclick="addPeriod()">+ 添加节次</button>
           <button class="btn sm ghost" onclick="applyTemplate()">套用模板</button>
         </div>
+        <div id="periodList"></div>
     </div>
-    </div>
-    <div class="bd" id="periodList"></div>
-  </div>
+  </details>
 
   <!-- grid -->
   <div class="card">
@@ -266,7 +271,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     <input type="text" id="mName" maxlength="39" placeholder="如：高等数学">
     <label>教室</label>
     <input type="text" id="mRoom" maxlength="19" placeholder="如：A101">
-    <label>上课周次</label>
+    <label class="help-label"><span>上课周次</span><button type="button" class="info-dot" aria-label="查看课程周次填写说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="可填写连续范围 1-16、分散周次 1,3,5 或混合格式 1,3,5,7-9；留空表示每周都上。"></button></label>
     <input type="text" id="mWeeks" placeholder="如：1-16 或 1,3,5,7 或留空=全部">
     <div class="sub" style="margin-top:4px">支持格式：1-16, 1,3,5,7-9, 留空表示每周都上</div>
     <div class="actions">
@@ -297,6 +302,7 @@ let cfg={enabled:false,period_count:0,show_days:5,semester_start:0,periods:[],gr
 let editDay=-1,editPeriod=-1;
 
 function log(s,cls){const el=document.getElementById('log');el.className='log'+(cls?' '+cls:'');el.textContent=s}
+function openTimetableSettings(id){var d=document.getElementById(id);if(window.epdExpandMoreSettings)window.epdExpandMoreSettings(d);else if(d)d.open=true;}
 
 function initGrid(){
   cfg.grid=[];
@@ -443,7 +449,7 @@ async function importTimetable(input){
   try{
     var text=await input.files[0].text();
     var data=JSON.parse(text);
-    if(!data.periods||!data.grid){log('JSON 格式无效，需包含 periods 和 grid 字段','bad');return;}
+    if(!data.periods||!data.grid){openTimetableSettings('timetableMoreSettings');log('JSON 格式无效，需包含 periods 和 grid 字段','bad');return;}
     cfg=data;
     renderPeriods();renderGrid();
     document.getElementById('chkEnabled').checked=!!cfg.enabled;
@@ -509,8 +515,9 @@ async function saveConfig(){
   try{
     const r=await fetch('/timetable',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
     const j=await r.json();
+    if(!j.ok){openTimetableSettings('timetableMoreSettings');if(cfg.period_count===0)openTimetableSettings('timetablePeriodsSettings');}
     log(j.ok?'保存成功！':'保存失败',j.ok?'ok':'bad');
-  }catch(e){log('保存失败：'+e,'bad')}
+  }catch(e){openTimetableSettings('timetableMoreSettings');log('保存失败：'+e,'bad')}
 }
 
 async function showOnEpd(){
@@ -540,5 +547,6 @@ loadConfig();
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

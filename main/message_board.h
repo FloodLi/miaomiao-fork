@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include "display_policy.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -25,4 +26,5 @@ esp_err_t message_board_get_config(msg_config_t *out);
 esp_err_t message_board_set_config(const msg_config_t *cfg);
 esp_err_t message_board_show(void);
 esp_err_t message_board_show_queued(unsigned *out_epoch);
+display_result_t message_board_wait_result(unsigned epoch);
 void message_board_wait_idle(void);

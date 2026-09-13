@@ -17,8 +17,9 @@ typedef enum {
     COLOR_GREEN  = 5,
 } fb_color_t;
 
-/* Most panels render with two planes (black + red). E6 3.7" allocates three
- * optional accent planes so built-in UI can use yellow, blue, and green too.
+/* Normal framebuffers own black + red planes. Small render-only views may omit
+ * red on BW panels. E6 3.7" allocates three optional accent planes so built-in
+ * UI can use yellow, blue, and green too.
  */
 typedef struct {
     uint8_t *black;

@@ -169,6 +169,7 @@ static void render_message(unsigned epoch)
     fb_t *fb = fb_create();
     if (!fb) {
         ESP_LOGE(TAG, "fb_create failed");
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_NO_MEM, true);
         return;
     }
 
@@ -180,6 +181,7 @@ static void render_message(unsigned epoch)
     if (cfg.text[0] == '\0') {
         fb_destroy(fb);
         ESP_LOGW(TAG, "No message to display");
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_INVALID_STATE, true);
         return;
     }
 
@@ -202,7 +204,7 @@ static void render_message(unsigned epoch)
              (int)strlen(cfg.text));
 
     ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    ui_draw_header(fb, "\xe7\x95\x99\xe8\xa8\x80\xe6\x9d\xbf", "\xe7\x95\x99\xe8\xa8\x80", true);
+    ui_draw_header(fb, "留言板", "留言", true);
 
     /* first pass: calculate lines for vertical centering */
     typedef struct { const char *start; int len; int px_w; } line_t;
@@ -288,8 +290,8 @@ static void render_message(unsigned epoch)
                             hint_y, "...", COLOR_BLACK, 16);
     }
 
-    ui_draw_footer(fb, "\xe7\x95\x99\xe8\xa8\x80\xe6\x9d\xbf",
-                   cfg.align == MSG_ALIGN_CENTER ? "\xe5\xb1\x85\xe4\xb8\xad" : "\xe5\xb7\xa6\xe5\xaf\xb9\xe9\xbd\x90");
+    ui_draw_footer(fb, "留言板",
+                   cfg.align == MSG_ALIGN_CENTER ? "居中" : "左对齐");
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
@@ -312,16 +314,21 @@ static void render_message(unsigned epoch)
     if (err == ESP_OK && epd_is_ready() && display_policy_epoch_is_current(epoch)) {
         ESP_LOGI(TAG, "FB exported, sending to EPD (%d lines, scale=%d px=%d)...",
                  line_count, scale, target_px);
-        esp_err_t disp_err = epd_display_from_file_mode(raw_path, EPD_REFRESH_FAST);
-        if (disp_err == ESP_OK) {
-            display_policy_set_manual_screen_active(true);
+        esp_err_t disp_err = epd_display_from_file_mode_epoch(raw_path, EPD_REFRESH_FAST, epoch);
+        if (disp_err == ESP_OK && !display_policy_epoch_is_current(epoch)) {
+            ESP_LOGI(TAG, "Message refresh completed but was superseded");
+        } else if (disp_err == ESP_OK) {
+            (void)display_policy_finish_epoch(epoch, ESP_OK, true);
             scheduler_notify_manual_show();
             ESP_LOGI(TAG, "Message displayed on EPD");
         } else {
+            (void)display_policy_finish_epoch(epoch, disp_err, true);
             ESP_LOGE(TAG, "display failed: %s", esp_err_to_name(disp_err));
         }
-    } else if (err != ESP_OK) {
-        ESP_LOGE(TAG, "fb_export failed: %s", esp_err_to_name(err));
+    } else {
+        esp_err_t final_err = err != ESP_OK ? err : ESP_ERR_INVALID_STATE;
+        (void)display_policy_finish_epoch(epoch, final_err, true);
+        ESP_LOGE(TAG, "message render failed: %s", esp_err_to_name(final_err));
     }
     fb_raw_file_unlock();
 }
@@ -349,14 +356,20 @@ esp_err_t message_board_set_config(const msg_config_t *cfg)
 }
 
 static SemaphoreHandle_t s_render_mutex;
-static atomic_bool       s_pending;
-static atomic_uint       s_pending_epoch;
+static SemaphoreHandle_t s_queue_mutex;
+static unsigned s_pending_epoch;
 
 esp_err_t message_board_init(void)
 {
     s_render_mutex = xSemaphoreCreateBinary();
     if (!s_render_mutex)
         return ESP_ERR_NO_MEM;
+    s_queue_mutex = xSemaphoreCreateMutex();
+    if (!s_queue_mutex) {
+        vSemaphoreDelete(s_render_mutex);
+        s_render_mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
     xSemaphoreGive(s_render_mutex);
     nvs_load();
     ESP_LOGI(TAG, "Message board init (text_len=%d, font=%d, align=%d, color=%d, xy=%d,%d)",
@@ -369,39 +382,47 @@ static void render_task(void *arg)
 {
     unsigned epoch = (unsigned)(uintptr_t)arg;
     for (;;) {
-        atomic_store(&s_pending, false);
         ESP_LOGI(TAG, "Render task started");
         render_message(epoch);
         ESP_LOGI(TAG, "Render task done");
 
-        portENTER_CRITICAL(&s_cfg_mux);
-        bool has_text = (s_cfg.text[0] != '\0');
-        portEXIT_CRITICAL(&s_cfg_mux);
-        if (!atomic_load(&s_pending) || !has_text) break;
-        epoch = atomic_load(&s_pending_epoch);
+        /* Submission and worker exit share a lock so no queued epoch is lost. */
+        xSemaphoreTake(s_queue_mutex, portMAX_DELAY);
+        epoch = s_pending_epoch;
+        s_pending_epoch = 0;
+        if (!epoch)
+            xSemaphoreGive(s_render_mutex);
+        xSemaphoreGive(s_queue_mutex);
+        if (!epoch)
+            break;
     }
 
-    xSemaphoreGive(s_render_mutex);
     vTaskDelete(NULL);
 }
 
 esp_err_t message_board_show_queued(unsigned *out_epoch)
 {
-    if (s_cfg.text[0] == '\0') {
+    if (out_epoch)
+        *out_epoch = 0;
+    portENTER_CRITICAL(&s_cfg_mux);
+    bool has_text = s_cfg.text[0] != '\0';
+    portEXIT_CRITICAL(&s_cfg_mux);
+    if (!has_text) {
         ESP_LOGW(TAG, "No message text set");
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (!s_render_mutex)
+    if (!s_render_mutex || !s_queue_mutex)
         return ESP_ERR_INVALID_STATE;
 
+    xSemaphoreTake(s_queue_mutex, portMAX_DELAY);
     unsigned epoch = display_policy_begin_manual_display_mode(EPD_REFRESH_FAST);
     if (out_epoch)
         *out_epoch = epoch;
 
     if (xSemaphoreTake(s_render_mutex, 0) != pdTRUE) {
-        atomic_store(&s_pending_epoch, epoch);
-        atomic_store(&s_pending, true);
+        s_pending_epoch = epoch;
+        xSemaphoreGive(s_queue_mutex);
         ESP_LOGI(TAG, "Render queued (will re-render after current finishes)");
         return ESP_OK;
     }
@@ -411,10 +432,18 @@ esp_err_t message_board_show_queued(unsigned *out_epoch)
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create render task");
         xSemaphoreGive(s_render_mutex);
-        return ESP_FAIL;
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_NO_MEM, true);
+        xSemaphoreGive(s_queue_mutex);
+        return ESP_ERR_NO_MEM;
     }
 
+    xSemaphoreGive(s_queue_mutex);
     return ESP_OK;
+}
+
+display_result_t message_board_wait_result(unsigned epoch)
+{
+    return display_policy_wait_result(epoch);
 }
 
 esp_err_t message_board_show(void)
@@ -424,8 +453,17 @@ esp_err_t message_board_show(void)
 
 void message_board_wait_idle(void)
 {
-    if (!s_render_mutex)
+    if (!s_render_mutex || !s_queue_mutex)
         return;
-    xSemaphoreTake(s_render_mutex, portMAX_DELAY);
-    xSemaphoreGive(s_render_mutex);
+    for (;;) {
+        /* An idle waiter must not make submission think a worker is running. */
+        xSemaphoreTake(s_queue_mutex, portMAX_DELAY);
+        bool idle = xSemaphoreTake(s_render_mutex, 0) == pdTRUE;
+        if (idle)
+            xSemaphoreGive(s_render_mutex);
+        xSemaphoreGive(s_queue_mutex);
+        if (idle)
+            return;
+        vTaskDelay(1);
+    }
 }

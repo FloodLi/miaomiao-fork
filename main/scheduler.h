@@ -27,3 +27,6 @@ const char *scheduler_get_current_image(void);
 
 /** Show next gallery image on EPD (for button-triggered display). */
 esp_err_t   scheduler_show_next_image(void);
+esp_err_t   scheduler_restore_last_image(void);
+esp_err_t   scheduler_restore_last_image_epoch(unsigned epoch);
+bool        scheduler_manual_screen_after_show(void);

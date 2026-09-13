@@ -13,6 +13,9 @@
  */
 esp_err_t time_sync_init(void);
 
+/** Restore the last trusted time, or firmware build time, before networking. */
+esp_err_t time_sync_restore_offline_time(void);
+
 /** true if time has been synchronized at least once. */
 bool time_sync_is_synced(void);
 

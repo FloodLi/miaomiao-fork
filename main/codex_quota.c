@@ -441,15 +441,22 @@ static void format_amount(char *buf, size_t len, bool have, double value,
 
 static void quota_date_header(char *buf, size_t len)
 {
-    static const char *const wd[] = {
-        "周日", "周一", "周二", "周三", "周四", "周五", "周六"
-    };
     struct tm tm;
     if (time_sync_get_local_relaxed(&tm)) {
-        snprintf(buf, len, "%d\xe6\x9c\x88%d\xe6\x97\xa5 %s\xe6\x99\x9a\xe4\xb8\x8a", tm.tm_mon + 1, tm.tm_mday,
-                 wd[tm.tm_wday]);
+        static const char *const weekdays[] = {
+            "星期日", "星期一", "星期二", "星期三",
+            "星期四", "星期五", "星期六"
+        };
+        const char *period = tm.tm_hour < 6 ? "凌晨" :
+                             tm.tm_hour < 12 ? "上午" :
+                             tm.tm_hour < 18 ? "下午" : "晚上";
+        int wday = tm.tm_wday;
+        if (wday < 0 || wday > 6)
+            wday = 0;
+        snprintf(buf, len, "%d月%d日 %s%s", tm.tm_mon + 1, tm.tm_mday,
+                 weekdays[wday], period);
     } else {
-        snprintf(buf, len, "AI用量看板");
+        snprintf(buf, len, "%s", "AI用量看板");
     }
 }
 
@@ -468,7 +475,7 @@ static void draw_header_like_reference(fb_t *fb, const codex_quota_data_t *data)
     char center[40];
     (void)data;
     quota_date_header(center, sizeof(center));
-    ui_draw_header(fb, "Codex额度", center, true);
+    ui_draw_header_for(fb, UI_COLOR_PAGE_CODEX, "Codex额度", center, true);
 }
 
 static void draw_quota_bar(fb_t *fb, int x, int y, int w, int h, int percent,
@@ -509,7 +516,7 @@ static void draw_quota_row(fb_t *fb, int y, const char *label, int percent,
 
     char pct[10];
     snprintf(pct, sizeof(pct), "%d%%", percent);
-    ui_draw_fixed_text(fb, pct_x, text_y, pct, color == COLOR_RED ? COLOR_RED : COLOR_BLACK, 1);
+    ui_draw_fixed_text(fb, pct_x, text_y, pct, color, 1);
     ui_draw_fixed_text_maxw(fb, date_x, text_y, right ? right : "--", COLOR_BLACK, 1, right_w);
 }
 
@@ -563,6 +570,28 @@ static int percent_from_ratio(double part, double total)
     return pct;
 }
 
+static fb_color_t quota_used_color(int percent)
+{
+    if (percent >= 80)
+        return ui_color_resolve(UI_COLOR_PAGE_CODEX,
+                                UI_COLOR_ROLE_WARNING, COLOR_RED);
+    if (percent >= 50)
+        return ui_color_resolve(UI_COLOR_PAGE_CODEX,
+                                UI_COLOR_ROLE_NOTICE, COLOR_BLACK);
+    return COLOR_BLACK;
+}
+
+static fb_color_t quota_remaining_color(int percent)
+{
+    if (percent <= 20)
+        return ui_color_resolve(UI_COLOR_PAGE_CODEX,
+                                UI_COLOR_ROLE_WARNING, COLOR_RED);
+    if (percent <= 50)
+        return ui_color_resolve(UI_COLOR_PAGE_CODEX,
+                                UI_COLOR_ROLE_NOTICE, COLOR_BLACK);
+    return COLOR_BLACK;
+}
+
 static void format_request_count(char *buf, size_t len, int count)
 {
     if (count < 0)
@@ -592,30 +621,40 @@ static void quota_refresh_label(const codex_quota_config_t *cfg, char *buf, size
 {
     uint32_t refresh_min = cfg ? cfg->refresh_min : 0;
     if (refresh_min > 0)
-        snprintf(buf, len, "自动%lu分钟刷新", (unsigned long)refresh_min);
+        snprintf(buf, len, "自动%lu分钟刷新",
+                 (unsigned long)refresh_min);
     else
-        snprintf(buf, len, "\xe6\x98\xbe\xe7\xa4\xba\xe6\x97\xb6\xe6\x9b\xb4\xe6\x96\xb0");
+        snprintf(buf, len, "%s", "显示时更新");
 }
 
-static void render_quota_page(const codex_quota_config_t *cfg,
-                              const codex_quota_data_t *data,
-                              const char *error)
+static esp_err_t render_quota_page(const codex_quota_config_t *cfg,
+                                   const codex_quota_data_t *data,
+                                   const char *error,
+                                   unsigned epoch)
 {
     fb_t *fb = fb_create();
     if (!fb)
-        return;
+        return ESP_ERR_NO_MEM;
 
     char refresh_label[32];
     quota_refresh_label(cfg, refresh_label, sizeof(refresh_label));
 
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_CODEX,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     draw_header_like_reference(fb, data);
 
     if (error) {
-        ui_draw_empty_state(fb, "\xe9\xa2\x9d\xe5\xba\xa6\xe4\xb8\x8d\xe5\x8f\xaf\xe7\x94\xa8", error);
+        ui_draw_empty_state_for(fb, UI_COLOR_PAGE_CODEX,
+                                "额度不可用", error, UI_COLOR_ROLE_WARNING);
         ui_draw_footer(fb, refresh_label, "1/1");
-        epd_display_fb_free(fb);
-        return;
+        if (!display_policy_epoch_is_current(epoch)) {
+            fb_destroy(fb);
+            return ESP_ERR_INVALID_STATE;
+        }
+        esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
+        if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
+            return ESP_ERR_INVALID_STATE;
+        return err;
     }
 
     char reset[16];
@@ -647,23 +686,32 @@ static void render_quota_page(const codex_quota_config_t *cfg,
     draw_section_title(fb, margin, y, "额度");
     y += xl ? 66 : 42;
     draw_quota_row(fb, y, "余额", remain_pct,
-                   remain_pct <= 30 ? COLOR_RED : COLOR_BLACK, remain);
+                   quota_remaining_color(remain_pct), remain);
     y += row_gap;
     draw_quota_row(fb, y, "已用", used_pct,
-                   used_pct >= 90 ? COLOR_RED : COLOR_BLACK, used);
+                   quota_used_color(used_pct), used);
     y += row_gap;
     draw_quota_row(fb, y, "今日", today_pct,
-                   today_pct >= 80 ? COLOR_RED : COLOR_BLACK, today);
+                   quota_used_color(today_pct), today);
     y += row_gap;
     draw_quota_row(fb, y, "总计", used_pct,
-                   used_pct >= 90 ? COLOR_RED : COLOR_BLACK, used);
+                   quota_used_color(used_pct), used);
     y += xl ? 54 : 30;
-    draw_quota_value_row(fb, y, "请求", req, COLOR_BLACK, reset);
+    draw_quota_value_row(fb, y, "请求", req,
+                         COLOR_BLACK, reset);
     y += value_gap;
-    draw_quota_value_row(fb, y, "令牌", tokens, COLOR_BLACK, reset);
+    draw_quota_value_row(fb, y, "令牌", tokens,
+                         COLOR_BLACK, reset);
 
     ui_draw_footer(fb, refresh_label, cfg && cfg->enabled ? "1/1" : "0/1");
-    epd_display_fb_free(fb);
+    if (!display_policy_epoch_is_current(epoch)) {
+        fb_destroy(fb);
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
+    if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
+        return ESP_ERR_INVALID_STATE;
+    return err;
 }
 
 static bool quota_auto_refresh_due(uint32_t refresh_min)
@@ -687,6 +735,7 @@ static void codex_quota_auto_task(void *arg)
             continue;
         if (!config_has_api(&cfg) || cfg.refresh_min == 0)
             continue;
+        unsigned observed_epoch = display_policy_display_epoch();
         if (display_mode_active() != DISPLAY_MODE_CODEX_QUOTA)
             continue;
         if (!quota_auto_refresh_due(cfg.refresh_min))
@@ -694,7 +743,7 @@ static void codex_quota_auto_task(void *arg)
 
         ESP_LOGI(TAG, "auto refresh quota page every %lum",
                  (unsigned long)cfg.refresh_min);
-        esp_err_t err = codex_quota_show();
+        esp_err_t err = display_mode_show_background(DISPLAY_MODE_CODEX_QUOTA, observed_epoch);
         if (err != ESP_OK)
             ESP_LOGW(TAG, "auto refresh failed: %s", esp_err_to_name(err));
     }
@@ -766,7 +815,7 @@ void codex_quota_get_data_copy(codex_quota_data_t *out)
     }
 }
 
-static esp_err_t codex_quota_show_inner(void)
+static esp_err_t codex_quota_show_inner(unsigned epoch)
 {
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
@@ -774,8 +823,8 @@ static esp_err_t codex_quota_show_inner(void)
     codex_quota_config_t cfg;
     config_snapshot(&cfg);
     if (!config_has_api(&cfg)) {
-        render_quota_page(&cfg, NULL, "\xe8\xaf\xb7\xe5\x85\x88\xe5\x9c\xa8\xe7\xbd\x91\xe9\xa1\xb5\xe9\x85\x8d\xe7\xbd\xae API URL \xe5\x92\x8c Key");
-        return ESP_ERR_INVALID_STATE;
+        return render_quota_page(&cfg, NULL,
+                                 "请先在网页配置 API URL 和 Key", epoch);
     }
 
     if (!s_mutex || xSemaphoreTake(s_mutex, pdMS_TO_TICKS(90000)) != pdTRUE)
@@ -786,22 +835,23 @@ static esp_err_t codex_quota_show_inner(void)
     esp_err_t ret = ESP_OK;
     codex_quota_data_t parsed;
     if (!resp) {
-        render_quota_page(&cfg, NULL, "\xe6\x8e\xa5\xe5\x8f\xa3\xe8\xaf\xb7\xe6\xb1\x82\xe5\xa4\xb1\xe8\xb4\xa5\xef\xbc\x8c\xe8\xaf\xb7\xe6\xa3\x80\xe6\x9f\xa5\xe7\xbd\x91\xe7\xbb\x9c/API Key");
-        ret = ESP_FAIL;
+        ret = render_quota_page(&cfg, NULL,
+                                "接口请求失败，请检查网络/API Key", epoch);
         goto out;
     }
 
     if (!parse_quota_json(resp, &parsed, &cfg)) {
         ESP_LOGW(TAG, "quota parse failed: %.160s", resp);
-        render_quota_page(&cfg, &parsed, parsed.message[0] ? parsed.message : "\xe9\xa2\x9d\xe5\xba\xa6 JSON \xe6\x9c\xaa\xe8\xaf\x86\xe5\x88\xab");
+        ret = render_quota_page(
+            &cfg, &parsed,
+            parsed.message[0] ? parsed.message : "额度 JSON 未识别", epoch);
         free(resp);
-        ret = ESP_FAIL;
         goto out;
     }
     free(resp);
 
     s_data = parsed;
-    render_quota_page(&cfg, &s_data, NULL);
+    ret = render_quota_page(&cfg, &s_data, NULL, epoch);
 
 out:
     xSemaphoreGive(s_mutex);
@@ -811,12 +861,13 @@ out:
 typedef struct {
     TaskHandle_t waiter;
     esp_err_t    result;
+    unsigned     epoch;
 } quota_show_job_t;
 
 static void codex_quota_show_task(void *arg)
 {
     quota_show_job_t *job = (quota_show_job_t *)arg;
-    job->result = codex_quota_show_inner();
+    job->result = codex_quota_show_inner(job->epoch);
     xTaskNotifyGive(job->waiter);
     vTaskDelete(NULL);
 }
@@ -826,12 +877,13 @@ esp_err_t codex_quota_show(void)
     quota_show_job_t job = {
         .waiter = xTaskGetCurrentTaskHandle(),
         .result = ESP_FAIL,
+        .epoch = display_mode_render_epoch(),
     };
     BaseType_t ok = xTaskCreatePinnedToCore(codex_quota_show_task, "quota_show",
                                             QUOTA_SHOW_STACK, &job, 4, NULL, 0);
     if (ok != pdPASS) {
         ESP_LOGW(TAG, "quota_show task create failed; running inline");
-        return codex_quota_show_inner();
+        return codex_quota_show_inner(job.epoch);
     }
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     return job.result;

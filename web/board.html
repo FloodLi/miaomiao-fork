@@ -41,9 +41,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;
 
 /* 顶部栏 */
 #topbar{background:var(--cd);border-bottom:1px solid var(--cb);padding:5px 12px;display:flex;align-items:center;gap:6px;flex-shrink:0;box-shadow:var(--cs)}
-#topbar h1{font-size:.9rem;font-weight:800;color:var(--ac);margin-right:6px;white-space:nowrap}
+#topbar h1{font-size:.9rem;font-weight:800;color:var(--ac);margin-right:6px;white-space:nowrap;flex:0 0 auto}
 #topbar a.back{font-size:.78rem;color:var(--t2);text-decoration:none;font-weight:600;padding:3px 7px;border-radius:6px;border:1px solid var(--cb);background:var(--sf);white-space:nowrap}
 #topbar a.back:hover{color:var(--ac);border-color:var(--ac)}
+.topbar-actions{display:contents}
 .tb-btn{background:var(--sf);border:1px solid var(--cb);border-radius:8px;color:var(--tx);cursor:pointer;font-size:.78rem;padding:4px 10px;transition:.15s;white-space:nowrap;font-weight:600}
 .tb-btn:hover{border-color:var(--ac);color:var(--ac);background:var(--hv)}
 .tb-btn:disabled{opacity:.35;cursor:default}
@@ -195,8 +196,10 @@ body .epd-credit a:hover{text-decoration:underline}
 <style id="mobile-comfort-v1">
 @media(max-width:760px){
   body.page-board{overflow-x:hidden}
-  body.page-board #topbar{display:flex;align-items:center;gap:7px;padding:7px 8px;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;scroll-padding-inline:8px;-webkit-overflow-scrolling:touch}
-  body.page-board #topbar h1{position:sticky;left:0;z-index:2;display:flex;align-items:center;min-height:44px;margin:0 3px 0 0;padding:0 10px 0 2px;background:var(--cd);font-size:.82rem}
+  body.page-board #topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px;padding:7px 8px;overflow:visible}
+  body.page-board #topbar h1{position:static;display:flex;min-width:0;align-items:center;min-height:44px;margin:0;padding:0 4px 0 2px;background:var(--cd);box-shadow:none;font-size:.82rem;white-space:nowrap}
+  body.page-board #topbar .topbar-actions{grid-column:1/-1;display:flex;width:100%;align-items:center;gap:7px;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;scroll-padding-inline:2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  body.page-board #topbar .topbar-actions::-webkit-scrollbar{display:none}
   body.page-board #topbar a.back,body.page-board #topbar .tb-btn{flex:0 0 auto;min-height:44px;padding:0 12px;font-size:.78rem;display:inline-flex;align-items:center;justify-content:center;scroll-snap-align:center;touch-action:manipulation}
   body.page-board #topbar .tb-sep{height:30px;flex:0 0 1px}
   body.page-board #toolbar{scroll-snap-type:x proximity;scroll-padding-inline:8px;gap:6px}
@@ -228,7 +231,8 @@ body .epd-credit a:hover{text-decoration:underline}
 
 <!-- 顶部操作栏 -->
 <div id="topbar">
-  <h1>🎨 画布留言板</h1>
+  <h1 class="help-heading">🎨 画布留言板<button type="button" class="info-dot" aria-label="查看画布留言板说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="画布按当前屏幕原生比例编辑。“保存”只保存布局，“发送到墨水屏”才会刷新屏幕；更换屏幕后请检查画布尺寸和元素位置。"></button></h1>
+  <div class="topbar-actions">
   <a class="back" href="/"><span class="ni">🖼</span> 上传</a>
   <a class="back" href="/message"><span class="ni">💬</span> 文字留言</a>
   <a class="back" href="/weather"><span class="ni">🌤</span> 天气</a>
@@ -250,6 +254,7 @@ body .epd-credit a:hover{text-decoration:underline}
   <button class="tb-btn" onclick="showTemplates()" title="模板预设">📋 模板</button>
   <div class="tb-sep"></div>
   <button class="tb-btn primary" id="btn-show-epd" onclick="showOnEPD()">🖨 发送到墨水屏</button>
+  </div>
 </div>
 
 <div id="app">
@@ -280,7 +285,7 @@ body .epd-credit a:hover{text-decoration:underline}
 
   <!-- 颜色 -->
   <div class="panel">
-    <h3>颜色</h3>
+    <h3 class="help-heading">颜色<button type="button" class="info-dot" aria-label="查看画布颜色说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="实际可显示颜色由所选屏幕决定。普通黑白屏不显示彩色，三色屏支持红色，四色屏支持红黄，E6 才支持蓝绿；不支持的颜色会自动降级。"></button></h3>
     <div class="color-row">
       <div class="color-btn black sel" data-color="0">黑</div>
       <div class="color-btn red"       data-color="1">红</div>
@@ -1025,6 +1030,7 @@ function showTemplates() {
     document.getElementById('tpl-overlay').style.display = 'flex';
 }
 function closeTpl() { document.getElementById('tpl-overlay').style.display = 'none'; }
+
 async function ensureBuiltinTemplateAssets() {
     CANVAS_IMAGES[GITEE_QR_IMAGE_NAME] = GITEE_QR_IMAGE;
     invalidateImageCache(GITEE_QR_IMAGE_NAME);
@@ -2791,5 +2797,6 @@ function toast(msg) {
 
 init();
 </script>
+<script src="feature_help.js"></script>
 </body>
 </html>

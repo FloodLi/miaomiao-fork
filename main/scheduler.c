@@ -43,9 +43,11 @@ static slideshow_config_t s_config = {
 static EventGroupHandle_t s_event;
 static portMUX_TYPE       s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 static char  s_current_image[64];
+static char  s_last_image[64];
 static int   s_current_index;
 
 #define NVS_KEY_INDEX  "cur_idx"
+#define NVS_KEY_LAST_IMAGE "last_img"
 
 /* ── NVS helpers ──────────────────────────────────────────────────── */
 
@@ -68,6 +70,9 @@ static void nvs_load(void)
     int32_t idx32;
     if (nvs_get_i32(h, NVS_KEY_INDEX, &idx32) == ESP_OK && idx32 >= 0)
         s_current_index = (int)idx32;
+    size_t last_len = sizeof(s_last_image);
+    if (nvs_get_str(h, NVS_KEY_LAST_IMAGE, s_last_image, &last_len) != ESP_OK)
+        s_last_image[0] = '\0';
 
     nvs_close(h);
     ESP_LOGI(TAG, "NVS loaded: enabled=%d, interval=%lus, mode=%d",
@@ -76,14 +81,24 @@ static void nvs_load(void)
 
 static void nvs_save(void)
 {
+    slideshow_config_t config;
+    int current_index;
+    char last_image[sizeof(s_last_image)];
+    portENTER_CRITICAL(&s_cfg_mux);
+    config = s_config;
+    current_index = s_current_index;
+    snprintf(last_image, sizeof(last_image), "%s", s_last_image);
+    portEXIT_CRITICAL(&s_cfg_mux);
+
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
 
-    nvs_set_u8(h,  "enabled",  s_config.enabled ? 1 : 0);
-    nvs_set_u32(h, "interval", s_config.interval_sec);
-    nvs_set_u8(h,  "mode",     (uint8_t)s_config.mode);
-    nvs_set_u8(h,  "clk_ovl", s_config.clock_overlay ? 1 : 0);
-    nvs_set_i32(h, NVS_KEY_INDEX, (int32_t)s_current_index);
+    nvs_set_u8(h,  "enabled",  config.enabled ? 1 : 0);
+    nvs_set_u32(h, "interval", config.interval_sec);
+    nvs_set_u8(h,  "mode",     (uint8_t)config.mode);
+    nvs_set_u8(h,  "clk_ovl", config.clock_overlay ? 1 : 0);
+    nvs_set_i32(h, NVS_KEY_INDEX, (int32_t)current_index);
+    nvs_set_str(h, NVS_KEY_LAST_IMAGE, last_image);
     nvs_commit(h);
     nvs_close(h);
 }
@@ -92,9 +107,17 @@ static void nvs_save(void)
 
 static void nvs_save_index(void)
 {
+    int current_index;
+    char last_image[sizeof(s_last_image)];
+    portENTER_CRITICAL(&s_cfg_mux);
+    current_index = s_current_index;
+    snprintf(last_image, sizeof(last_image), "%s", s_last_image);
+    portEXIT_CRITICAL(&s_cfg_mux);
+
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_i32(h, NVS_KEY_INDEX, (int32_t)s_current_index);
+    nvs_set_i32(h, NVS_KEY_INDEX, (int32_t)current_index);
+    nvs_set_str(h, NVS_KEY_LAST_IMAGE, last_image);
     nvs_commit(h);
     nvs_close(h);
 }
@@ -139,12 +162,11 @@ static bool slideshow_image_compatible_for_panel(const char *path, const char *n
 
 static void show_next_image(void)
 {
+    unsigned observed_epoch = display_policy_display_epoch();
     if (display_policy_manual_screen_active()) {
         ESP_LOGI(TAG, "Slideshow skipped: manual screen active");
         return;
     }
-    display_policy_set_manual_screen_active(false);
-
     slideshow_mode_t mode;
     bool clock_ovl;
     portENTER_CRITICAL(&s_cfg_mux);
@@ -197,17 +219,19 @@ static void show_next_image(void)
     free(names);
 
     int64_t t0 = esp_timer_get_time();
-    int prev_mode = display_mode_active();
-    display_mode_set_active(DISPLAY_MODE_SLIDESHOW);
-    display_policy_bump_display_epoch();
-    unsigned epoch = display_policy_display_epoch();
+    display_request_token_t token;
+    if (!display_policy_try_begin_background(DISPLAY_MODE_SLIDESHOW, observed_epoch,
+                                              EPD_REFRESH_FULL, &token))
+        return;
+    unsigned epoch = token.epoch;
 
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
-    if (display_policy_manual_screen_active() ||
-        display_policy_display_epoch() != epoch) {
+    if (display_policy_display_epoch() != epoch) {
         fb_raw_file_unlock();
         ESP_LOGI(TAG, "Slideshow skipped after lock: manual screen active");
+        (void)display_policy_finish_request(&token, ESP_ERR_INVALID_STATE,
+                                            scheduler_manual_screen_after_show());
         return;
     }
     ESP_LOGI(TAG, "Slideshow convert begin");
@@ -223,8 +247,8 @@ static void show_next_image(void)
     }
     if (err != ESP_OK) {
         fb_raw_file_unlock();
-        if (display_policy_display_epoch() == epoch)
-            display_mode_set_active(prev_mode);
+        (void)display_policy_finish_request(&token, err,
+                                            scheduler_manual_screen_after_show());
         ESP_LOGW(TAG, "Convert failed: %s", esp_err_to_name(err));
         return;
     }
@@ -253,25 +277,31 @@ static void show_next_image(void)
         }
     }
 
-    if (display_policy_manual_screen_active() ||
-        display_policy_display_epoch() != epoch) {
+    if (display_policy_display_epoch() != epoch) {
         if (fast_fb)
             fb_destroy(fast_fb);
         fb_raw_file_unlock();
         ESP_LOGI(TAG, "Slideshow display canceled by newer request");
+        (void)display_policy_finish_request(&token, ESP_ERR_INVALID_STATE,
+                                            scheduler_manual_screen_after_show());
         return;
     }
     if (fast_fb) {
-        err = epd_display_fb_free(fast_fb);
+        err = epd_display_fb_free_mode_epoch(fast_fb, EPD_REFRESH_FULL, epoch);
         fast_fb = NULL;
     } else {
-        err = epd_display_from_file(raw_path);
+        err = epd_display_from_file_mode_epoch(raw_path, EPD_REFRESH_FULL, epoch);
     }
     fb_raw_file_unlock();
     if (err != ESP_OK) {
-        if (display_policy_display_epoch() == epoch)
-            display_mode_set_active(prev_mode);
+        (void)display_policy_finish_request(&token, err,
+                                            scheduler_manual_screen_after_show());
         ESP_LOGW(TAG, "Display failed: %s", esp_err_to_name(err));
+        return;
+    }
+    if (!display_policy_finish_request(&token, ESP_OK,
+                                       scheduler_manual_screen_after_show())) {
+        ESP_LOGI(TAG, "Slideshow display completed but was superseded");
         return;
     }
     int64_t t_display = esp_timer_get_time();
@@ -281,16 +311,19 @@ static void show_next_image(void)
 
     button_set_current_mode(DISPLAY_MODE_SLIDESHOW);
 
-    /* 顺序模式：仅在转换+刷屏均成功后再前进索引并落盘，避免失败时跳过画廊项 */
-    if (mode != SLIDESHOW_RANDOM) {
-        portENTER_CRITICAL(&s_cfg_mux);
-        s_current_index = (idx + 1) % count;
-        portEXIT_CRITICAL(&s_cfg_mux);
-        nvs_save_index();
-    }
+    if (!display_policy_epoch_is_current(epoch))
+        return;
 
+    /* 顺序模式：仅在转换+刷屏均成功后再前进索引并落盘，避免失败时跳过画廊项 */
+    portENTER_CRITICAL(&s_cfg_mux);
+    if (mode != SLIDESHOW_RANDOM)
+        s_current_index = (idx + 1) % count;
     strncpy(s_current_image, picked, sizeof(s_current_image) - 1);
     s_current_image[sizeof(s_current_image) - 1] = '\0';
+    strncpy(s_last_image, picked, sizeof(s_last_image) - 1);
+    s_last_image[sizeof(s_last_image) - 1] = '\0';
+    portEXIT_CRITICAL(&s_cfg_mux);
+    nvs_save_index();
 }
 
 /* ── FreeRTOS task ────────────────────────────────────────────────── */
@@ -302,8 +335,7 @@ static void slideshow_task(void *arg)
     /* 等主流程完成欢迎屏/切到记忆模式后再判断 manual，避免首帧被跳过后又睡满 interval */
     if (s_event) {
         (void)xEventGroupWaitBits(s_event, BIT_BOOT_COMPLETE,
-                                  pdTRUE, pdFALSE,
-                                  pdMS_TO_TICKS(60000));
+                                  pdTRUE, pdFALSE, portMAX_DELAY);
     }
 
     slideshow_config_t boot_snap;
@@ -433,10 +465,18 @@ esp_err_t scheduler_set_config(const slideshow_config_t *cfg)
     /* Enabling slideshow config no longer changes last_mode; explicit image show does. */
     if (slideshow_stopped && display_mode_active() == DISPLAY_MODE_SLIDESHOW) {
         clock_config_t cc;
-        if (clock_display_get_config(&cc) == ESP_OK && cc.enabled) {
-            display_policy_set_manual_screen_active(false);
-            button_set_current_mode(DISPLAY_MODE_CLOCK);
-            power_mgr_save_mode(DISPLAY_MODE_CLOCK);
+        if (clock_display_get_config(&cc) == ESP_OK && cc.enabled &&
+            display_mode_is_available(DISPLAY_MODE_CLOCK)) {
+            unsigned epoch = 0;
+            esp_err_t show_err = display_mode_show_request(DISPLAY_MODE_CLOCK,
+                                                           &epoch);
+            if (show_err == ESP_OK && display_policy_epoch_is_current(epoch)) {
+                button_set_current_mode(DISPLAY_MODE_CLOCK);
+                power_mgr_save_mode(DISPLAY_MODE_CLOCK);
+            } else {
+                ESP_LOGW(TAG, "Clock restore after slideshow stop failed: %s",
+                         esp_err_to_name(show_err));
+            }
         }
     }
     /* HTTP may call this before scheduler_init() creates the event group (see app_main order). */
@@ -453,7 +493,9 @@ void scheduler_set_current_image_name(const char *basename)
     if (!basename || !basename[0]) {
         portENTER_CRITICAL(&s_cfg_mux);
         s_current_image[0] = '\0';
+        s_last_image[0] = '\0';
         portEXIT_CRITICAL(&s_cfg_mux);
+        nvs_save_index();
         return;
     }
 
@@ -470,18 +512,17 @@ void scheduler_set_current_image_name(const char *basename)
         free(names);
     }
 
-    bool save_index = false;
     portENTER_CRITICAL(&s_cfg_mux);
     strncpy(s_current_image, basename, sizeof(s_current_image) - 1);
     s_current_image[sizeof(s_current_image) - 1] = '\0';
+    strncpy(s_last_image, basename, sizeof(s_last_image) - 1);
+    s_last_image[sizeof(s_last_image) - 1] = '\0';
     if (next_index >= 0) {
         s_current_index = next_index;
-        save_index = true;
     }
     portEXIT_CRITICAL(&s_cfg_mux);
 
-    if (save_index)
-        nvs_save_index();
+    nvs_save_index();
 }
 
 void scheduler_notify_manual_show(void)
@@ -504,11 +545,136 @@ const char *scheduler_get_current_image(void)
     return s_current_image[0] ? s_current_image : NULL;
 }
 
+bool scheduler_manual_screen_after_show(void)
+{
+    slideshow_config_t cfg;
+    return scheduler_get_config(&cfg) != ESP_OK || !cfg.enabled;
+}
+
+esp_err_t scheduler_restore_last_image(void)
+{
+    return scheduler_restore_last_image_epoch(display_mode_render_epoch());
+}
+
+esp_err_t scheduler_restore_last_image_epoch(unsigned epoch)
+{
+    if (!epd_is_ready() || !display_policy_epoch_is_current(epoch))
+        return ESP_ERR_INVALID_STATE;
+
+    char (*names)[64] = calloc(MAX_GALLERY, 64);
+    if (!names)
+        return ESP_ERR_NO_MEM;
+    int count = list_images(names, MAX_GALLERY);
+    if (count <= 0) {
+        free(names);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    char saved_last[64];
+    int saved_index;
+    slideshow_mode_t saved_mode;
+    portENTER_CRITICAL(&s_cfg_mux);
+    snprintf(saved_last, sizeof(saved_last), "%s", s_last_image);
+    saved_index = s_current_index;
+    saved_mode = s_config.mode;
+    portEXIT_CRITICAL(&s_cfg_mux);
+
+    char picked[64] = {0};
+    int picked_index = -1;
+    for (int i = 0; i < count; i++) {
+        if (saved_last[0] && strcmp(names[i], saved_last) == 0) {
+            picked_index = i;
+            break;
+        }
+    }
+    if (picked_index < 0) {
+        if (saved_last[0]) {
+            free(names);
+            if (!display_policy_epoch_is_current(epoch))
+                return ESP_ERR_INVALID_STATE;
+            portENTER_CRITICAL(&s_cfg_mux);
+            s_last_image[0] = '\0';
+            portEXIT_CRITICAL(&s_cfg_mux);
+            nvs_save_index();
+            return ESP_ERR_NOT_FOUND;
+        }
+        if (saved_mode == SLIDESHOW_SEQ) {
+            picked_index = (saved_index + count - 1) % count;
+        } else {
+            for (int i = 0; i < count; i++) {
+                char candidate_path[160];
+                snprintf(candidate_path, sizeof(candidate_path), "%s/%s",
+                         IMAGES_DIR, names[i]);
+                if (slideshow_image_compatible_for_panel(candidate_path,
+                                                         names[i])) {
+                    picked_index = i;
+                    break;
+                }
+            }
+            if (picked_index < 0) {
+                free(names);
+                return ESP_ERR_NOT_SUPPORTED;
+            }
+        }
+        ESP_LOGI(TAG, "Migrating missing last_img from gallery index %d",
+                 picked_index);
+    }
+    snprintf(picked, sizeof(picked), "%s", names[picked_index]);
+    free(names);
+
+    char path[160];
+    snprintf(path, sizeof(path), "%s/%s", IMAGES_DIR, picked);
+    if (!slideshow_image_compatible_for_panel(path, picked)) {
+        if (!display_policy_epoch_is_current(epoch))
+            return ESP_ERR_INVALID_STATE;
+        portENTER_CRITICAL(&s_cfg_mux);
+        s_last_image[0] = '\0';
+        portEXIT_CRITICAL(&s_cfg_mux);
+        nvs_save_index();
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    fb_raw_file_lock();
+    fb_t *fb = NULL;
+    esp_err_t err = image_convert_file_to_epd_fb(path, &fb);
+    if (err != ESP_OK)
+        err = image_convert_file_to_epd_raw(path, "/spiffs/image.bin");
+    if (err == ESP_OK && display_policy_epoch_is_current(epoch)) {
+        if (fb) {
+            err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
+            fb = NULL;
+        } else {
+            err = epd_display_from_file_mode_epoch("/spiffs/image.bin", EPD_REFRESH_FULL, epoch);
+        }
+    } else if (err == ESP_OK) {
+        err = ESP_ERR_INVALID_STATE;
+    }
+    if (fb)
+        fb_destroy(fb);
+    fb_raw_file_unlock();
+
+    if (err != ESP_OK || !display_policy_epoch_is_current(epoch))
+        return err == ESP_OK ? ESP_ERR_INVALID_STATE : err;
+    if (!display_policy_finish_epoch(epoch, ESP_OK,
+                                     scheduler_manual_screen_after_show()))
+        return ESP_ERR_INVALID_STATE;
+
+    if (!display_policy_epoch_is_current(epoch))
+        return ESP_ERR_INVALID_STATE;
+    portENTER_CRITICAL(&s_cfg_mux);
+    snprintf(s_current_image, sizeof(s_current_image), "%s", picked);
+    snprintf(s_last_image, sizeof(s_last_image), "%s", picked);
+    portEXIT_CRITICAL(&s_cfg_mux);
+    nvs_save_index();
+    ESP_LOGI(TAG, "Restored last gallery image: %s", picked);
+    return ESP_OK;
+}
+
 esp_err_t scheduler_show_next_image(void)
 {
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
-    unsigned epoch = display_policy_display_epoch();
+    unsigned epoch = display_mode_render_epoch();
 
     slideshow_mode_t mode;
     portENTER_CRITICAL(&s_cfg_mux);
@@ -571,30 +737,35 @@ esp_err_t scheduler_show_next_image(void)
         }
         if (fast_fb) {
             ESP_LOGI(TAG, "Manual slideshow fast framebuffer display");
-            err = epd_display_fb_free(fast_fb);
+            err = epd_display_fb_free_mode_epoch(fast_fb, EPD_REFRESH_FULL, epoch);
             fast_fb = NULL;
         } else {
-            err = epd_display_from_file(raw_path);
+            err = epd_display_from_file_mode_epoch(raw_path, EPD_REFRESH_FULL, epoch);
         }
     }
     fb_raw_file_unlock();
     if (err != ESP_OK)
         return err;
 
-    if (mode != SLIDESHOW_RANDOM) {
-        portENTER_CRITICAL(&s_cfg_mux);
-        s_current_index = (idx + 1) % count;
-        portEXIT_CRITICAL(&s_cfg_mux);
-        nvs_save_index();
+    if (!display_policy_epoch_is_current(epoch)) {
+        ESP_LOGI(TAG, "Manual slideshow display completed but was superseded");
+        return ESP_ERR_INVALID_STATE;
     }
+    if (!display_policy_finish_epoch(epoch, ESP_OK,
+                                     scheduler_manual_screen_after_show()))
+        return ESP_ERR_INVALID_STATE;
 
+    if (!display_policy_epoch_is_current(epoch))
+        return ESP_ERR_INVALID_STATE;
+    portENTER_CRITICAL(&s_cfg_mux);
+    if (mode != SLIDESHOW_RANDOM)
+        s_current_index = (idx + 1) % count;
     strncpy(s_current_image, picked, sizeof(s_current_image) - 1);
     s_current_image[sizeof(s_current_image) - 1] = '\0';
-
-    slideshow_config_t sc;
-    scheduler_get_config(&sc);
-    /* 轮播开启时交给定时任务切下一张；关闭时保持占屏，避免时钟等自动刷新盖住画廊 */
-    display_policy_set_manual_screen_active(!sc.enabled);
+    strncpy(s_last_image, picked, sizeof(s_last_image) - 1);
+    s_last_image[sizeof(s_last_image) - 1] = '\0';
+    portEXIT_CRITICAL(&s_cfg_mux);
+    nvs_save_index();
 
     return ESP_OK;
 }

@@ -24,14 +24,25 @@
 #include "calendar_display.h"
 #include "battery_mon.h"
 
-/* 摘要区占位（无有效天气数据时） */
-static const char k_wx_placeholder_l1[] =
-    "\xe5\xa4\xa9\xe6\xb0\x94\xe6\x95\xb0\xe6\x8d\xae\xe6\x9c\xaa\xe5\xb0\xb1\xe7\xbb\xaa"; /* 天气数据未就绪 */
-static const char k_wx_placeholder_l2[] =
-    "请先在天气页填写城市";
-
 static const char *TAG    = "clock";
 static const char *NVS_NS = "clock";
+
+static const char *clock_weekday_long(int wday)
+{
+    static const char *const names[] = {
+        "星期日", "星期一", "星期二", "星期三",
+        "星期四", "星期五", "星期六"
+    };
+    return names[(wday >= 0 && wday < 7) ? wday : 0];
+}
+
+static const char *clock_day_period(int hour)
+{
+    if (hour < 6) return "凌晨";
+    if (hour < 12) return "上午";
+    if (hour < 18) return "下午";
+    return "晚上";
+}
 
 #define BIT_CFG_CHANGED   BIT0
 #define BIT_WEATHER_DATA  BIT1
@@ -245,16 +256,6 @@ static void clock_draw_footer(fb_t *fb, const char *left, const char *right)
 
 /* ── weekday strings ──────────────────────────────────────────────── */
 
-static const char *weekday_zh[] = {
-    "\xe6\x97\xa5",  /* 日 */
-    "\xe4\xb8\x80",  /* 一 */
-    "\xe4\xba\x8c",  /* 二 */
-    "\xe4\xb8\x89",  /* 三 */
-    "\xe5\x9b\x9b",  /* 四 */
-    "\xe4\xba\x94",  /* 五 */
-    "\xe5\x85\xad",  /* 六 */
-};
-
 /* ── NVS ──────────────────────────────────────────────────────────── */
 
 static void clock_plot_circle_points(fb_t *fb, int cx, int cy, int x, int y,
@@ -306,12 +307,13 @@ static void clock_draw_calendar_icon(fb_t *fb, int x, int y, fb_color_t color)
     fb_fill_rect(fb, x + 10, y + 18, 3, 2, color);
 }
 
-static void clock_draw_status_clock_icon(fb_t *fb, int cx, int cy)
+static void clock_draw_status_clock_icon(fb_t *fb, int cx, int cy,
+                                         fb_color_t color)
 {
-    clock_draw_circle(fb, cx, cy, 20, 3, COLOR_RED);
-    fb_fill_rect(fb, cx - 2, cy - 13, 4, 15, COLOR_RED);
+    clock_draw_circle(fb, cx, cy, 20, 3, color);
+    fb_fill_rect(fb, cx - 2, cy - 13, 4, 15, color);
     for (int i = 0; i < 11; i++)
-        fb_fill_rect(fb, cx + i, cy + i / 2, 3, 3, COLOR_RED);
+        fb_fill_rect(fb, cx + i, cy + i / 2, 3, 3, color);
 }
 
 static void clock_draw_ref_card(fb_t *fb, int x, int y, int w, int h)
@@ -322,7 +324,7 @@ static void clock_draw_ref_card(fb_t *fb, int x, int y, int w, int h)
 
 static void clock_draw_ref_battery(fb_t *fb, int right_x, int y)
 {
-    ui_draw_battery_badge(fb, right_x, y);
+    ui_draw_battery_badge_for(fb, UI_COLOR_PAGE_CLOCK, right_x, y);
 }
 
 static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
@@ -336,7 +338,14 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
     const int col_w_px = BASE_COL * ds_num / ds_den;
     const int time_w = 3 * d_gap + col_w_px + dw;
 
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    fb_color_t accent = ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                          UI_COLOR_ROLE_ACCENT,
+                                          COLOR_RED);
+    fb_color_t notice = ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                          UI_COLOR_ROLE_NOTICE,
+                                          COLOR_RED);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_CLOCK,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     clock_draw_ref_battery(fb, W - 14, 8);
 
     int hour = tm->tm_hour;
@@ -344,16 +353,14 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
     int time_y = 50;
 
     char date_str[64];
-    snprintf(date_str, sizeof(date_str),
-             "%04d\xe5\xb9\xb4%02d\xe6\x9c\x88%02d\xe6\x97\xa5",
+    snprintf(date_str, sizeof(date_str), "%04d年%02d月%02d日",
              tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
 
     int wday = tm->tm_wday;
     if (wday < 0 || wday > 6)
         wday = 0;
     char week_str[32];
-    snprintf(week_str, sizeof(week_str),
-             "\xe6\x98\x9f\xe6\x9c\x9f%s", weekday_zh[wday]);
+    snprintf(week_str, sizeof(week_str), "%s", clock_weekday_long(wday));
 
     const int date_y = time_y + dh + 22;
     const int date_w = clock_text_px(date_str, 1);
@@ -374,21 +381,21 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
     cx += d_gap;
     draw_digit_s(fb, cx, time_y, hour % 10, COLOR_BLACK, ds_num, ds_den);
     cx += d_gap;
-    draw_colon_s(fb, cx, time_y, COLOR_RED, ds_num, ds_den);
+    draw_colon_s(fb, cx, time_y, accent, ds_num, ds_den);
     cx += col_w_px;
     draw_digit_s(fb, cx, time_y, min / 10, COLOR_BLACK, ds_num, ds_den);
     cx += d_gap;
     draw_digit_s(fb, cx, time_y, min % 10, COLOR_BLACK, ds_num, ds_den);
 
-    clock_draw_calendar_icon(fb, row_x, date_y - 3, COLOR_RED);
+    clock_draw_calendar_icon(fb, row_x, date_y - 3, accent);
     int text_x = row_x + icon_w + gap1;
     clock_draw_text(fb, text_x, date_y, date_str, COLOR_BLACK, 1);
     int bar_x = text_x + date_w + gap2;
     fb_vline(fb, bar_x, date_y - 1, 19, COLOR_BLACK);
-    clock_draw_text(fb, bar_x + gap2, date_y, week_str, COLOR_RED, 1);
+    clock_draw_text(fb, bar_x + gap2, date_y, week_str, accent, 1);
 
     const int line_y = date_y + 31;
-    fb_fill_rect(fb, 20, line_y, W - 40, 2, COLOR_RED);
+    fb_fill_rect(fb, 20, line_y, W - 40, 2, accent);
 
     const int card_x = 22;
     const int card_y = line_y + 15;
@@ -399,34 +406,29 @@ static void render_clock_42_reference(fb_t *fb, const struct tm *tm)
     int red_x = card_x + card_w - 8;
     int red_y = card_y + 27;
     int red_h = card_h - 27;
-    fb_fill_rect(fb, red_x, red_y + 3, 4, red_h - 6, COLOR_RED);
-    fb_hline(fb, red_x + 1, red_y + 1, 3, COLOR_RED);
-    fb_hline(fb, red_x, red_y + 2, 4, COLOR_RED);
-    fb_hline(fb, red_x, red_y + red_h - 3, 4, COLOR_RED);
-    fb_hline(fb, red_x + 1, red_y + red_h - 2, 3, COLOR_RED);
+    fb_fill_rect(fb, red_x, red_y + 3, 4, red_h - 6, accent);
+    fb_hline(fb, red_x + 1, red_y + 1, 3, accent);
+    fb_hline(fb, red_x, red_y + 2, 4, accent);
+    fb_hline(fb, red_x, red_y + red_h - 3, 4, accent);
+    fb_hline(fb, red_x + 1, red_y + red_h - 2, 3, accent);
 
     int icon_cx = card_x + 38;
     int icon_cy = card_y + card_h / 2;
-    clock_draw_status_clock_icon(fb, icon_cx, icon_cy);
+    clock_draw_status_clock_icon(fb, icon_cx, icon_cy, accent);
 
     int split_x = card_x + 76;
     fb_vline(fb, split_x, card_y + 13, card_h - 24, COLOR_BLACK);
 
     char ampm[16];
-    if (hour < 6)       snprintf(ampm, sizeof(ampm), "\xe5\x87\x8c\xe6\x99\xa8");
-    else if (hour < 12) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8a\xe5\x8d\x88");
-    else if (hour < 18) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8b\xe5\x8d\x88");
-    else                snprintf(ampm, sizeof(ampm), "\xe6\x99\x9a\xe4\xb8\x8a");
+    snprintf(ampm, sizeof(ampm), "%s", clock_day_period(hour));
 
-    const char *tag = time_sync_is_synced()
-                          ? "\xe6\x97\xb6\xe9\x97\xb4\xe5\xb7\xb2\xe5\x90\x8c\xe6\xad\xa5"
-                          : "\xe7\xad\x89\xe5\xbe\x85\xe7\xbd\x91\xe7\xbb\x9c\xe6\xa0\xa1\xe6\x97\xb6";
+    const char *tag = time_sync_is_synced() ? "时间已同步" : "等待网络校时";
     int info_x = split_x + 20;
     int info_w = card_x + card_w - 20 - info_x;
     ui_draw_text_px_maxw(fb, info_x, card_y + 10, ampm, COLOR_BLACK,
                          30, info_w);
     clock_draw_text_maxw(fb, info_x, card_y + 50, tag,
-                         time_sync_is_synced() ? COLOR_BLACK : COLOR_RED,
+                         time_sync_is_synced() ? COLOR_BLACK : notice,
                          1, info_w);
 }
 
@@ -517,7 +519,8 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
     int d_gap = dw + 6 * ds_num / ds_den;
     int col_w_px = BASE_COL * ds_num / ds_den;
 
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_CLOCK,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     clock_draw_ref_battery(fb, W - 14, 8);
 
     int total_w = 4 * d_gap + col_w_px - 6 * ds_num / ds_den;
@@ -553,16 +556,13 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
     draw_digit_s(fb, cx, time_y, min % 10, digit_colors[3], ds_num, ds_den);
 
     char date_str[64];
-    snprintf(date_str, sizeof(date_str),
-             "%04d\xe5\xb9\xb4%02d\xe6\x9c\x88%02d\xe6\x97\xa5",
+    snprintf(date_str, sizeof(date_str), "%04d年%02d月%02d日",
              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
 
     char week_str[32];
     int wday = tm.tm_wday;
     if (wday < 0 || wday > 6) wday = 0;
-    snprintf(week_str, sizeof(week_str),
-             "\xe6\x98\x9f\xe6\x9c\x9f%s",
-             weekday_zh[wday]);
+    snprintf(week_str, sizeof(week_str), "%s", clock_weekday_long(wday));
 
     int date_y = time_y + dh + (xl ? 28 : ((is_583 || is_e6) ? 20 : (compact_clock ? 10 : 18)));
     int date_w = clock_text_px(date_str, sc);
@@ -578,7 +578,9 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
     clock_draw_text(fb, date_x, date_y, date_str,
                     is_e6 ? COLOR_BLUE : COLOR_BLACK, sc);
     clock_draw_text(fb, date_x + date_w + date_gap, date_y, week_str,
-                    is_e6 ? COLOR_GREEN : COLOR_RED, sc);
+                    is_e6 ? COLOR_GREEN :
+                    ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                     UI_COLOR_ROLE_ACCENT, COLOR_RED), sc);
 
     weather_summary_t wd_local = {0};
     weather_config_t wcfg = {0};
@@ -592,13 +594,19 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
         }
     }
     const weather_summary_t *wd = &wd_local;
+    const char *now_weather_text = weather_text_localized(wd->now.icon,
+                                                           wd->now.text);
+    const char *now_wind_dir = weather_wind_dir_localized(wd->now.wind_degree,
+                                                           wd->now.wind_dir);
 
     int sep_y = date_y + 16 * sc + (xl ? 24 : (is_583 ? 18 : (compact_clock ? 9 : 12)));
     if (wide_clock || has_weather || cfg_local.show_weather) {
         ui_draw_dotted_hline(fb, MX + 12, sep_y, W - 2 * MX - 24,
                              is_e6 ? COLOR_BLUE : COLOR_BLACK, 6);
     } else {
-        fb_fill_rect(fb, W / 2 - 34, sep_y, 68, 2, COLOR_RED);
+        fb_fill_rect(fb, W / 2 - 34, sep_y, 68, 2,
+                     ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                      UI_COLOR_ROLE_ACCENT, COLOR_RED));
     }
 
     int bot_y = sep_y + (xl ? 22 : (is_583 ? 18 : (compact_clock ? 12 : 14)));
@@ -615,38 +623,38 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
             const int split_x = W / 2 + 8;
             const int right_x = split_x + 16;
 
-            fb_bitmap(fb, icon_x, icon_y, WEATHER_ICON_W, WEATHER_ICON_H,
-                      weather_icon_bitmap(wd->now.icon), COLOR_BLACK);
+            weather_draw_icon(fb, icon_x, icon_y, wd->now.icon, wd->now.text,
+                              WEATHER_ICON_W, UI_COLOR_PAGE_CLOCK,
+                              COLOR_BLACK);
             ui_draw_dotted_vline(fb, split_x, current_y + 3, 55, COLOR_BLACK, 6);
 
             char place[80];
             if (wcfg.city_name[0]) {
                 snprintf(place, sizeof(place), "%.31s", wcfg.city_name);
             } else {
-                snprintf(place, sizeof(place), "%s",
-                         "\xe5\xbd\x93\xe5\x89\x8d\xe5\xa4\xa9\xe6\xb0\x94");
+                snprintf(place, sizeof(place), "%s", "当前天气");
             }
 
             char now_line[80];
             snprintf(now_line, sizeof(now_line), "%.23s  %d\xc2\xb0""C",
-                     wd->now.text, wd->now.temp);
+                     now_weather_text, wd->now.temp);
 
             clock_draw_text_maxw(fb, left_x, current_y + 3, place,
                                   COLOR_BLACK, 1, split_x - left_x - 10);
             clock_draw_text_maxw(fb, left_x, current_y + 27, now_line,
-                                  COLOR_RED, 1, split_x - left_x - 10);
+                                  weather_icon_color_for(UI_COLOR_PAGE_CLOCK,
+                                                         wd->now.icon,
+                                                         wd->now.text,
+                                                         COLOR_RED),
+                                  1, split_x - left_x - 10);
 
             char feels[64];
             char humid[64];
             char wind[80];
-            snprintf(feels, sizeof(feels),
-                     "\xe4\xbd\x93\xe6\x84\x9f %d\xc2\xb0""C",
-                     wd->now.feels_like);
-            snprintf(humid, sizeof(humid),
-                     "\xe6\xb9\xbf\xe5\xba\xa6 %d%%",
-                     wd->now.humidity);
-            snprintf(wind, sizeof(wind), "%.15s %d\xe7\xba\xa7",
-                     wd->now.wind_dir, wd->now.wind_scale);
+            snprintf(feels, sizeof(feels), "体感 %d°C", wd->now.feels_like);
+            snprintf(humid, sizeof(humid), "湿度 %d%%", wd->now.humidity);
+            snprintf(wind, sizeof(wind), "%.15s %d级",
+                     now_wind_dir, wd->now.wind_scale);
 
             clock_draw_text_maxw(fb, right_x, current_y + 0, feels,
                                   COLOR_BLACK, 1, W - right_x - MX);
@@ -671,7 +679,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
 
                 char label[24];
                 if (i == 0) {
-                    snprintf(label, sizeof(label), "%s", "\xe4\xbb\x8a\xe5\xa4\xa9");
+                    snprintf(label, sizeof(label), "%s", "今天");
                 } else {
                     const char *d = wd->daily[i].date;
                     if (!d) {
@@ -684,19 +692,27 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
                 }
 
                 char detail[80];
+                const char *day_text = weather_text_localized(
+                    wd->daily[i].icon_day, wd->daily[i].text_day);
                 snprintf(detail, sizeof(detail), "%s %d/%d",
-                         wd->daily[i].text_day,
+                         day_text,
                          wd->daily[i].temp_max, wd->daily[i].temp_min);
 
                 int icon_fx = fx + fcol - WEATHER_ICON_W - 6;
-                fb_bitmap(fb, icon_fx, row_y + 4, WEATHER_ICON_W, WEATHER_ICON_H,
-                          weather_icon_bitmap(wd->daily[i].icon_day), COLOR_BLACK);
+                weather_draw_icon(fb, icon_fx, row_y + 4,
+                                  wd->daily[i].icon_day,
+                                  wd->daily[i].text_day, WEATHER_ICON_W,
+                                  UI_COLOR_PAGE_CLOCK, COLOR_BLACK);
 
                 int text_w = icon_fx - fx - 5;
                 if (text_w < 32)
                     text_w = fcol - 8;
                 clock_draw_text_maxw(fb, fx + 4, row_y, label,
-                                      (i == 0) ? COLOR_RED : COLOR_BLACK,
+                                      (i == 0)
+                                      ? ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                                         UI_COLOR_ROLE_ACCENT,
+                                                         COLOR_RED)
+                                      : COLOR_BLACK,
                                       1, text_w);
                 clock_draw_text_maxw(fb, fx + 4, row_y + 21, detail,
                                       COLOR_BLACK, 1, text_w);
@@ -705,18 +721,19 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
         char line1[280];
         if (wcfg.city_name[0]) {
             snprintf(line1, sizeof(line1), "%.31s  %.23s  %d\xc2\xb0""C",
-                     wcfg.city_name, wd->now.text, wd->now.temp);
+                     wcfg.city_name, now_weather_text, wd->now.temp);
         } else {
             snprintf(line1, sizeof(line1), "%.23s  %d\xc2\xb0""C",
-                     wd->now.text, wd->now.temp);
+                     now_weather_text, wd->now.temp);
         }
         {
             int icon_x = W * 66 / 648;
             int icon_y = bot_y + (16 * wx_head_sc - WEATHER_ICON_H) / 2;
             if (icon_y < bot_y)
                 icon_y = bot_y;
-            fb_bitmap(fb, icon_x, icon_y, WEATHER_ICON_W, WEATHER_ICON_H,
-                      weather_icon_bitmap(wd->now.icon), COLOR_BLACK);
+            weather_draw_icon(fb, icon_x, icon_y, wd->now.icon, wd->now.text,
+                              WEATHER_ICON_W, UI_COLOR_PAGE_CLOCK,
+                              COLOR_BLACK);
 
             int lx = icon_x + WEATHER_ICON_W + 10;
             int lw = W - lx - MX - 8;
@@ -726,12 +743,10 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
 
         char line2[280];
         snprintf(line2, sizeof(line2),
-                 "\xe4\xbd\x93\xe6\x84\x9f%d\xc2\xb0""C  "
-                 "\xe6\xb9\xbf\xe5\xba\xa6%d%%  "
-                 "%.15s%d\xe7\xba\xa7",
+                 "体感%d°C  湿度%d%%  %.15s%d级",
                  wd->now.feels_like,
                  wd->now.humidity,
-                 wd->now.wind_dir, wd->now.wind_scale);
+                 now_wind_dir, wd->now.wind_scale);
         {
             int lx2 = W * 80 / 648;
             int lw2 = W - lx2 - MX - 8;
@@ -756,7 +771,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
 
             if (i == 0) {
                 snprintf(line_a, sizeof(line_a),
-                         "\xe4\xbb\x8a\xe5\xa4\xa9 %d/%d\xc2\xb0""C",
+                         "今天 %d/%d°C",
                          wd->daily[i].temp_max, wd->daily[i].temp_min);
             } else {
                 const char *d = wd->daily[i].date;
@@ -771,19 +786,27 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
                 snprintf(line_a, sizeof(line_a), "%.15s %d/%d\xc2\xb0""C",
                          md, wd->daily[i].temp_max, wd->daily[i].temp_min);
             }
-            snprintf(line_b, sizeof(line_b), "%.23s", wd->daily[i].text_day);
+            snprintf(line_b, sizeof(line_b), "%.23s",
+                     weather_text_localized(wd->daily[i].icon_day,
+                                            wd->daily[i].text_day));
 
             int icon_x = fx + max_fc - WEATHER_ICON_W;
             if (icon_x < fx)
                 icon_x = fx;
-            fb_bitmap(fb, icon_x, row_y + 1, WEATHER_ICON_W, WEATHER_ICON_H,
-                      weather_icon_bitmap(wd->daily[i].icon_day), COLOR_BLACK);
+            weather_draw_icon(fb, icon_x, row_y + 1,
+                              wd->daily[i].icon_day,
+                              wd->daily[i].text_day, WEATHER_ICON_W,
+                              UI_COLOR_PAGE_CLOCK, COLOR_BLACK);
 
             int text_max = max_fc - WEATHER_ICON_W - 6;
             if (text_max < 32)
                 text_max = max_fc;
             clock_draw_text_maxw(fb, fx, row_y, line_a,
-                                  (i == 0) ? COLOR_RED : COLOR_BLACK,
+                                  (i == 0)
+                                  ? ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                                     UI_COLOR_ROLE_ACCENT,
+                                                     COLOR_RED)
+                                  : COLOR_BLACK,
                                   wx_body_sc, text_max);
             clock_draw_text_maxw(fb, fx, row_y + line_gap, line_b,
                                   COLOR_BLACK, wx_body_sc, text_max);
@@ -799,37 +822,41 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
         int text_px = wide_clock ? 24 : 16;
         if (card_w < 80)
             card_w = W - 2 * MX;
-        ui_draw_card(fb, card_x, card_y, card_w, card_h, true);
+        ui_draw_card_for(fb, UI_COLOR_PAGE_CLOCK,
+                         card_x, card_y, card_w, card_h, true);
         ui_draw_text_px_maxw(fb, card_x + 12, card_y + (wide_clock ? 10 : 8),
-                             k_wx_placeholder_l1, COLOR_BLACK, text_px,
+                             "天气数据未就绪", COLOR_BLACK, text_px,
                              card_w - 24);
         ui_draw_text_px_maxw(fb, card_x + 12,
                              card_y + (wide_clock ? 10 : 8) + line_gap,
-                             k_wx_placeholder_l2, COLOR_RED, text_px,
+                             "请先在天气页填写城市",
+                             ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                              UI_COLOR_ROLE_NOTICE,
+                                              COLOR_RED), text_px,
                              card_w - 24);
     } else {
         char ampm[16];
-        if (hour < 6)       snprintf(ampm, sizeof(ampm), "\xe5\x87\x8c\xe6\x99\xa8");
-        else if (hour < 12) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8a\xe5\x8d\x88");
-        else if (hour < 18) snprintf(ampm, sizeof(ampm), "\xe4\xb8\x8b\xe5\x8d\x88");
-        else                snprintf(ampm, sizeof(ampm), "\xe6\x99\x9a\xe4\xb8\x8a");
+        snprintf(ampm, sizeof(ampm), "%s", clock_day_period(hour));
         if (!big) {
             const int card_x = is_583 ? 48 : 24;
             const int card_y = bot_y + (is_583 ? 8 : (plain_compact_clock ? 16 : 6));
             const int card_w = W - 2 * card_x;
             const int card_h = is_583 ? 104 : 72;
-            ui_draw_card(fb, card_x, card_y, card_w, card_h, true);
+            ui_draw_card_for(fb, UI_COLOR_PAGE_CLOCK,
+                             card_x, card_y, card_w, card_h, true);
 
             const char *tag = time_sync_is_synced()
-                                  ? "\xe6\x97\xb6\xe9\x97\xb4\xe5\xb7\xb2\xe5\x90\x8c\xe6\xad\xa5"
-                                  : "\xe7\xad\x89\xe5\xbe\x85\xe7\xbd\x91\xe7\xbb\x9c\xe6\xa0\xa1\xe6\x97\xb6";
+                                  ? "时间已同步" : "等待网络校时";
             int ampm_sc = is_583 ? 3 : 2;
             int aw = clock_text_px(ampm, ampm_sc);
             int tw = clock_text_px(tag, 1);
             clock_draw_text(fb, (W - aw) / 2, card_y + (is_583 ? 18 : 14),
                             ampm, COLOR_BLACK, ampm_sc);
             clock_draw_text(fb, (W - tw) / 2, card_y + (is_583 ? 72 : 48), tag,
-                            time_sync_is_synced() ? COLOR_BLACK : COLOR_RED, 1);
+                            time_sync_is_synced() ? COLOR_BLACK :
+                            ui_color_resolve(UI_COLOR_PAGE_CLOCK,
+                                             UI_COLOR_ROLE_NOTICE,
+                                             COLOR_RED), 1);
         } else {
             ui_draw_dotted_hline(fb, W / 2 - 70, bot_y + 30, 140, COLOR_BLACK, 6);
             int aw = clock_text_px(ampm, sc);
@@ -838,8 +865,7 @@ static esp_err_t render_clock(unsigned epoch, bool notify_scheduler,
     }
 
     if (big || has_weather || cfg_local.show_weather)
-        clock_draw_footer(fb, "\xe6\x97\xb6\xe9\x92\x9f",
-                          cfg_local.show_weather ? "\xe5\xa4\xa9\xe6\xb0\x94" : "\xe6\x97\xb6\xe9\x97\xb4");
+        clock_draw_footer(fb, "时钟", cfg_local.show_weather ? "天气" : "时间");
 
 clock_render_done:
     if (!display_policy_epoch_is_current(epoch)) {
@@ -851,11 +877,18 @@ clock_render_done:
     }
 
     /* Display directly from RAM; clock refreshes should not rewrite /spiffs/image.bin. */
-    esp_err_t err = epd_display_fb_free_mode(fb, refresh_mode);
+    esp_err_t err = epd_display_fb_free_mode_epoch(fb, refresh_mode, epoch);
     if (err != ESP_OK) {
         if (s_render_mutex)
             xSemaphoreGive(s_render_mutex);
         return err;
+    }
+
+    if (!display_policy_epoch_is_current(epoch)) {
+        if (s_render_mutex)
+            xSemaphoreGive(s_render_mutex);
+        ESP_LOGI(TAG, "Clock display completed but was superseded");
+        return ESP_ERR_INVALID_STATE;
     }
 
     if (notify_scheduler)
@@ -910,9 +943,10 @@ static void clock_task(void *arg)
         if (!display_policy_clock_may_auto_refresh() &&
             !display_policy_calendar_may_midnight_refresh()) {
             state_reset();
+            /* A pending display can roll back without a configuration event. */
             xEventGroupWaitBits(s_event,
                                 BIT_CFG_CHANGED | BIT_WEATHER_DATA | BIT_WAKE,
-                                pdTRUE, pdFALSE, portMAX_DELAY);
+                                pdTRUE, pdFALSE, pdMS_TO_TICKS(30000));
             continue;
         }
 
@@ -932,6 +966,7 @@ static void clock_task(void *arg)
             pdTRUE, pdFALSE, timeout);
 
         /* 唤醒后再核一次活跃条件（wait 期间可能被切到其他模式） */
+        unsigned observed_epoch = display_policy_display_epoch();
         bool clock_may_refresh = display_policy_clock_may_auto_refresh();
         bool calendar_may_refresh = display_policy_calendar_may_midnight_refresh();
         if (!clock_may_refresh && !calendar_may_refresh) {
@@ -981,8 +1016,7 @@ static void clock_task(void *arg)
         if (calendar_may_refresh && minute_changed &&
             calendar_display_needs_midnight_refresh()) {
             ESP_LOGI(TAG, "calendar date changed, refreshing calendar page");
-            unsigned cal_epoch = display_policy_display_epoch();
-            if (display_mode_show_request(DISPLAY_MODE_CALENDAR, &cal_epoch) == ESP_OK)
+            if (display_mode_show_background(DISPLAY_MODE_CALENDAR, observed_epoch) == ESP_OK)
                 calendar_display_wait_render_idle();
             portENTER_CRITICAL(&s_state_mux);
             s_state.last_minute = tm.tm_min;
@@ -1025,10 +1059,13 @@ static void clock_task(void *arg)
             continue;
         }
 
-        unsigned epoch = display_policy_display_epoch();
         epd_refresh_mode_t refresh_mode = s_force_full
                                               ? EPD_REFRESH_FULL
                                               : EPD_REFRESH_PARTIAL;
+        display_request_token_t token;
+        if (!display_policy_try_begin_background(DISPLAY_MODE_CLOCK, observed_epoch,
+                                                  refresh_mode, &token))
+            continue;
         ESP_LOGI(TAG,
                  "tick %02d:%02d -> render clock refresh=%s min=%d step=%d "
                  "hr=%d day=%d cfg=%d sw_vis=%d wx=%d ff=%d",
@@ -1036,7 +1073,8 @@ static void clock_task(void *arg)
                  minute_changed, refresh_step_due,
                  hour_changed, day_changed, cfg_changed,
                  sw_visibility_changed, weather_data_changed, s_force_full);
-        render_clock(epoch, false, refresh_mode);
+        esp_err_t result = render_clock(token.epoch, false, refresh_mode);
+        (void)display_policy_finish_request(&token, result, false);
     }
 }
 
@@ -1115,8 +1153,6 @@ esp_err_t clock_display_show(void)
     show_weather = s_cfg.show_weather;
     portEXIT_CRITICAL(&s_cfg_mux);
 
-    display_policy_set_manual_screen_active(false);
-
     /* 手动 show（按键/网页/启动）→ 强制下一次全刷。
      * render_clock 内部成功后会把 force_full_next 清回 false，
      * 这里只是保证从空闲/异常态恢复时第一次绝对是全刷。 */
@@ -1126,12 +1162,10 @@ esp_err_t clock_display_show(void)
 
     /* 同步渲染（耗时 ~18.8s 全刷）。render_clock 末尾会更新 s_state，
      * 任务循环看到 s_state.last_minute 已是当前分钟 → 不会立即重复刷。 */
-    unsigned epoch = display_policy_display_epoch();
+    unsigned epoch = display_mode_render_epoch();
     esp_err_t err = render_clock(epoch, true, EPD_REFRESH_FULL);
     if (err != ESP_OK)
         return err;
-
-    display_mode_set_active(DISPLAY_MODE_CLOCK);
 
     if (show_weather)
         weather_request_embedded_refresh();

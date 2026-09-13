@@ -1,6 +1,8 @@
 #pragma once
 
 #include "esp_err.h"
+#include "fb_render.h"
+#include "ui_color_theme.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -26,6 +28,7 @@ typedef struct {
     int  pressure;
     char text[24];               /* e.g. "多云" */
     char wind_dir[16];
+    int  wind_degree;            /* 0..359, or -1 when the provider omits it. */
     int  wind_scale;
     int  icon;
 } weather_now_t;
@@ -69,6 +72,13 @@ esp_err_t weather_init(void);
 esp_err_t weather_get_config(weather_config_t *out);
 esp_err_t weather_set_config(const weather_config_t *cfg);
 const uint8_t *weather_icon_bitmap(int code);
+const char *weather_text_localized(int code, const char *provider_text);
+const char *weather_wind_dir_localized(int degree, const char *provider_text);
+fb_color_t weather_icon_color_for(ui_color_page_t page, int code,
+                                  const char *text, fb_color_t fallback);
+void weather_draw_icon(fb_t *fb, int x, int y, int code, const char *text,
+                       int target_size, ui_color_page_t page,
+                       fb_color_t fallback);
 /* Direct fetch is synchronous; request_* schedules the large-stack weather task. */
 esp_err_t weather_fetch_and_display(bool force_fullscreen);
 esp_err_t weather_request_fullscreen_fetch(void);

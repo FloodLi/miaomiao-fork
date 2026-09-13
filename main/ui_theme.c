@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "battery_mon.h"
+#include "epd.h"
 #include "ui_crisp_font.h"
 
 ui_layout_class_t ui_layout_for(const fb_t *fb)
@@ -265,7 +266,7 @@ void ui_draw_dotted_vline(fb_t *fb, int x, int y, int h, fb_color_t color, int s
     }
 }
 
-void ui_draw_page_frame(fb_t *fb, ui_frame_flags_t flags)
+void ui_draw_page_frame_for(fb_t *fb, ui_color_page_t page, ui_frame_flags_t flags)
 {
     if (!fb)
         return;
@@ -305,12 +306,19 @@ void ui_draw_page_frame(fb_t *fb, ui_frame_flags_t flags)
             }
             return;
         }
-        fb_fill_rect(fb, m, m, accent_w, stroke, COLOR_RED);
-        fb_fill_rect(fb, m, m, stroke, accent_h, COLOR_RED);
+        fb_color_t accent = ui_color_resolve(page, UI_COLOR_ROLE_ACCENT,
+                                             COLOR_RED);
+        fb_fill_rect(fb, m, m, accent_w, stroke, accent);
+        fb_fill_rect(fb, m, m, stroke, accent_h, accent);
     }
 }
 
-int ui_draw_battery_badge(fb_t *fb, int right_x, int y)
+void ui_draw_page_frame(fb_t *fb, ui_frame_flags_t flags)
+{
+    ui_draw_page_frame_for(fb, (ui_color_page_t)-1, flags);
+}
+
+int ui_draw_battery_badge_for(fb_t *fb, ui_color_page_t page, int right_x, int y)
 {
     if (!fb)
         return 0;
@@ -342,8 +350,10 @@ int ui_draw_battery_badge(fb_t *fb, int right_x, int y)
     fb_fill_rect(fb, icon_x + icon_w, icon_y + 3, cap_w, icon_h - 6, COLOR_BLACK);
 
     fb_color_t accent = COLOR_BLACK;
-    if (!st.valid || st.charging || st.percent <= 20)
-        accent = COLOR_RED;
+    if (!st.valid || st.percent <= 20)
+        accent = ui_color_resolve(page, UI_COLOR_ROLE_WARNING, COLOR_RED);
+    else if (st.charging)
+        accent = ui_color_resolve(page, UI_COLOR_ROLE_NOTICE, COLOR_RED);
     else if (ui_layout_is_e6_37(fb))
         accent = COLOR_GREEN;
 
@@ -354,15 +364,21 @@ int ui_draw_battery_badge(fb_t *fb, int right_x, int y)
         if (fill > 0)
             fb_fill_rect(fb, icon_x + 2, icon_y + 2, fill, icon_h - 4, accent);
     } else {
-        fb_hline(fb, icon_x + 5, icon_y + 4, 10, COLOR_RED);
-        fb_hline(fb, icon_x + 7, icon_y + 6, 10, COLOR_RED);
+        fb_hline(fb, icon_x + 5, icon_y + 4, 10, accent);
+        fb_hline(fb, icon_x + 7, icon_y + 6, 10, accent);
     }
 
     ui_draw_fixed_text(fb, icon_x + icon_w + cap_w + gap, text_y, label, accent, 1);
     return total_w;
 }
 
-void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_accent)
+int ui_draw_battery_badge(fb_t *fb, int right_x, int y)
+{
+    return ui_draw_battery_badge_for(fb, (ui_color_page_t)-1, right_x, y);
+}
+
+void ui_draw_header_for(fb_t *fb, ui_color_page_t page, const char *title,
+                        const char *right, bool accent_enabled)
 {
     if (!fb)
         return;
@@ -375,8 +391,10 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
     const int y = 8 * s;
     const int line_y = is_42 ? 29 : 24 * s;
 
-    if (red_accent) {
-        fb_color_t mark = is_e6 ? COLOR_BLUE : COLOR_RED;
+    if (accent_enabled) {
+        fb_color_t mark = is_e6 ? COLOR_BLUE :
+                          ui_color_resolve(page, UI_COLOR_ROLE_ACCENT,
+                                           COLOR_RED);
         fb_fill_rect(fb, x - 6 * s, y + 1 * s, 2 * s, 12 * s, mark);
         if (is_e6)
             fb_fill_rect(fb, x - 3 * s, y + 1 * s, 2 * s, 12 * s, COLOR_GREEN);
@@ -396,7 +414,7 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
     }
 
     int battery_right = W - 14 * s;
-    int battery_w = ui_draw_battery_badge(fb, battery_right, y);
+    int battery_w = ui_draw_battery_badge_for(fb, page, battery_right, y);
     int right_limit = battery_right - battery_w - 8 * s;
 
     if (right && right[0]) {
@@ -433,6 +451,11 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
     }
 }
 
+void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_accent)
+{
+    ui_draw_header_for(fb, (ui_color_page_t)-1, title, right, red_accent);
+}
+
 void ui_draw_footer(fb_t *fb, const char *left, const char *right)
 {
     if (!fb)
@@ -465,12 +488,13 @@ void ui_draw_footer(fb_t *fb, const char *left, const char *right)
     }
 }
 
-void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent)
+void ui_draw_card_for(fb_t *fb, ui_color_page_t page, int x, int y,
+                      int w, int h, bool accent_enabled)
 {
     if (!fb || w <= 1 || h <= 1)
         return;
     fb_rect(fb, x, y, w, h, COLOR_BLACK);
-    if (red_accent) {
+    if (accent_enabled) {
         int accent_w = w / 5;
         if (accent_w < 28)
             accent_w = 28;
@@ -478,7 +502,8 @@ void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent)
             accent_w = 96;
         fb_color_t accent = ui_layout_is_e6_37(fb)
                            ? ui_e6_palette_color(fb, (x / 8) + (y / 8), COLOR_RED)
-                           : COLOR_RED;
+                           : ui_color_resolve(page, UI_COLOR_ROLE_ACCENT,
+                                              COLOR_RED);
         fb_fill_rect(fb, x, y, accent_w, 2, accent);
         fb_fill_rect(fb, x, y, 2, h > 34 ? 34 : h, accent);
         if (ui_layout_is_e6_37(fb) && accent_w > 20) {
@@ -487,6 +512,11 @@ void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent)
             fb_fill_rect(fb, x + accent_w / 2, y, accent_w / 2, 2, next);
         }
     }
+}
+
+void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent)
+{
+    ui_draw_card_for(fb, (ui_color_page_t)-1, x, y, w, h, red_accent);
 }
 
 void ui_draw_section_label(fb_t *fb, int x, int y, const char *label,
@@ -514,7 +544,9 @@ static void ui_draw_centered_text_px(fb_t *fb, int y, const char *s,
     ui_draw_text_px(fb, x, y, s, color, target_px);
 }
 
-void ui_draw_empty_state_compact(fb_t *fb, const char *title, const char *hint)
+static void ui_draw_empty_state_internal(fb_t *fb, ui_color_page_t page,
+                                         const char *title, const char *hint,
+                                         ui_color_role_t hint_role)
 {
     if (!fb)
         return;
@@ -528,10 +560,25 @@ void ui_draw_empty_state_compact(fb_t *fb, const char *title, const char *hint)
     }
     if (hint) {
         int px = 16 * s;
+        fb_color_t hint_color = ui_layout_is_e6_37(fb)
+                              ? COLOR_GREEN
+                              : ui_color_resolve(page, hint_role, COLOR_RED);
         ui_draw_centered_text_px(fb, y + 28 * s, hint,
-                                 ui_layout_is_e6_37(fb) ? COLOR_GREEN : COLOR_RED,
-                                 px);
+                                 hint_color, px);
     }
+}
+
+void ui_draw_empty_state_for(fb_t *fb, ui_color_page_t page,
+                             const char *title, const char *hint,
+                             ui_color_role_t hint_role)
+{
+    ui_draw_empty_state_internal(fb, page, title, hint, hint_role);
+}
+
+void ui_draw_empty_state_compact(fb_t *fb, const char *title, const char *hint)
+{
+    ui_draw_empty_state_internal(fb, (ui_color_page_t)-1, title, hint,
+                                 UI_COLOR_ROLE_ACCENT);
 }
 
 void ui_draw_empty_state(fb_t *fb, const char *title, const char *hint)

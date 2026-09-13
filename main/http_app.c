@@ -45,6 +45,8 @@
 #include "spiffs_mount.h"
 #include "battery_mon.h"
 #include "ui_theme.h"
+#include "ui_color_theme.h"
+#include "welcome_config.h"
 #include "cJSON.h"
 
 static const char *TAG = "http_app";
@@ -70,6 +72,7 @@ const int         http_upload_max_bytes = 2 * 1024 * 1024;
 static char s_auth_user[32];
 static char s_auth_pass[64];
 static TaskHandle_t s_epd_repair_task;
+static unsigned s_epd_repair_epoch;
 
 void http_auth_load_from_nvs(void)
 {
@@ -234,18 +237,9 @@ int http_stat_size_or_neg(const char *path)
     return -1;
 }
 
-static void drain_request_body(httpd_req_t *req)
+static bool drain_request_body(httpd_req_t *req)
 {
-    char tmp[64];
-    int remain = req ? req->content_len : 0;
-    while (remain > 0) {
-        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
-        int r = httpd_req_recv(req, tmp, to_recv);
-        if (r <= 0) {
-            break;
-        }
-        remain -= r;
-    }
+    return http_receive_drain(req);
 }
 
 /** EPD 未就绪时返回 JSON 503，避免 httpd 与 epd_init 并行时刷硬件 */
@@ -256,6 +250,26 @@ bool http_require_epd_ready(httpd_req_t *req)
     httpd_resp_set_status(req, "503 Service Unavailable");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"墨水屏正在初始化，请几秒后重试\"}");
+    return false;
+}
+
+bool http_require_mode_available(httpd_req_t *req, int mode)
+{
+    if (display_mode_is_available(mode))
+        return true;
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"功能模块初始化失败或不可用\"}");
+    return false;
+}
+
+bool http_require_service_available(httpd_req_t *req, app_service_t service)
+{
+    if (app_service_is_available(service))
+        return true;
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"功能模块初始化失败或不可用\"}");
     return false;
 }
 
@@ -284,50 +298,67 @@ static esp_err_t index_get_handler(httpd_req_t *req)
 
 static const char *http_panel_name(epd_panel_t panel)
 {
-    switch (panel) {
-    case EPD_PANEL_42_BWR: return "4.2 BWR SSD1619";
-    case EPD_PANEL_583_BWR: return "5.83 BWR UC8179";
-    case EPD_PANEL_WS_583_BWR: return "Waveshare 5.83 BWR B V2";
-    case EPD_PANEL_ATC_SSD1619_16_BWR: return "ATC/Solum 1.6 BWR SSD1619";
-    case EPD_PANEL_ATC_SSD1619_22_BWR: return "ATC/Solum 2.2 BWR SSD1619";
-    case EPD_PANEL_ATC_SSD1619_26_BWR: return "ATC/Solum 2.6 BWR SSD1619";
-    case EPD_PANEL_HINK_SSD1619_29_BWR: return "HINK-E029A14-A1 2.9 BWR SSD1619";
-    case EPD_PANEL_ATC_UC8151_29_BWR: return "ATC/Solum 2.9 BWR UC8151";
-    case EPD_PANEL_ATC_UCVAR43_BWR: return "ATC/Solum 4.3 BWR UC";
-    case EPD_PANEL_ATC_DUALSSD_585_BWR: return "ATC/Solum 5.85 BWR dual SSD";
-    case EPD_PANEL_ATC_DUALSSD_585_BW: return "ATC/Solum 5.85 BW dual SSD";
-    case EPD_PANEL_ATC_UC8159_60_BWR: return "ATC/Solum 6.0 BWR UC8159";
-    case EPD_PANEL_ATC_UC8179_74_BWR: return "ATC/Solum 7.4 BWR UC8179";
-    case EPD_PANEL_ATC_SSD_97_BWR: return "ATC/Solum 9.7 BWR SSD";
-    case EPD_PANEL_ATC_PEGHOOK_13_BWR: return "ATC/Solum 1.3 peghook BWR SSD";
-    case EPD_PANEL_REF_UC8176_42_BW: return "UC8176 4.2 BW";
-    case EPD_PANEL_REF_UC8176_42_BWR: return "UC 4.2 BWR reference";
-    case EPD_PANEL_REF_UC8179_75_BW: return "UC8179 7.5 BW";
-    case EPD_PANEL_REF_UC8179_75_BWR: return "UC8179 7.5 BWR";
-    case EPD_PANEL_REF_UC8159_583_BW: return "UC8159 5.83 BW";
-    case EPD_PANEL_REF_UC8159_75_LOW_BWR: return "UC8159 7.5 low BWR";
-    case EPD_PANEL_REF_SSD1677_75_HD_BW: return "SSD1677 7.5 HD BW";
-    case EPD_PANEL_REF_SSD1677_75_HD_BWR: return "SSD1677 7.5 HD BWR";
-    case EPD_PANEL_REF_JD79665_75_BWRY: return "JD79665 7.5 BWRY";
-    case EPD_PANEL_REF_SSD1619_42_BW: return "SSD1619A 4.2 BW reference";
-    case EPD_PANEL_REF_SSD1619_42_BWR: return "SSD1619 4.2 BWR";
-    case EPD_PANEL_REF_JD79668_42_BWRY: return "JD79668 4.2 BWRY";
-    case EPD_PANEL_REF_SSD1683_42_BWR: return "SSD1683 4.2 BWR";
-    case EPD_PANEL_REF_SSD1683_42_LEGACY: return "SSD1683 4.2 BWR";
-    case EPD_PANEL_REF_SSD1683_42_BW: return "SSD1683 4.2 BW";
-    case EPD_PANEL_FPC194_SSD1683_42_BWR: return "FPC-194 4.2 BWR SSD1683";
-    case EPD_PANEL_REF_SSD1667_102_BWR: return "SSD1667 10.2 BWR";
-    case EPD_PANEL_E6_37_6C: return "E6 3.7 six-color";
-    case EPD_PANEL_REF_SSD2677_97_BWRY: return "SSD2677 9.7 BWRY";
-    default: return "Unknown panel";
-    }
+    return epd_panel_name(panel);
 }
 
 /* ── GET /status ───────────────────────────────────────────────────── */
 
+static bool http_status_display_result(httpd_req_t *req, char *out, size_t size)
+{
+    if (!out || size == 0) return false;
+    out[0] = '\0';
+    size_t length = httpd_req_get_url_query_len(req);
+    if (length == 0) return true;
+    char query[256], value[12];
+    if (length >= sizeof(query) || httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid status query");
+        return false;
+    }
+    esp_err_t found = httpd_query_key_value(query, "display_epoch", value, sizeof(value));
+    if (found == ESP_ERR_NOT_FOUND) {
+        for (const char *p = query; *p;) {
+            const char *end = strchr(p, '&');
+            size_t len = end ? (size_t)(end - p) : strlen(p);
+            if (len == strlen("display_epoch") && strncmp(p, "display_epoch", len) == 0)
+                goto invalid;
+            if (!end) break;
+            p = end + 1;
+        }
+        return true;
+    }
+    uint32_t epoch = 0;
+    if (found != ESP_OK || !value[0]) goto invalid;
+    for (const char *p = value; *p; ++p) {
+        if (*p < '0' || *p > '9') goto invalid;
+        unsigned digit = (unsigned)(*p - '0');
+        if (epoch > (UINT32_MAX - digit) / 10) goto invalid;
+        epoch = epoch * 10 + digit;
+    }
+    if (!epoch) goto invalid;
+    display_result_t result = display_policy_get_result(epoch);
+    const char *state = result.error == ESP_ERR_NOT_FOUND ? "unavailable" :
+                        result.state == DISPLAY_RESULT_PENDING ? "pending" :
+                        result.state == DISPLAY_RESULT_OK ? "ok" :
+                        result.state == DISPLAY_RESULT_CANCELED ? "canceled" : "error";
+    int written = snprintf(out, size,
+        ",\"display_result\":{\"epoch\":%lu,\"state\":\"%s\",\"error\":\"%s\"}",
+        (unsigned long)epoch, state,
+        result.state == DISPLAY_RESULT_ERROR ? esp_err_to_name(result.error) : "");
+    if (written < 0 || (size_t)written >= size) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "display result too large");
+        return false;
+    }
+    return true;
+invalid:
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid display_epoch");
+    return false;
+}
+
 static esp_err_t status_get_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
+    char display_json[192];
+    if (!http_status_display_result(req, display_json, sizeof(display_json))) return ESP_OK;
 
     const esp_app_desc_t *desc = esp_app_get_description();
     const esp_partition_t *running = esp_ota_get_running_partition();
@@ -376,8 +407,21 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     json_escape(esc_wx_update, sizeof(esc_wx_update), wx_sum.valid ? wx_sum.update_time : "");
 
     bool wx_configured = wx_cfg.city_name[0] != '\0';
-    char json[2048];
-    snprintf(json, sizeof(json),
+    epd_image_profile_t image_profile;
+    char image_json[256] = "null";
+    if (epd_panel_image_profile(panel, &image_profile)) {
+        const char *inks = strcmp(image_profile.color_type, "e6") == 0
+            ? "\"black\",\"white\",\"red\",\"yellow\",\"blue\",\"green\""
+            : image_profile.has_yellow
+                ? (image_profile.has_red ? "\"black\",\"white\",\"red\",\"yellow\""
+                                         : "\"black\",\"white\",\"yellow\"")
+                : image_profile.has_red ? "\"black\",\"white\",\"red\"" : "\"black\",\"white\"";
+        snprintf(image_json, sizeof(image_json),
+                 "{\"id\":\"%s\",\"color_type\":\"%s\",\"inks\":[%s]}",
+                 image_profile.id, image_profile.color_type, inks);
+    }
+    char json[2560];
+    int json_len = snprintf(json, sizeof(json),
              "{\"version\":\"%s\",\"idf\":\"%s\",\"build_date\":\"%s\",\"build_time\":\"%s\","
              "\"running\":\"%s\","
              "\"upload_path\":\"%s\",\"upload_bytes\":%d,"
@@ -388,6 +432,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"current_mode_label\":\"%s\",\"active_mode\":%d,"
              "\"panel\":%d,\"panel_name\":\"%s\",\"panel_width\":%d,"
              "\"panel_height\":%d,\"panel_has_red\":%s,\"panel_has_yellow\":%s,"
+             "\"image_profile\":%s,"
              "\"busy_idle\":%d,\"epd_ready\":%s,"
              "\"free_heap\":%u,\"min_free_heap\":%u,"
              "\"internal_free\":%u,\"psram_free\":%u,"
@@ -396,7 +441,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              "\"weather_enabled\":%s,\"weather_configured\":%s,"
              "\"weather_city\":\"%s\",\"weather_refresh_min\":%lu,"
              "\"weather_valid\":%s,\"weather_temp\":%d,"
-             "\"weather_text\":\"%s\",\"weather_update\":\"%s\"}",
+             "\"weather_text\":\"%s\",\"weather_icon\":%d,"
+             "\"weather_update\":\"%s\"%s}",
              esc_version, esc_idf,
              desc ? desc->date : "", desc ? desc->time : "",
              esc_running,
@@ -407,6 +453,7 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              (int)panel, esc_panel, epd_width(), epd_height(),
               epd_has_red() ? "true" : "false",
               epd_has_yellow() ? "true" : "false",
+              image_json,
               epd_busy_idle_level(),
                epd_is_ready() ? "true" : "false",
                (unsigned)esp_get_free_heap_size(),
@@ -425,7 +472,11 @@ static esp_err_t status_get_handler(httpd_req_t *req)
              wx_sum.valid ? "true" : "false",
              wx_sum.valid ? wx_sum.now.temp : 0,
              esc_wx_text,
-             esc_wx_update);
+             wx_sum.valid ? wx_sum.now.icon : 0,
+             esc_wx_update, display_json);
+
+    if (json_len < 0 || (size_t)json_len >= sizeof(json))
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Status response too large");
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
@@ -615,15 +666,7 @@ static esp_err_t wifi_connect_post_handler(httpd_req_t *req)
 static esp_err_t wifi_forget_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
-    /* 不直接修改 req->content_len（httpd_req_recv 内部会跟踪剩余字节）。
-     * 用本地 remain 计数器消耗请求体即可，避免依赖未文档化的内部行为。 */
-    char tmp[64];
-    int remain = req->content_len;
-    while (remain > 0) {
-        int r = httpd_req_recv(req, tmp, remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp));
-        if (r <= 0) break;
-        remain -= r;
-    }
+    if (!http_receive_drain(req)) return ESP_FAIL;
 
     esp_err_t err = wifi_manager_forget();
     char json[64];
@@ -781,11 +824,12 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     int remaining = req->content_len;
     int received  = 0;
     bool failed   = false;
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_UPLOAD_MS);
 
     while (remaining > 0) {
         int to_recv = remaining > 4096 ? 4096 : remaining;
-        int r = httpd_req_recv(req, buf, to_recv);
-        if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        int r = http_receive_chunk(req, &receive, buf, to_recv);
         if (r <= 0) {
             ESP_LOGE(TAG, "OTA recv error at %d/%d bytes", received, req->content_len);
             failed = true;
@@ -806,11 +850,9 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     free(buf);
 
     if (failed) {
+        http_receive_abort(req);
         esp_ota_abort(handle);
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_set_status(req, "500 Internal Server Error");
-        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"Firmware upload interrupted\"}");
-        return ESP_OK;
+        return ESP_FAIL;
     }
 
     err = esp_ota_end(handle);
@@ -890,6 +932,7 @@ static esp_err_t weather_config_get_handler(httpd_req_t *req)
     if (d.valid) {
         cJSON_AddNumberToObject(root, "temp", d.now.temp);
         cJSON_AddStringToObject(root, "text", d.now.text);
+        cJSON_AddNumberToObject(root, "icon", d.now.icon);
         cJSON_AddStringToObject(root, "update_time", d.update_time);
     }
     char *str = cJSON_PrintUnformatted(root);
@@ -964,11 +1007,14 @@ static esp_err_t weather_show_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
+    if (!http_require_mode_available(req, DISPLAY_MODE_WEATHER))
+        return ESP_OK;
 
-    drain_request_body(req);
+    if (!drain_request_body(req)) return ESP_FAIL;
 
     esp_err_t err = weather_fetch_and_display(true);
-    if (err == ESP_OK) {
+    if (err == ESP_OK && display_mode_active() == DISPLAY_MODE_WEATHER &&
+        display_policy_manual_screen_active()) {
         button_set_current_mode(DISPLAY_MODE_WEATHER);
         power_mgr_save_mode(DISPLAY_MODE_WEATHER);
     }
@@ -1069,11 +1115,14 @@ static esp_err_t codex_quota_show_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
+    if (!http_require_mode_available(req, DISPLAY_MODE_CODEX_QUOTA))
+        return ESP_OK;
 
-    drain_request_body(req);
+    if (!drain_request_body(req)) return ESP_FAIL;
 
-    esp_err_t err = codex_quota_show();
-    if (err == ESP_OK) {
+    unsigned epoch = 0;
+    esp_err_t err = display_mode_show_request(DISPLAY_MODE_CODEX_QUOTA, &epoch);
+    if (err == ESP_OK && display_policy_epoch_is_current(epoch)) {
         button_set_current_mode(DISPLAY_MODE_CODEX_QUOTA);
         power_mgr_save_mode(DISPLAY_MODE_CODEX_QUOTA);
     }
@@ -1145,12 +1194,14 @@ static esp_err_t clock_show_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
+    if (!http_require_mode_available(req, DISPLAY_MODE_CLOCK))
+        return ESP_OK;
 
-    drain_request_body(req);
+    if (!drain_request_body(req)) return ESP_FAIL;
 
-    display_policy_bump_display_epoch();
-    esp_err_t err = clock_display_show();
-    if (err == ESP_OK) {
+    unsigned epoch = 0;
+    esp_err_t err = display_mode_show_request(DISPLAY_MODE_CLOCK, &epoch);
+    if (err == ESP_OK && display_policy_epoch_is_current(epoch)) {
         button_set_current_mode(DISPLAY_MODE_CLOCK);
         power_mgr_save_mode(DISPLAY_MODE_CLOCK);
     }
@@ -1250,19 +1301,21 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
+    if (!http_require_service_available(req, APP_SERVICE_MESSAGE))
+        return ESP_OK;
 
-    drain_request_body(req);
+    if (!http_receive_drain(req)) return ESP_OK;
 
-    unsigned epoch = display_policy_display_epoch();
+    unsigned epoch = 0;
     esp_err_t err = message_board_show_queued(&epoch);
-    if (err == ESP_OK)
-        message_board_wait_idle();
-    if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
-        err = ESP_ERR_INVALID_STATE;
-    char json[112];
-    snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",
-             err == ESP_OK ? "true" : "false",
-             err == ESP_ERR_INVALID_STATE ? "true" : "false");
+    display_result_t result = {DISPLAY_RESULT_ERROR, err};
+    if (epoch)
+        result = message_board_wait_result(epoch);
+    char json[160];
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s,\"error\":\"%s\"}",
+             result.state == DISPLAY_RESULT_OK ? "true" : "false",
+             result.state == DISPLAY_RESULT_CANCELED ? "true" : "false",
+             result.state == DISPLAY_RESULT_ERROR ? esp_err_to_name(result.error) : "");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -1276,6 +1329,8 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
 static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
+    if (!http_require_service_available(req, APP_SERVICE_MESSAGE))
+        return ESP_OK;
     if (req->content_len <= 0) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty image");
         return ESP_OK;
@@ -1298,10 +1353,10 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
     int remaining = req->content_len;
     int total = 0;
     bool ok = true;
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_UPLOAD_MS);
     while (remaining > 0) {
-        int got = httpd_req_recv(req, (char *)img + total, remaining);
-        if (got == HTTPD_SOCK_ERR_TIMEOUT)
-            continue;
+        int got = http_receive_chunk(req, &receive, (char *)img + total, remaining);
         if (got <= 0) {
             ok = false;
             break;
@@ -1311,12 +1366,10 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
     }
     if (!ok) {
         free(img);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "receive image failed");
-        return ESP_OK;
+        return ESP_FAIL;
     }
 
     const epd_refresh_mode_t refresh_mode = EPD_REFRESH_FAST;
-    bool was_manual = display_policy_manual_screen_active();
     unsigned epoch = display_policy_begin_manual_display_mode(refresh_mode);
     const char *raw_path = "/spiffs/image.bin";
     fb_raw_file_lock();
@@ -1335,7 +1388,7 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
     esp_err_t derr = ESP_OK;
     if (cerr == ESP_OK && display_policy_epoch_is_current(epoch)) {
         if (fast_fb) {
-            derr = epd_display_fb_free_mode(fast_fb, refresh_mode);
+            derr = epd_display_fb_free_mode_epoch(fast_fb, refresh_mode, epoch);
             fast_fb = NULL;
         } else {
             fb_t *fb = fb_create();
@@ -1344,7 +1397,7 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
             } else {
                 derr = fb_import(fb, raw_path);
                 if (derr == ESP_OK)
-                    derr = epd_display_fb_free_mode(fb, refresh_mode);
+                    derr = epd_display_fb_free_mode_epoch(fb, refresh_mode, epoch);
                 else
                     fb_destroy(fb);
             }
@@ -1357,18 +1410,20 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
     fb_raw_file_unlock();
 
     if (cerr != ESP_OK) {
-        if (!was_manual && display_policy_epoch_is_current(epoch))
-            display_policy_set_manual_screen_active(false);
+        (void)display_policy_finish_epoch(epoch, cerr, true);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "image convert failed");
         return ESP_OK;
     }
     if (derr != ESP_OK) {
-        if (!was_manual && display_policy_epoch_is_current(epoch))
-            display_policy_set_manual_screen_active(false);
+        (void)display_policy_finish_epoch(epoch, derr, true);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "EPD display failed");
         return ESP_OK;
     }
-    display_policy_set_manual_screen_active(true);
+    if (!display_policy_finish_epoch(epoch, ESP_OK, true)) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"display superseded\"}");
+        return ESP_OK;
+    }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
@@ -1446,19 +1501,256 @@ static esp_err_t panel_config_post_handler(httpd_req_t *req)
     }
     bool reboot_required = (pending_panel != epd_get_panel()) ||
                            (pending_busy != epd_busy_idle_level());
+    bool reboot_scheduled = false;
+    if (reboot_required) {
+        ESP_LOGI(TAG, "Panel config changed: active=%d pending=%d busy=%d, scheduling reboot",
+                 (int)epd_get_panel(), (int)pending_panel, pending_busy);
+        reboot_scheduled = xTaskCreate(reboot_task, "panel_reboot", 2048,
+                                       NULL, 5, NULL) == pdPASS;
+        if (!reboot_scheduled)
+            ESP_LOGE(TAG, "Failed to create panel reboot task");
+    }
     char json[384];
     snprintf(json, sizeof(json),
              "{\"ok\":true,\"active_panel\":%d,\"pending_panel\":%d,"
              "\"width\":%d,\"height\":%d,\"has_red\":%s,\"has_yellow\":%s,"
              "\"busy_idle\":%d,\"pending_busy_idle\":%d,"
-             "\"reboot_required\":%s,\"note\":\"panel config saved; reboot to apply\"}",
+             "\"reboot_required\":%s,\"reboot_scheduled\":%s,"
+             "\"note\":\"panel config saved; device will reboot automatically\"}",
              (int)epd_get_panel(), (int)pending_panel,
               epd_width(), epd_height(), epd_has_red() ? "true" : "false",
               epd_has_yellow() ? "true" : "false",
               epd_busy_idle_level(), pending_busy,
-              reboot_required ? "true" : "false");
+              reboot_required ? "true" : "false",
+              reboot_scheduled ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static esp_err_t feature_help_js_get_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/javascript; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    httpd_resp_send(req, (const char *)feature_help_js_start,
+                    (ssize_t)(feature_help_js_end - feature_help_js_start));
+    return ESP_OK;
+}
+
+static esp_err_t image_processor_js_get_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/javascript; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, (const char *)image_processor_js_start,
+                          (ssize_t)(image_processor_js_end - image_processor_js_start));
+}
+
+static esp_err_t ui_color_config_send(httpd_req_t *req, bool include_ok)
+{
+    ui_color_config_t cfg;
+    ui_color_config_get(&cfg);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *profiles = cJSON_CreateObject();
+    if (!root || !profiles) {
+        cJSON_Delete(root);
+        cJSON_Delete(profiles);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "config response alloc failed");
+    }
+
+    if (include_ok)
+        cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddNumberToObject(root, "panel", (int)epd_get_panel());
+    cJSON_AddBoolToObject(root, "applicable", ui_color_theme_applicable());
+    for (int i = 0; i < UI_COLOR_PAGE_COUNT; i++) {
+        cJSON_AddStringToObject(profiles, ui_color_page_key((ui_color_page_t)i),
+                                ui_color_profile_name(cfg.profiles[i]));
+    }
+    cJSON_AddItemToObject(root, "profiles", profiles);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json)
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "config response encode failed");
+
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, json);
+    free(json);
+    return err;
+}
+
+static esp_err_t ui_color_config_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req))
+        return ESP_OK;
+    return ui_color_config_send(req, true);
+}
+
+static esp_err_t ui_color_config_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req))
+        return ESP_OK;
+
+    char buf[768] = {0};
+    if (!http_read_request_body(req, buf, sizeof(buf), "invalid request body"))
+        return ESP_OK;
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root || !cJSON_IsObject(root)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON format error");
+        return ESP_OK;
+    }
+
+    cJSON *reset = cJSON_GetObjectItemCaseSensitive(root, "reset");
+    if (reset) {
+        if (!cJSON_IsBool(reset) || !cJSON_IsTrue(reset)) {
+            cJSON_Delete(root);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid reset value");
+            return ESP_OK;
+        }
+        esp_err_t reset_err = ui_color_config_reset();
+        cJSON_Delete(root);
+        if (reset_err != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                "color config reset failed");
+            return ESP_OK;
+        }
+        return ui_color_config_send(req, true);
+    }
+
+    cJSON *profiles = cJSON_GetObjectItemCaseSensitive(root, "profiles");
+    if (!profiles || !cJSON_IsObject(profiles)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "profiles object required");
+        return ESP_OK;
+    }
+
+    ui_color_config_t next;
+    ui_color_config_get(&next);
+    int changed = 0;
+    cJSON *item = NULL;
+    cJSON_ArrayForEach(item, profiles) {
+        ui_color_page_t page;
+        ui_color_profile_t profile;
+        const char *key = item->string;
+        if (!key || !ui_color_page_from_key(key, &page) ||
+            !cJSON_IsString(item) || !item->valuestring ||
+            !ui_color_profile_from_name(item->valuestring, &profile)) {
+            cJSON_Delete(root);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                "invalid page or color profile");
+            return ESP_OK;
+        }
+        next.profiles[page] = profile;
+        changed++;
+    }
+    cJSON_Delete(root);
+
+    if (changed == 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "profiles is empty");
+        return ESP_OK;
+    }
+
+    esp_err_t err = ui_color_config_set(&next);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                            "color config save failed");
+        return ESP_OK;
+    }
+    return ui_color_config_send(req, true);
+}
+
+static esp_err_t welcome_config_send(httpd_req_t *req, bool include_ok)
+{
+    welcome_config_t cfg;
+    welcome_config_get(&cfg);
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "config response alloc failed");
+    if (include_ok)
+        cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddBoolToObject(root, "enabled", cfg.enabled);
+    cJSON_AddStringToObject(root, "title", cfg.title);
+    cJSON_AddStringToObject(root, "message", cfg.message);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json)
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "config response encode failed");
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, json);
+    free(json);
+    return err;
+}
+
+static esp_err_t welcome_config_get_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req))
+        return ESP_OK;
+    return welcome_config_send(req, false);
+}
+
+static esp_err_t welcome_config_post_handler(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req))
+        return ESP_OK;
+
+    char body[512] = {0};
+    if (!http_read_request_body(req, body, sizeof(body), "invalid request body"))
+        return ESP_OK;
+    cJSON *root = cJSON_Parse(body);
+    if (!root || !cJSON_IsObject(root)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON format error");
+        return ESP_OK;
+    }
+
+    welcome_config_t cfg;
+    welcome_config_get(&cfg);
+    cJSON *item = cJSON_GetObjectItemCaseSensitive(root, "enabled");
+    if (item) {
+        if (!cJSON_IsBool(item))
+            goto invalid;
+        cfg.enabled = cJSON_IsTrue(item);
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "title");
+    if (item) {
+        if (!cJSON_IsString(item) || !item->valuestring)
+            goto invalid;
+        const char *value = item->valuestring;
+        if (strlen(value) >= sizeof(cfg.title))
+            goto invalid;
+        snprintf(cfg.title, sizeof(cfg.title), "%s", value);
+    }
+    item = cJSON_GetObjectItemCaseSensitive(root, "message");
+    if (item) {
+        if (!cJSON_IsString(item) || !item->valuestring)
+            goto invalid;
+        const char *value = item->valuestring;
+        if (strlen(value) >= sizeof(cfg.message))
+            goto invalid;
+        snprintf(cfg.message, sizeof(cfg.message), "%s", value);
+    }
+    cJSON_Delete(root);
+
+    esp_err_t err = welcome_config_set(&cfg);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                            "welcome config save failed");
+        return ESP_OK;
+    }
+    return welcome_config_send(req, true);
+
+invalid:
+    cJSON_Delete(root);
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                        "invalid welcome config");
     return ESP_OK;
 }
 
@@ -1619,13 +1911,113 @@ static esp_err_t epd_test_post_handler(httpd_req_t *req)
     if (!http_require_epd_ready(req))
         return ESP_OK;
 
-    display_policy_begin_manual_display();
+    char mode[16] = {0};
+    if (http_get_query_param(req, "mode", mode, sizeof(mode))) {
+        if (strcmp(mode, "clear") == 0) {
+            unsigned epoch = display_policy_begin_manual_display();
+            esp_err_t err = epd_clear_screen();
+            if (err != ESP_OK) {
+                (void)display_policy_finish_epoch(epoch, err, true);
+                ESP_LOGE(TAG, "EPD white clear failed: %s", esp_err_to_name(err));
+                httpd_resp_set_status(req, "500 Internal Server Error");
+                httpd_resp_set_type(req, "application/json");
+                char json[128];
+                snprintf(json, sizeof(json),
+                         "{\"ok\":false,\"msg\":\"screen clear failed\",\"error\":\"%s\"}",
+                         esp_err_to_name(err));
+                httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+                return ESP_OK;
+            }
+
+            if (!display_policy_finish_epoch(epoch, ESP_OK, true)) {
+                httpd_resp_set_status(req, "409 Conflict");
+                httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"screen clear superseded\"}");
+                return ESP_OK;
+            }
+
+            ESP_LOGI(TAG, "EPD screen cleared to white");
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_sendstr(req, "{\"ok\":true,\"mode\":\"clear\"}");
+            return ESP_OK;
+        }
+
+        epd_refresh_mode_t candidate;
+        if (strcmp(mode, "fast") == 0) {
+            candidate = EPD_REFRESH_FAST;
+        } else if (strcmp(mode, "partial") == 0) {
+            candidate = EPD_REFRESH_PARTIAL;
+        } else {
+            httpd_resp_set_status(req, "400 Bad Request");
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"invalid refresh test mode\"}");
+            return ESP_OK;
+        }
+
+        unsigned epoch = display_policy_begin_manual_display();
+        epd_refresh_test_result_t result;
+        esp_err_t err;
+        switch (epd_get_panel()) {
+        case EPD_PANEL_REF_UC8159_75_LOW_BW:
+            err = epd_uc8159_refresh_test(candidate, &result);
+            break;
+        case EPD_PANEL_SSD16XX_213_BW:
+            err = epd_ssd16xx_213_refresh_test(candidate, &result);
+            break;
+        case EPD_PANEL_GD7965_UC8179_75_BW:
+            err = epd_gd7965_75_refresh_test(candidate, &result);
+            break;
+        default:
+            err = ESP_ERR_NOT_SUPPORTED;
+            break;
+        }
+        if (err != ESP_OK) {
+            (void)display_policy_finish_epoch(epoch, err, true);
+            httpd_resp_set_status(req, err == ESP_ERR_NOT_SUPPORTED
+                                           ? "409 Conflict"
+                                           : "500 Internal Server Error");
+            httpd_resp_set_type(req, "application/json");
+            char json[160];
+            snprintf(json, sizeof(json),
+                     "{\"ok\":false,\"msg\":\"refresh test failed\",\"error\":\"%s\"}",
+                     esp_err_to_name(err));
+            httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+            return ESP_OK;
+        }
+
+        if (!display_policy_finish_epoch(epoch, ESP_OK, true)) {
+            httpd_resp_set_status(req, "409 Conflict");
+            httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"refresh test superseded\"}");
+            return ESP_OK;
+        }
+        char json[256];
+        snprintf(json, sizeof(json),
+                 "{\"ok\":true,\"panel\":%d,\"mode\":\"%s\",\"baseline_ms\":%lu,"
+                 "\"candidate_ms\":%lu,\"baseline_busy_ok\":%s,"
+                 "\"candidate_busy_ok\":%s,\"rect\":[%d,%d,%d,%d]}",
+                 (int)epd_get_panel(),
+                 epd_refresh_mode_name(candidate),
+                 (unsigned long)result.baseline_ms,
+                 (unsigned long)result.candidate_ms,
+                 result.baseline_busy_ok ? "true" : "false",
+                 result.candidate_busy_ok ? "true" : "false",
+                 result.x, result.y, result.w, result.h);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
+
+    unsigned epoch = display_policy_begin_manual_display();
     esp_err_t err = epd_display_test_pattern();
     if (err != ESP_OK) {
+        (void)display_policy_finish_epoch(epoch, err, true);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "EPD test failed");
         return ESP_OK;
     }
-    display_policy_set_manual_screen_active(true);
+    if (!display_policy_finish_epoch(epoch, ESP_OK, true)) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"test pattern superseded\"}");
+        return ESP_OK;
+    }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
@@ -1683,7 +2075,8 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
     const int sample_w = W - sample_x - m;
 
     ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
-    fb_utf8_px_maxw(fb, sample_x, y, "日历 天气 待办", COLOR_BLACK, 24, sample_w);
+    fb_utf8_px_maxw(fb, sample_x, y, "日历 天气 待办",
+                    COLOR_BLACK, 24, sample_w);
     y += 28;
     ui_draw_text_px(fb, m, y + 4, "24px", COLOR_BLACK, 16);
     fb_utf8_px_maxw(fb, sample_x, y, "0123456789 23:59", COLOR_BLACK, 24, sample_w);
@@ -1706,13 +2099,18 @@ static esp_err_t font_test_post_handler(httpd_req_t *req)
         fb_utf8_px_maxw(fb, sample_x, y, "12:34 98%", COLOR_BLACK, 32, sample_w);
     }
 
-    display_policy_begin_manual_display();
-    esp_err_t err = epd_display_fb_free(fb);
+    unsigned epoch = display_policy_begin_manual_display();
+    esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
     if (err != ESP_OK) {
+        (void)display_policy_finish_epoch(epoch, err, true);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "font test failed");
         return ESP_OK;
     }
-    display_policy_set_manual_screen_active(true);
+    if (!display_policy_finish_epoch(epoch, ESP_OK, true)) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"font test superseded\"}");
+        return ESP_OK;
+    }
 
     char json[192];
     snprintf(json, sizeof(json),
@@ -1730,9 +2128,9 @@ static void epd_repair_task(void *arg)
     int cycles = packed & 0xFF;
     int pattern = (packed >> 8) & 0xFF;
     esp_err_t err = epd_repair_ghosting(cycles, pattern);
-    if (err == ESP_OK)
-        display_policy_set_manual_screen_active(true);
-    else
+    if (!display_policy_finish_epoch(s_epd_repair_epoch, err, true))
+        ESP_LOGI(TAG, "EPD ghost repair completed but was superseded");
+    if (err != ESP_OK)
         ESP_LOGW(TAG, "EPD ghost repair failed: %s", esp_err_to_name(err));
     s_epd_repair_task = NULL;
     vTaskDelete(NULL);
@@ -1771,11 +2169,12 @@ static esp_err_t epd_repair_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    display_policy_begin_manual_display();
+    s_epd_repair_epoch = display_policy_begin_manual_display();
     int packed = (cycles & 0xFF) | ((pattern & 0xFF) << 8);
     BaseType_t ok = xTaskCreate(epd_repair_task, "epd_repair", EPD_REPAIR_TASK_STACK,
                                 (void *)(intptr_t)packed, 4, &s_epd_repair_task);
     if (ok != pdPASS) {
+        (void)display_policy_finish_epoch(s_epd_repair_epoch, ESP_ERR_NO_MEM, true);
         s_epd_repair_task = NULL;
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_set_type(req, "application/json");
@@ -1809,7 +2208,7 @@ static void send_spiffs_action_result(httpd_req_t *req, esp_err_t err, bool rebo
 static esp_err_t spiffs_remount_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
-    drain_request_body(req);
+    if (!drain_request_body(req)) return ESP_FAIL;
 
     esp_err_t err = spiffs_mount_retry();
     send_spiffs_action_result(req, err, err == ESP_OK);
@@ -1865,7 +2264,7 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.uri_match_fn      = httpd_uri_match_wildcard;
     config.recv_wait_timeout  = 8;
     config.send_wait_timeout  = 15;
-    config.max_uri_handlers   = 80;
+    config.max_uri_handlers   = 88;
     config.stack_size         = 16384;
     config.lru_purge_enable   = true;
     config.max_open_sockets   = 7;
@@ -1887,6 +2286,8 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/codex",         HTTP_GET,  codex_page_get_handler,     NULL },
         { "/favicon.ico",   HTTP_GET,  favicon_get_handler,        NULL },
         { "/miaooaim-mark.png", HTTP_GET, miaooaim_mark_png_get_handler, NULL },
+        { "/feature_help.js", HTTP_GET, feature_help_js_get_handler, NULL },
+        { "/image_processor.js", HTTP_GET, image_processor_js_get_handler, NULL },
         { "/status",        HTTP_GET,  status_get_handler,         NULL },
         /* gallery (http_gallery.c) */
         { "/upload",        HTTP_POST, gallery_upload_post_handler,       NULL },
@@ -1902,6 +2303,10 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/wifi_forget",   HTTP_POST, wifi_forget_post_handler,   NULL },
         { "/panel_config",  HTTP_GET,  panel_config_get_handler,   NULL },
         { "/panel_config",  HTTP_POST, panel_config_post_handler,  NULL },
+        { "/ui_color_config", HTTP_GET,  ui_color_config_get_handler,  NULL },
+        { "/ui_color_config", HTTP_POST, ui_color_config_post_handler, NULL },
+        { "/welcome_config", HTTP_GET,  welcome_config_get_handler,  NULL },
+        { "/welcome_config", HTTP_POST, welcome_config_post_handler, NULL },
         /* slideshow, weather, clock, msg config (http_app.c) */
         { "/slideshow",     HTTP_GET,  slideshow_get_handler,      NULL },
         { "/slideshow",     HTTP_POST, slideshow_post_handler,     NULL },

@@ -101,8 +101,8 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
   </div>
 
   <div class="card"><div class="hd"><div class="title" style="font-size:16px">时钟表盘</div><div class="sub">大字数码管风格显示当前时间、日期和星期，可选显示天气摘要。</div></div><div class="bd">
-    <div class="form-row"><label>时钟默认偏好</label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ckEnabled"><span class="sl"></span></span><span id="ckLabel" style="font-size:13px">偏好关闭</span></label></div>
-    <div class="form-row"><label>显示天气摘要</label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ckWeather"><span class="sl"></span></span><span style="font-size:13px;color:var(--t2)">在时间下方显示天气信息（需先配置天气）</span></label></div>
+    <div class="form-row"><label class="help-label"><span>时钟默认偏好</span><button type="button" class="info-dot" aria-label="查看时钟默认偏好说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="用于保存时钟功能偏好，不会在切换开关时立刻改动屏幕；需要立即切换时请点击“立即显示时钟”。"></button></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ckEnabled"><span class="sl"></span></span><span id="ckLabel" style="font-size:13px">偏好关闭</span></label></div>
+    <div class="form-row"><label class="help-label"><span>显示天气摘要</span><button type="button" class="info-dot" aria-label="查看时钟天气摘要说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="在时钟页面增加天气摘要。需要先在天气页启用并成功获取数据；没有可用数据时，时钟仍可正常显示。"></button></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ckWeather"><span class="sl"></span></span><span style="font-size:13px;color:var(--t2)">在时间下方显示天气信息（需先配置天气）</span></label></div>
     <div class="row"><button class="btn" onclick="saveClock()">保存设置</button><button class="btn ghost sm" onclick="showClock()">立即显示时钟</button><button class="btn ghost sm" onclick="loadClock()">刷新</button></div><div class="log" id="ckLog">加载中…</div>
   </div></div>
   <footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">源码仓库</a></footer>
@@ -128,5 +128,6 @@ loadClock();
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

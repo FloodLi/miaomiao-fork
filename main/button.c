@@ -114,10 +114,7 @@ void button_set_current_mode(int mode)
     if (n <= 0) return;
     if (mode < 0) mode = 0;
     if (mode >= n) mode = n - 1;
-    if (s_mode_idx != mode)
-        epd_request_full_refresh_next();
     s_mode_idx = mode;
-    display_mode_set_active(mode);
 }
 
 static const gpio_num_t btn_pins[BTN_COUNT] = {
@@ -140,10 +137,12 @@ static void show_unconfigured_hint(int idx, unsigned epoch)
 
     const char *label = display_mode_label(idx);
 
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    ui_draw_header(fb, label, "\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae", true);
-    ui_draw_empty_state(fb, "\xe6\x9c\xaa\xe9\x85\x8d\xe7\xbd\xae",
-                        "\xe8\xaf\xb7\xe9\x80\x9a\xe8\xbf\x87\xe7\xbd\x91\xe9\xa1\xb5\xe8\xae\xbe\xe7\xbd\xae");
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_SYSTEM,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_header_for(fb, UI_COLOR_PAGE_SYSTEM, label, "未配置", true);
+    ui_draw_empty_state_for(fb, UI_COLOR_PAGE_SYSTEM,
+                            "未配置", "请通过网页设置",
+                            UI_COLOR_ROLE_NOTICE);
     ui_draw_footer(fb, "SETUP", "192.168.4.1");
 
     if (!display_policy_epoch_is_current(epoch)) {
@@ -164,7 +163,8 @@ static void switch_mode(int dir)
     bool found = false;
     for (int i = 0; i < n; i++) {
         next = (next + dir + n) % n;
-        if ((enabled & (1U << next)) != 0) {
+        if ((enabled & (1U << next)) != 0 &&
+            display_mode_is_available(next)) {
             found = true;
             break;
         }
@@ -215,9 +215,14 @@ static void display_worker_task(void *arg)
                 unsigned epoch = 0;
                 esp_err_t err;
                 if (s_mode_idx == DISPLAY_MODE_CALENDAR) {
-                    epoch = display_policy_begin_manual_display();
+                    display_request_token_t token = display_policy_begin_request(
+                        DISPLAY_MODE_CALENDAR, EPD_REFRESH_FULL);
+                    epoch = token.epoch;
                     err = calendar_display_toggle_style();
-                    calendar_display_wait_render_idle();
+                    if (err == ESP_OK)
+                        err = calendar_display_wait_render_result();
+                    if (!display_policy_finish_request(&token, err, true))
+                        err = ESP_ERR_INVALID_STATE;
                 } else {
                     err = display_mode_show_request(s_mode_idx, &epoch);
                 }

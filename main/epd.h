@@ -9,6 +9,7 @@ typedef enum {
     EPD_PANEL_42_BWR        = 0,  /* 4.2" 400x300 BW+Red, SSD1619 */
     EPD_PANEL_583_BWR       = 1,  /* 5.83" 648x480 BW+Red, UC8179 */
 
+    EPD_PANEL_WS_426_BW     = 8,  /* P426010-MF1-B 4.26" 800x480 BW */
     EPD_PANEL_WS_583_BWR    = 10, /* Verified Waveshare 5.83" 648x480 BW+Red B V2 */
 
     /* Experimental Solum/ATC tag drivers ported from atc1441/Tag_FW_nRF52811. */
@@ -30,8 +31,9 @@ typedef enum {
     EPD_PANEL_REF_UC8176_42_BW       = 26, /* 4.2" 400x300 BW, UC8176 */
     EPD_PANEL_REF_UC8176_42_BWR      = 27, /* 4.2" 400x300 BW+Red, UC81xx reference */
     EPD_PANEL_REF_UC8179_75_BW       = 28, /* 7.5" 800x480 BW, UC8179 */
-    EPD_PANEL_REF_UC8179_75_BWR      = 29, /* 7.5" 800x480 BW+Red, UC8179 */
-    EPD_PANEL_REF_UC8159_583_BW      = 30, /* 5.83" 600x448 BW, UC8159 */
+    EPD_PANEL_REF_UC8179_75_BWR      = 29, /* GDEY075Z08 7.5" 800x480 BW+Red, UC8179 */
+    EPD_PANEL_VISIONPEAK_EI0583T5PCZ_BW = 30, /* EI/WF0583T5PCZ 5.83" 600x448 BW, UC8159-compatible */
+    EPD_PANEL_REF_UC8159_583_BW      = EPD_PANEL_VISIONPEAK_EI0583T5PCZ_BW, /* backward-compatible name */
     EPD_PANEL_REF_UC8159_75_LOW_BWR  = 31, /* 7.5" 640x384 BW+Red low-res, UC8159 */
     EPD_PANEL_REF_SSD1677_75_HD_BW   = 32, /* 7.5" 880x528 BW HD, SSD1677 */
     EPD_PANEL_REF_SSD1677_75_HD_BWR  = 33, /* 7.5" 880x528 BW+Red HD, SSD1677 */
@@ -46,6 +48,10 @@ typedef enum {
     EPD_PANEL_REF_SSD1667_102_BWR    = 42, /* 10.2" 960x640 BW+Red, SSD1667 */
     EPD_PANEL_E6_37_6C               = 43, /* E6 3.7" 792x528 six-color compact stream */
     EPD_PANEL_REF_SSD2677_97_BWRY    = 44, /* 9.7" 960x672 BWRY, SSD2677 */
+    EPD_PANEL_GDEY037T03_UC8253_BW   = 45, /* 3.7" 416x240 BW, UC8253 */
+    EPD_PANEL_REF_UC8159_75_LOW_BW   = 46, /* 7.5" 640x384 BW low-res, UC8159 */
+    EPD_PANEL_SSD16XX_213_BW         = 47, /* SSD16xx 2.13" BW, 128x250 RAM */
+    EPD_PANEL_GD7965_UC8179_75_BW    = 48, /* GD7965/UC8179 7.5" BW, 800x480 */
 
     EPD_PANEL_COUNT
 } epd_panel_t;
@@ -55,6 +61,21 @@ typedef enum {
     EPD_REFRESH_FAST,
     EPD_REFRESH_PARTIAL,
 } epd_refresh_mode_t;
+
+typedef struct {
+    uint32_t baseline_ms;
+    uint32_t candidate_ms;
+    bool baseline_busy_ok;
+    bool candidate_busy_ok;
+    int x;
+    int y;
+    int w;
+    int h;
+} epd_refresh_test_result_t;
+
+typedef epd_refresh_test_result_t epd_uc8159_test_result_t;
+typedef epd_refresh_test_result_t epd_ssd16xx_213_test_result_t;
+typedef epd_refresh_test_result_t epd_gd7965_75_test_result_t;
 
 typedef enum {
     EPD_REFRESH_CAP_FULL          = 1u << 0,
@@ -84,13 +105,41 @@ esp_err_t    epd_display_fb_free(fb_t *fb);
 esp_err_t    epd_display_from_file_mode(const char *path, epd_refresh_mode_t mode);
 esp_err_t    epd_display_from_buffer_mode(const fb_t *fb, epd_refresh_mode_t mode);
 esp_err_t    epd_display_fb_free_mode(fb_t *fb, epd_refresh_mode_t mode);
+/** Check epoch after locking, before panel I/O. Stale requests return
+ * ESP_ERR_INVALID_STATE; the consuming framebuffer variant always destroys fb. */
+esp_err_t    epd_display_fb_free_mode_epoch(fb_t *fb, epd_refresh_mode_t mode,
+                                           unsigned epoch);
+esp_err_t    epd_display_from_file_mode_epoch(const char *path, epd_refresh_mode_t mode,
+                                             unsigned epoch);
 /** Force the next framebuffer/file display to reload the full refresh setup. */
 void         epd_request_full_refresh_next(void);
 esp_err_t    epd_clear_screen(void);
+esp_err_t    epd_clear_screen_epoch(unsigned epoch);
 esp_err_t    epd_display_test_pattern(void);
+/** Isolated UC8159 640x384 BW experiment; normal refresh capabilities stay unchanged. */
+esp_err_t    epd_uc8159_refresh_test(epd_refresh_mode_t candidate,
+                                     epd_uc8159_test_result_t *result);
+/** Isolated SSD16xx 2.13" 128x250 BW fast/partial experiment. */
+esp_err_t    epd_ssd16xx_213_refresh_test(epd_refresh_mode_t candidate,
+                                       epd_ssd16xx_213_test_result_t *result);
+/** Isolated GD7965/UC8179 7.5" 800x480 BW fast/partial LUT experiment. */
+esp_err_t    epd_gd7965_75_refresh_test(epd_refresh_mode_t candidate,
+                                        epd_gd7965_75_test_result_t *result);
 esp_err_t    epd_repair_ghosting(int cycles, int pattern);
 
 epd_panel_t  epd_get_panel(void);
+/** Descriptor name; unsupported IDs return "Unknown panel". */
+const char  *epd_panel_name(epd_panel_t panel);
+typedef struct {
+    int width;
+    int height;
+    const char *id;
+    const char *color_type;
+    bool has_red;
+    bool has_yellow;
+} epd_image_profile_t;
+/** Read-only logical canvas contract; never applies RAM offsets or scan direction. */
+bool epd_panel_image_profile(epd_panel_t panel, epd_image_profile_t *out);
 esp_err_t    epd_set_panel(epd_panel_t panel);
 esp_err_t    epd_save_panel_config(epd_panel_t panel, int busy_idle);
 esp_err_t    epd_get_saved_panel_config(epd_panel_t *panel, int *busy_idle);

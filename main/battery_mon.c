@@ -312,13 +312,13 @@ void battery_mon_draw_on_fb(fb_t *fb, int x, int y, fb_color_t color, int scale)
 
     char line[40];
     if (!s.valid) {
-        snprintf(line, sizeof(line), "\xe7\x94\xb5\xe9\x87\x8f --"); /* 电量 -- */
+        snprintf(line, sizeof(line), "%s", "电量 --");
     } else if (s.charging) {
-        snprintf(line, sizeof(line),
-                 "\xe5\x85\x85\xe7\x94\xb5 %u%%", (unsigned)s.percent); /* 充电 */
+        snprintf(line, sizeof(line), "充电 %u%%",
+                 (unsigned)s.percent);
     } else {
-        snprintf(line, sizeof(line),
-                 "\xe7\x94\xb5\xe9\x87\x8f %u%%", (unsigned)s.percent);
+        snprintf(line, sizeof(line), "电量 %u%%",
+                 (unsigned)s.percent);
     }
     ui_draw_fixed_text(fb, x, y, line, color, scale);
 }

@@ -1,4 +1,37 @@
 <!doctype html>
+<!--
+Lucide static icons v1.45.0, ISC License
+Copyright (c) 2026 Lucide Icons and Contributors
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Feather-derived icons (arrow-left, download, info, upload, x, zoom-in, zoom-out):
+The MIT License (MIT)
+Copyright (c) 2013-present Cole Bemis
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
 <html>
 <head>
 <meta charset="utf-8">
@@ -13,6 +46,7 @@
   --sf:rgba(255,236,245,.75);--sb:rgba(255,155,179,.20);
   --tx:#5A3050;--t2:rgba(120,70,100,.62);
   --ac:#FF9BB3;--a2:#8CC8F0;--ag:rgba(255,155,179,.28);
+  --editor-accent:#FF9BB3;--editor-accent-hover:#FFD9E5;--editor-accent-light:#FFE6EE;
   --bt:#fff;--ok:#2E9E52;--er:#E53935;--wn:#E68A00;
   --hv:rgba(255,155,179,.10);--tg:rgba(255,155,179,.22);
   --deco:"🌸"
@@ -24,6 +58,7 @@
   --sf:rgba(255,245,247,.8);--sb:rgba(255,77,109,.14);
   --tx:#4A1525;--t2:rgba(130,50,70,.58);
   --ac:#FF4D6D;--a2:#FFB347;--ag:rgba(255,77,109,.24);
+  --editor-accent:#FF4D6D;--editor-accent-hover:#FFDBE4;--editor-accent-light:#FFEDF1;
   --bt:#fff;--ok:#2E9E52;--er:#D32F2F;--wn:#E68A00;
   --hv:rgba(255,77,109,.07);--tg:rgba(255,77,109,.15);
   --deco:"🎀"
@@ -35,6 +70,7 @@
   --sf:rgba(251,238,244,.8);--sb:rgba(183,70,120,.14);
   --tx:#4A1428;--t2:rgba(120,40,70,.58);
   --ac:#B74678;--a2:#E8A0B8;--ag:rgba(183,70,120,.24);
+  --editor-accent:#B74678;--editor-accent-hover:#F0D6E2;--editor-accent-light:#F8E8EF;
   --bt:#fff;--ok:#2E9E52;--er:#C62828;--wn:#E68A00;
   --hv:rgba(183,70,120,.07);--tg:rgba(183,70,120,.15);
   --deco:"🍓"
@@ -108,29 +144,6 @@ input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);co
 .dash-value{font-size:15px;font-weight:800;margin-top:3px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .upload-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
 .upload-card input[type=file]{width:100%;max-width:none;min-width:0}
-.preview-wrap{--preview-pane-max:420px;display:grid;grid-template-columns:minmax(240px,var(--preview-pane-max)) minmax(320px,1fr);gap:18px;margin-top:16px;align-items:start}
-.preview-pane{display:grid;gap:10px;min-width:0;width:100%;max-width:var(--preview-pane-max);position:sticky;top:18px;z-index:2}
-.preview-stage{width:100%;aspect-ratio:var(--preview-aspect,128/296);background:linear-gradient(180deg,#fff,var(--sf));border:1px solid var(--sb);border-radius:14px;padding:14px;display:flex;justify-content:center;align-items:center;overflow:hidden}
-.preview-stage canvas{display:block;width:100%;height:100%;background:#fff;border:1px solid rgba(0,0,0,.16);box-shadow:0 8px 22px rgba(0,0,0,.08);image-rendering:pixelated}
-.preview-controls{display:grid;grid-template-columns:1fr;gap:12px;align-content:start;min-width:0}
-.tool-section{display:grid;gap:10px;padding:12px;border:1px solid var(--sb);border-radius:14px;background:rgba(255,255,255,.42);min-width:0;overflow:hidden}
-.tool-section.wide{grid-column:1/-1}
-.tool-title{font-size:12px;color:var(--t2);font-weight:900;letter-spacing:.08em}
-.ctrl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 12px;min-width:0}
-.ctrl-line{display:grid;gap:6px;align-items:center;min-width:0}
-.ctrl-line.inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.ctrl-line.wide{grid-column:1/-1}
-.ctrl-line.color-unsupported{display:none}
-.ctrl-line label{display:flex;gap:8px;align-items:center;justify-content:space-between;min-width:0;font-size:12px;color:var(--t2);font-weight:800}
-.ctrl-line label span{color:var(--tx);font-weight:900;white-space:nowrap}
-.preview-controls select,.preview-controls input[type=range]{display:block;width:100%;max-width:100%;min-width:0}
-.preview-controls select{padding:8px 10px;background:var(--sf);border:1px solid var(--sb);color:var(--tx);border-radius:10px;font-size:12px;font-weight:700}
-.preview-controls input[type=range]{accent-color:var(--ac)}
-.seg{display:inline-flex;gap:4px;padding:3px;border:1px solid var(--sb);border-radius:10px;background:var(--sf)}
-.seg button{border:0;background:transparent;color:var(--tx);border-radius:7px;padding:6px 8px;font-size:12px;font-weight:800;cursor:pointer}
-.seg button.on{background:var(--cd);color:var(--ac);box-shadow:0 1px 6px var(--ag)}
-.check{display:inline-flex;gap:5px;align-items:center;font-size:12px;color:var(--tx);font-weight:700}
-.preview-meta{font-size:12px;color:var(--t2);line-height:1.55;background:var(--sf);border:1px solid var(--sb);border-radius:12px;padding:10px}
 .status-card .bd{padding-top:22px}
 .status-card .kv{grid-template-columns:92px 1fr;gap:10px 14px;align-items:start}
 .status-card .v{line-height:1.45;word-break:break-word}
@@ -153,8 +166,7 @@ input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);co
 .td{width:16px;height:16px;border-radius:50%;display:block;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,.1)}
 @media(max-width:1180px){.wrap{max-width:940px}.dash{grid-template-columns:repeat(3,minmax(130px,1fr))}}
 @media(max-width:860px){.grid{grid-template-columns:1fr}.hdr{gap:10px}.status-card{position:relative;top:auto}}
-@media(max-width:1040px){.preview-wrap{grid-template-columns:1fr}.preview-pane{position:relative;top:auto;max-width:min(100%,var(--preview-pane-max))}}
-@media(max-width:640px){.upload-bar{grid-template-columns:1fr}.preview-controls{grid-template-columns:1fr}.ctrl-grid{grid-template-columns:1fr}.seg{width:100%}.seg button{flex:1;padding-left:6px;padding-right:6px}}
+@media(max-width:640px){.upload-bar{grid-template-columns:1fr}}
 @media(max-width:640px){.dash{grid-template-columns:repeat(2,minmax(120px,1fr))}.wrap{padding:16px 12px}}
 @media(max-width:480px){.tsw button{padding:4px 7px 4px 5px;font-size:10px}.td{width:13px;height:13px}}
 /* ── Mascot ── */
@@ -191,7 +203,7 @@ input[type=file]{padding:10px;background:var(--sf);border:1px solid var(--sb);co
 /* Unified app shell v2: keep page size, nav, cards and form rhythm consistent. */
 body{overflow-y:scroll}
 body .wrap{width:min(1180px,calc(100vw - 32px));max-width:1180px!important;margin:0 auto!important;padding:24px 0 36px!important}
-body.page-upload .wrap{width:min(1180px,calc(100vw - 32px));max-width:1180px!important}
+body.page-upload .wrap{width:min(1380px,calc(100vw - 32px));max-width:1380px!important}
 body.page-config .wrap,body.page-board .wrap{width:min(1380px,calc(100vw - 36px));max-width:1380px!important}
 body.page-config .page{width:min(1180px,calc(100vw - 32px))!important;max-width:1180px!important;margin:24px auto 36px!important}
 body.page-board{overflow:hidden}
@@ -390,121 +402,13 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     <!-- Upload -->
     <div class="card upload-card">
       <div class="hd">
-        <div class="title" style="font-size:16px">上传图片</div>
+        <div class="title help-heading" style="font-size:16px"><span>上传图片</span><button type="button" class="info-dot" aria-label="查看图片上传说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="选择 JPEG、PNG 或 BMP 后会先在浏览器生成墨水屏预览；确认方向、裁剪和颜色效果后点击“上传并显示”，设备才会保存并刷新屏幕。"></button></div>
         <div class="sub">支持 JPEG / PNG / BMP，浏览器自动压缩后上传，设备缩放居中、抖动处理后刷新墨水屏。</div>
       </div>
       <div class="bd">
         <div class="upload-bar">
           <input type="file" id="f" accept="image/jpeg,image/png,image/bmp">
-          <button class="btn" id="up" onclick="upload()">上传并显示</button>
-        </div>
-        <div class="preview-wrap" id="previewWrap" style="display:none">
-          <div class="preview-pane">
-            <div class="preview-stage">
-              <canvas id="epdPreview" width="128" height="296"></canvas>
-            </div>
-            <div class="preview-meta" id="previewMeta">选择图片后显示预览。</div>
-          </div>
-          <div class="preview-controls">
-            <div class="tool-section wide">
-              <div class="tool-title">基础</div>
-              <div class="ctrl-grid">
-                <div class="ctrl-line inline wide">
-                  <label>预设</label>
-                  <span class="seg" id="presetSeg">
-                    <button type="button" data-preset="photo" class="on">照片</button>
-                    <button type="button" data-preset="anime">动漫</button>
-                    <button type="button" data-preset="text">纯黑白</button>
-                    <button type="button" data-preset="soft">柔和</button>
-                    <button type="button" data-preset="e6fs">E6 FS</button>
-                  </span>
-                </div>
-                <div class="ctrl-line">
-                  <label>适配</label>
-                  <select id="fitMode">
-                    <option value="contain">完整显示</option>
-                    <option value="cover" selected>铺满裁剪</option>
-                    <option value="stretch">拉伸铺满</option>
-                  </select>
-                </div>
-                <div class="ctrl-line inline">
-                  <label class="check"><input type="checkbox" id="invertImg"> 反色</label>
-                </div>
-              </div>
-            </div>
-
-            <div class="tool-section wide">
-              <div class="tool-title">画面</div>
-              <div class="ctrl-grid">
-                <div class="ctrl-line inline wide">
-                  <label>方向</label>
-                  <span class="seg" id="rotSeg">
-                    <button type="button" data-rot="0" class="on">0°</button>
-                    <button type="button" data-rot="90">90°</button>
-                    <button type="button" data-rot="180">180°</button>
-                    <button type="button" data-rot="270">270°</button>
-                  </span>
-                </div>
-                <div class="ctrl-line inline wide">
-                  <label class="check"><input type="checkbox" id="flipX"> 水平镜像</label>
-                  <label class="check"><input type="checkbox" id="flipY"> 垂直镜像</label>
-                </div>
-                <div class="ctrl-line">
-                  <label>亮度 <span id="brightnessVal">0</span></label>
-                  <input type="range" id="brightness" min="-80" max="80" value="0">
-                </div>
-                <div class="ctrl-line">
-                  <label>对比度 <span id="contrastVal">1.20×</span></label>
-                  <input type="range" id="contrast" min="40" max="260" value="120">
-                </div>
-                <div class="ctrl-line">
-                  <label>伽马 <span id="gammaVal">1.00</span></label>
-                  <input type="range" id="gamma" min="55" max="180" value="100">
-                </div>
-                <div class="ctrl-line">
-                  <label>锐化 <span id="sharpVal">0.20</span></label>
-                  <input type="range" id="sharp" min="0" max="100" value="20">
-                </div>
-              </div>
-            </div>
-
-            <div class="tool-section">
-              <div class="tool-title">颜色</div>
-              <div class="ctrl-grid">
-                <div class="ctrl-line" id="redCtrl">
-                  <label>红色模式</label>
-                  <select id="redMode">
-                    <option value="normal" selected>标准</option>
-                    <option value="safe">保守</option>
-                    <option value="strong">激进</option>
-                    <option value="off">关闭红色</option>
-                  </select>
-                </div>
-                <div class="ctrl-line" id="redSensCtrl">
-                  <label>红色敏感度 <span id="redVal">0.35</span></label>
-                  <input type="range" id="redSens" min="0" max="100" value="35">
-                </div>
-                <div class="ctrl-line" id="yellowSensCtrl">
-                  <label>黄色敏感度 <span id="yellowVal">0.35</span></label>
-                  <input type="range" id="yellowSens" min="0" max="100" value="35">
-                </div>
-              </div>
-            </div>
-
-            <div class="tool-section">
-              <div class="tool-title">输出</div>
-              <div class="ctrl-grid">
-                <div class="ctrl-line">
-                  <label>阈值 <span id="thrVal">96</span></label>
-                  <input type="range" id="thr" min="40" max="210" value="96">
-                </div>
-                <div class="ctrl-line">
-                  <label>抖动强度 <span id="ditherVal">1.00×</span></label>
-                  <input type="range" id="dither" min="0" max="160" value="100">
-                </div>
-              </div>
-            </div>
-          </div>
+          <button class="btn" id="up" onclick="Workspace.open()">图片工作区</button>
         </div>
         <div class="log" id="log">已就绪。</div>
       </div>
@@ -550,11 +454,98 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     </div>
   </div>
 
+
   <footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">源码仓库</a></footer>
 </div>
 
+<style>body.workspace-open{overflow:hidden}#imageWorkspace{position:fixed;inset:0;z-index:1000}#imageWorkspace[hidden]{display:none!important}</style>
+<div id="imageWorkspace" hidden></div>
+<template id="imageWorkspaceTemplate"><style>:host{--accent:var(--editor-accent,#FF9BB3);--accent-hover:var(--editor-accent-hover,#FFD9E5);--accent-light:var(--editor-accent-light,#FFE6EE);--accent-text:var(--tx,#5A3050);--text:#272b30;--muted:#626b73;--line:#e4e6e8;--sidebar:300px;--canvas:#e9ebed;color-scheme:light;font-family:"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;color:var(--text);background:#fff}
+*{box-sizing:border-box;letter-spacing:0}#editorShell{margin:0;height:100dvh;overflow:hidden;display:grid;grid-template-rows:56px 52px minmax(0,1fr) 28px}button,input,select{font:inherit}button,a,select,input{outline-offset:3px}button{cursor:pointer;color:inherit;border:0;background:transparent}button:disabled{cursor:default;opacity:.34}button:hover:not(:disabled),a.icon-button:hover{background:#f0f2f3}button:focus-visible,a:focus-visible{outline:2px solid var(--accent)}button img,.icon-button img{width:18px;height:18px;flex:none;opacity:.78}button[hidden],[hidden]{display:none!important}select{border:1px solid #dfe2e4;border-radius:4px;color:var(--text);background:#fff;padding:6px 9px;min-height:34px;min-width:0}input[type=range]{accent-color:var(--accent);cursor:pointer;min-width:0}
+.icon-button{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;flex:none;border-radius:4px;text-decoration:none}.icon-button.active{background:var(--accent-light);box-shadow:inset 2px 0 var(--accent)}.text-button,.primary-button,.secondary-button{display:inline-flex;gap:8px;align-items:center;justify-content:center;min-height:36px;padding:0 12px;border-radius:4px;white-space:nowrap}.primary-button{background:var(--accent-light);color:var(--accent-text);box-shadow:inset 0 0 0 1px var(--accent)}.primary-button:hover:not(:disabled){background:var(--accent-hover)}.primary-button img{opacity:1}.secondary-button{border:1px solid var(--line)}
+.app-header{display:flex;align-items:center;gap:20px;padding:0 16px;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:9px;white-space:nowrap}.brand strong{font-size:17px;font-weight:650}.brand-mark{width:26px;height:26px;object-fit:contain}.header-caption{color:var(--muted);margin-left:5px}.panel-picker{display:flex;gap:10px;align-items:center;min-width:0;margin-left:auto}.panel-picker>span{color:var(--muted);white-space:nowrap}.panel-picker select{width:350px;max-width:100%;border-color:transparent;background:#f6f7f8;text-overflow:ellipsis}.connection{display:flex;align-items:center;gap:7px;white-space:nowrap;color:var(--muted);font-size:12px}.status-dot{width:6px;height:6px;background:#a0a6ac;border-radius:50%}
+.command-bar{display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--line)}.file-actions{display:flex;align-items:center;min-width:0;gap:10px;flex:1}.file-name{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px}.file-actions select{width:108px;border-color:transparent;font-size:12px}.edit-actions,.send-actions{display:flex;align-items:center;gap:4px}.separator{width:1px;height:20px;background:var(--line);margin-right:6px}.send-actions{margin-left:auto}.command-bar .primary-button{margin:0 7px}
+#workspace{display:grid;grid-template-columns:48px minmax(0,1fr) 5px var(--sidebar);min-height:0;min-width:0}#editorShell.sidebar-closed #workspace{grid-template-columns:48px minmax(0,1fr) 0 0}#editorShell.sidebar-closed #inspector,#editorShell.sidebar-closed #splitter{visibility:hidden;overflow:hidden}.tool-rail{display:flex;flex-direction:column;gap:6px;align-items:center;padding:12px 0;border-right:1px solid var(--line);background:#fafbfb}.rail-divider{width:20px;height:1px;background:var(--line);margin:7px 0}.tiny-type{font-size:11px;font-weight:650}.canvas-area{display:grid;grid-template-rows:38px minmax(0,1fr) 38px;min-width:0;min-height:0;background:var(--canvas)}.canvas-toolbar{display:flex;align-items:center;padding:0 18px;gap:14px;color:#767d85;font-size:12px}.canvas-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.view-tabs{display:flex;gap:3px;margin-left:auto}.view-tabs button{padding:3px 9px;font-size:12px;border-radius:3px;min-height:28px}.view-tabs button.active{background:white;color:#31383c}.compare-label{color:var(--accent);font-weight:650}
+#viewport{min-width:0;min-height:0;overflow:auto;position:relative;touch-action:none;overscroll-behavior:contain;cursor:grab}#viewport.crop{cursor:move}#surface{position:relative}#display{display:block;position:absolute;background:#fff;box-shadow:0 1px 5px #00000012}#empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);pointer-events:none}.canvas-status{display:flex;align-items:center;justify-content:space-between;padding:0 12px;gap:8px;font-size:11px;color:var(--muted);min-width:0}.canvas-status>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zoom-actions{display:flex;gap:3px;align-items:center;flex:none}.zoom-actions .icon-button{height:30px;width:30px}.zoom-actions img{width:16px;height:16px}.zoom-actions select{min-height:26px;height:26px;width:80px;font-size:11px;padding:2px 5px;border-color:transparent;background:transparent}
+#splitter{cursor:col-resize;background:white;border-right:1px solid var(--line);touch-action:none}#splitter:hover,#splitter:focus-visible{background:#91b6b0}#inspector{min-width:0;min-height:0;display:grid;grid-template-rows:47px minmax(0,1fr) auto;background:#fff}.inspector-header{display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--line);justify-content:space-between;gap:8px}.inspector-tabs{display:flex;gap:22px;height:100%}.inspector-tabs button{padding:0 1px;position:relative;font-weight:550;color:var(--muted)}.inspector-tabs button.active{color:var(--text)}.inspector-tabs button.active:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--accent)}.inspector-header .icon-button{width:30px;height:30px}.inspector-header img{width:16px;height:16px}#parameterScroll{overflow:auto;min-width:0;min-height:0;overscroll-behavior:contain}.control-section{padding:20px;border-bottom:1px solid #eef0f1}.control-section h2{font-size:12px;font-weight:650;margin:0 0 14px}.section-heading{display:flex;align-items:flex-start;gap:8px;justify-content:space-between}#inkSwatches{display:flex;gap:4px}#inkSwatches i{width:10px;height:10px;border:1px solid #00000016;border-radius:50%}.mode-tabs{display:flex;background:#f2f4f5;border-radius:4px;padding:3px;gap:2px}.mode-tabs button{flex:1;min-height:32px;font-size:12px;border-radius:3px}.mode-tabs button.active{background:#fff;box-shadow:0 1px 3px #00000012;color:var(--accent);font-weight:600}.slider-row{margin:0 0 15px}.slider-row:last-child{margin-bottom:0}.slider-row label{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:6px;min-height:22px}.slider-row output{color:var(--muted);font-variant-numeric:tabular-nums}.slider-input{display:flex;align-items:center;gap:2px;min-height:26px}.slider-input input{flex:1;width:100%;height:20px;margin:0}.reset-control{width:28px;height:28px;opacity:0;transition:opacity .12s}.reset-control img{width:13px;height:13px}.slider-row:hover .reset-control,.slider-row:focus-within .reset-control{opacity:.8}.control-section summary{font-weight:550;font-size:12px;cursor:pointer;list-style-position:outside;margin-left:12px}.control-section[open] summary{margin-bottom:18px}.select-row{display:flex;align-items:center;gap:10px;justify-content:space-between;font-size:12px}.select-row select{font-size:12px;max-width:150px}#composeTab>.control-section>select{width:100%;margin-bottom:20px}.check-row{display:flex;align-items:center;gap:8px;font-size:12px;min-height:38px}.check-row input{accent-color:var(--accent)}.inspector-footer{padding:12px 20px;color:#8b9197;font-size:10px;display:flex;gap:6px;flex-direction:column;border-top:1px solid var(--line)}.app-status{border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;font-size:11px;color:var(--muted)}#status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#status.error{color:#ab3f39}
+dialog{max-width:440px;width:calc(100vw - 32px);padding:22px;border:1px solid var(--line);border-radius:6px;color:var(--text)}dialog::backdrop{background:#0005}.dialog-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.dialog-title h2{font-size:16px;margin:0}dialog p{font-size:13px;line-height:1.8;color:var(--muted)}
+@media(max-width:1100px){.header-caption{display:none}.panel-picker select{width:290px}.file-name{max-width:180px}.connection>span:not(.status-dot){display:none}}
+@media(max-width:760px){
+#editorShell{grid-template-rows:50px 92px minmax(0,1fr) 26px}.app-header{gap:8px;padding:0 8px}.brand{gap:5px}.brand>.icon-button,.brand-mark{display:none}.brand strong{font-size:15px}.panel-picker{flex:1;margin-left:auto}.panel-picker>span{display:none}.panel-picker select{width:100%;font-size:12px;min-height:36px}.connection{gap:0}.connection .status-dot{display:none}.command-bar{flex-wrap:wrap;gap:0;padding:0 8px}.file-actions{flex-basis:100%;height:44px}.file-actions .file-name{flex:1;max-width:none;font-size:11px}.file-actions select{width:90px}.text-button{padding:0 8px}.icon-button{width:40px;height:40px}.edit-actions{height:44px}.separator{display:none}.send-actions{height:44px}.send-actions .primary-button{height:38px}.tool-rail{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);padding:0 8px;gap:3px;grid-column:1;grid-row:1}.tool-rail .icon-button{width:40px;height:40px}.rail-divider{width:1px;height:18px;margin:0 5px}
+#workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:42px minmax(135px,44%) minmax(0,1fr)}#editorShell.sidebar-closed #workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:42px minmax(0,1fr) 0}.canvas-area{grid-column:1;grid-row:2;grid-template-rows:27px minmax(0,1fr) 30px}.canvas-toolbar{padding:0 10px}.canvas-status{padding:0 6px}.zoom-actions .icon-button{width:30px;height:28px}#splitter{display:none}#inspector{grid-column:1;grid-row:3;border-top:1px solid var(--line);grid-template-rows:44px minmax(0,1fr)}.inspector-footer{display:none}.inspector-header{padding:0 14px}.inspector-header .icon-button{width:40px;height:40px}.control-section{padding:14px 18px}.slider-row{margin-bottom:12px}.reset-control{opacity:.65;width:40px;height:40px}.slider-input{min-height:36px}.mode-tabs button{min-height:38px}.app-status{padding:0 8px;font-size:10px}#modeStatus{display:none}.view-tabs button{min-height:24px}.inspector-tabs button{min-height:40px}
+}
+@media(max-width:960px) and (orientation:landscape){
+#editorShell{grid-template-rows:44px 44px minmax(0,1fr) 24px}.app-header{padding:0 8px;gap:8px}.header-caption,.brand>.icon-button,.brand-mark,.connection>span{display:none}.brand strong{font-size:15px}.panel-picker>span{display:none}.panel-picker select{min-height:32px;width:290px}.command-bar{padding:0 8px;flex-wrap:nowrap;gap:6px}.file-actions{height:auto;flex-basis:auto}.file-actions .file-name{display:none}.file-actions select{width:90px}.edit-actions,.send-actions{height:auto}.icon-button{width:34px;height:34px}.primary-button{min-height:34px}.tool-rail{grid-column:1;grid-row:1;flex-direction:column;border-right:1px solid var(--line);border-bottom:0;padding:6px 0}.tool-rail .icon-button{width:34px;height:34px}.rail-divider{width:18px;height:1px;margin:4px 0}#workspace{grid-template-columns:42px minmax(0,1fr) 4px 260px;grid-template-rows:minmax(0,1fr)}#editorShell.sidebar-closed #workspace{grid-template-columns:42px minmax(0,1fr) 0 0;grid-template-rows:minmax(0,1fr)}.canvas-area{grid-column:2;grid-row:1;grid-template-rows:26px minmax(0,1fr) 30px}#splitter{display:block;grid-column:3;grid-row:1}#inspector{grid-column:4;grid-row:1;border-top:0;grid-template-rows:40px minmax(0,1fr)}.inspector-footer{display:none}.inspector-header{padding:0 12px}.control-section{padding:12px 16px}.mode-tabs button{min-height:30px}.reset-control{width:30px;height:30px;opacity:.6}.slider-row{margin-bottom:10px}.slider-input{min-height:28px}.app-status{padding:0 8px}
+}
+@media(pointer:coarse){
+  button,.icon-button,.text-button,.primary-button,.secondary-button,.mode-tabs button,.inspector-tabs button,.inspector-header .icon-button,.reset-control,.check-row{min-height:44px}
+  .icon-button,.tool-rail .icon-button,.reset-control{min-width:44px}
+  .slider-input{min-height:44px}.slider-row label{min-height:24px}.reset-control{opacity:.65}
+  .tool-rail{overflow:auto}.canvas-toolbar .view-tabs button{min-height:28px}
+}
+@media(max-width:380px) and (orientation:portrait){
+  #upload{font-size:0;gap:0;padding:0;width:44px;min-width:44px;margin-inline:3px}
+}
+@media(max-width:760px) and (orientation:portrait){
+  #editorShell{grid-template-rows:50px 96px minmax(0,1fr) 26px}
+  #workspace{grid-template-rows:46px minmax(135px,44%) minmax(0,1fr)}
+  #editorShell.sidebar-closed #workspace{grid-template-rows:46px minmax(0,1fr) 0}
+  .command-bar .icon-button,.command-bar .primary-button,.text-button,.tool-rail .icon-button{height:44px;min-width:44px}
+  .edit-actions,.send-actions{height:48px}.file-actions{height:48px}.mode-tabs button{min-height:44px}.slider-input{min-height:44px}.reset-control{width:44px;height:44px}.check-row{min-height:44px}
+}
+@media(max-width:960px) and (orientation:landscape){
+  #editorShell{grid-template-rows:44px 48px minmax(0,1fr) 24px}
+  #workspace{grid-template-columns:48px minmax(0,1fr) 5px var(--sidebar)}
+  #editorShell.sidebar-closed #workspace{grid-template-columns:48px minmax(0,1fr) 0 0}
+  .command-bar .icon-button,.command-bar .primary-button,.text-button,.tool-rail .icon-button{height:44px;min-width:44px}
+  .tool-rail{overflow:auto}.mode-tabs button{min-height:44px}.reset-control{height:44px;width:44px}.slider-input{min-height:44px}
+}
+
+#editorShell{color:var(--text);background:#fff}#panelName{display:block;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}#back{display:inline-flex!important}#editorShell .connection.connected .status-dot{background:var(--ok,#2E9E52)}button,input,select{font-family:inherit} @media(max-width:760px){#panelName{max-width:220px}.brand strong{display:none}}
+.brand strong{color:var(--tx,var(--text))}#splitter:hover,#splitter:focus-visible{background:var(--accent-light)}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent-text)}
+.mode-tabs button.active{background:var(--accent-light);color:var(--accent-text)}.compare-label{color:var(--accent-text)}
+.slider-input input[type=range]{appearance:none;background:transparent;height:24px}
+.slider-input input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--accent) var(--range-progress,0%),#e5e7eb var(--range-progress,0%))}
+.slider-input input[type=range]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;margin-top:-4px;border:1px solid var(--accent-text);border-radius:50%;background:var(--accent)}
+.slider-input input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:#e5e7eb}
+.slider-input input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:var(--accent)}
+.slider-input input[type=range]::-moz-range-thumb{width:12px;height:12px;border:1px solid var(--accent-text);border-radius:50%;background:var(--accent)}
+.inspector-footer,.canvas-toolbar{color:var(--muted)}
+</style><div id="editorShell"><header class="app-header">
+  <div class="brand"><button id="back" class="icon-button" aria-label="返回管理页" title="返回管理页"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-arrow-left%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22m12%2019-7-7%207-7%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M19%2012H5%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><img class="brand-mark" src="/miaooaim-mark.png" alt=""><strong>MiaooAim</strong><span class="header-caption">图片工作区</span></div>
+  <div class="panel-picker"><span>当前屏幕</span><span id="panelName">读取中</span></div>
+  <div class="connection"><span class="status-dot"></span><span id="connectionText">读取中</span><button id="about" class="icon-button" aria-label="工作区信息" title="工作区信息"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-info%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%2210%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M12%2016v-4%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M12%208h.01%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div>
+</header>
+<nav class="command-bar" aria-label="编辑操作">
+  <div class="file-actions"><button id="openFile" class="text-button"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-folder-open%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22m6%2014%201.5-2.9A2%202%200%200%201%209.24%2010H20a2%202%200%200%201%201.94%202.5l-1.54%206a2%202%200%200%201-1.95%201.5H4a2%202%200%200%201-2-2V5a2%202%200%200%201%202-2h3.9a2%202%200%200%201%201.69.9l.81%201.2a2%202%200%200%200%201.67.9H18a2%202%200%200%201%202%202v2%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt="">选择图片</button><input id="file" type="file" accept="image/jpeg,image/png,image/bmp" hidden><span id="fileName" class="file-name">未选择图片</span></div>
+  <div class="edit-actions"><span class="separator"></span><button id="undo" class="icon-button" title="撤销" aria-label="撤销" disabled><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-undo-2%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M9%2014%204%209l5-5%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M4%209h10.5a5.5%205.5%200%200%201%205.5%205.5a5.5%205.5%200%200%201-5.5%205.5H11%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><button id="redo" class="icon-button" title="重做" aria-label="重做" disabled><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-redo-2%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22m15%2014%205-5-5-5%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M20%209H9.5A5.5%205.5%200%200%200%204%2014.5A5.5%205.5%200%200%200%209.5%2020H13%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><button id="reset" class="icon-button" title="重置调色与构图" aria-label="重置调色与构图"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-rotate-ccw%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M3%2012a9%209%200%201%200%209-9%209.75%209.75%200%200%200-6.74%202.74L3%208%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M3%203v5h5%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div>
+  <div class="send-actions"><button id="download" class="icon-button" title="导出当前PNG" aria-label="导出当前PNG" disabled><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-download%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M12%2015V3%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M21%2015v4a2%202%200%200%201-2%202H5a2%202%200%200%201-2-2v-4%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22m7%2010%205%205%205-5%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><button id="upload" class="primary-button" disabled><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-upload%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M12%203v12%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22m17%208-5-5-5%205%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M21%2015v4a2%202%200%200%201-2%202H5a2%202%200%200%201-2-2v-4%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt="">上传并显示</button><button id="toggleSidebar" class="icon-button" title="收起参数栏" aria-label="收起参数栏" aria-expanded="true"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-panel-right-close%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%203v18%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22m8%209%203%203-3%203%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div>
+</nav>
+<main id="workspace">
+  <aside class="tool-rail" aria-label="画布工具"><button id="panTool" class="icon-button active" aria-pressed="true" title="查看与平移" aria-label="查看与平移"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-hand%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M18%2011V6a2%202%200%200%200-2-2a2%202%200%200%200-2%202%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M14%2010V4a2%202%200%200%200-2-2a2%202%200%200%200-2%202v2%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M10%2010.5V6a2%202%200%200%200-2-2a2%202%200%200%200-2%202v8%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M18%208a2%202%200%201%201%204%200v6a8%208%200%200%201-8%208h-2c-2.8%200-4.5-.86-5.99-2.34l-3.6-3.6a2%202%200%200%201%202.83-2.82L7%2015%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><button id="cropTool" class="icon-button" aria-pressed="false" title="拖动取景（铺满裁剪）" aria-label="拖动取景" disabled><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-crop%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M6%202v14a2%202%200%200%200%202%202h14%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M18%2022V8a2%202%200%200%200-2-2H2%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><span class="rail-divider"></span><button id="fitView" class="icon-button" title="适应工作区" aria-label="适应工作区"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-scan%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M3%207V5a2%202%200%200%201%202-2h2%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M17%203h2a2%202%200%200%201%202%202v2%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M21%2017v2a2%202%200%200%201-2%202h-2%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M7%2021H5a2%202%200%200%201-2-2v-2%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><button id="actualView" class="icon-button tiny-type" title="100%像素" aria-label="100%像素">1:1</button><button id="compare" class="icon-button" aria-pressed="false" title="按住查看同一构图的原图" aria-label="按住查看原图"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-eye%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M2.062%2012.348a1%201%200%200%201%200-.696%2010.75%2010.75%200%200%201%2019.876%200%201%201%200%200%201%200%20.696%2010.75%2010.75%200%200%201-19.876%200%22%20%2F%3E%0A%20%20%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></aside>
+  <section class="canvas-area" aria-label="图片预览">
+    <div class="canvas-toolbar"><span class="canvas-title" id="canvasTitle">图像预览</span><div class="view-tabs" id="viewTabs"><button data-view="effect" class="active" aria-pressed="true">效果</button><button data-view="pixels" aria-pressed="false">点阵</button></div><span class="compare-label" id="compareLabel" hidden>原图</span></div>
+    <div id="viewport" tabindex="0" aria-label="可平移的预览画布"><div id="surface"><canvas id="display" aria-label="实时图像预览"></canvas></div><div id="empty" hidden>请选择图片</div></div>
+    <div class="canvas-status"><span id="geometry">—</span><div class="zoom-actions"><button id="zoomOut" class="icon-button" title="缩小观看比例" aria-label="缩小观看比例"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-zoom-out%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%228%22%20%2F%3E%0A%20%20%3Cline%20x1%3D%2221%22%20x2%3D%2216.65%22%20y1%3D%2221%22%20y2%3D%2216.65%22%20%2F%3E%0A%20%20%3Cline%20x1%3D%228%22%20x2%3D%2214%22%20y1%3D%2211%22%20y2%3D%2211%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button><select id="zoomSelect" aria-label="观看比例"><option value="fit">适应</option><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="150">150%</option><option value="200">200%</option><option value="300">300%</option><option value="400">400%</option></select><button id="zoomIn" class="icon-button" title="放大观看比例" aria-label="放大观看比例"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-zoom-in%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Ccircle%20cx%3D%2211%22%20cy%3D%2211%22%20r%3D%228%22%20%2F%3E%0A%20%20%3Cline%20x1%3D%2221%22%20x2%3D%2216.65%22%20y1%3D%2221%22%20y2%3D%2216.65%22%20%2F%3E%0A%20%20%3Cline%20x1%3D%2211%22%20x2%3D%2211%22%20y1%3D%228%22%20y2%3D%2214%22%20%2F%3E%0A%20%20%3Cline%20x1%3D%228%22%20x2%3D%2214%22%20y1%3D%2211%22%20y2%3D%2211%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div></div>
+  </section>
+  <div id="splitter" role="separator" tabindex="0" aria-label="参数栏宽度" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="380" aria-valuenow="300"></div>
+  <aside id="inspector" aria-label="图片参数">
+    <div class="inspector-header"><div class="inspector-tabs" role="tablist" aria-label="参数分组"><button id="tabAdjust" data-tab="adjust" role="tab" aria-controls="adjustTab" class="active" aria-selected="true">调整</button><button id="tabCompose" data-tab="compose" role="tab" aria-controls="composeTab" tabindex="-1" aria-selected="false">构图</button></div><button id="resetTab" class="icon-button" title="重置当前分组" aria-label="重置当前分组"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-rotate-ccw%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M3%2012a9%209%200%201%200%209-9%209.75%209.75%200%200%200-6.74%202.74L3%208%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M3%203v5h5%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div>
+    <div id="parameterScroll">
+      <section id="adjustTab"><div class="control-section"><div class="section-heading"><h2>输出模式</h2><div id="inkSwatches" aria-label="允许墨色"></div></div><div id="modeTabs" class="mode-tabs"><button data-mode="color">色彩</button><button data-mode="mono">黑白</button><button data-mode="text">文字</button></div></div><div id="basicControls" class="control-section"></div><details id="advanced" class="control-section"><summary>高级调整</summary><div id="advancedControls"></div><div id="patternRow" class="select-row"><label for="pattern">点阵排列</label><select id="pattern"><option value="soft">柔化纹理</option><option value="regular">标准扩散</option></select></div></details></section>
+      <section id="composeTab" hidden><div class="control-section"><h2>画面适配</h2><select id="fitMode" aria-label="画面适配"><option value="contain">完整显示</option><option value="cover">铺满裁剪</option><option value="stretch">拉伸铺满</option></select><div class="slider-row" id="cropZoomRow"><label for="cropZoom">构图缩放 <output id="cropZoomValue">1.00×</output></label><div class="slider-input"><input id="cropZoom" type="range" min="1" max="4" step="0.01" value="1"><button id="resetCropZoom" class="icon-button reset-control" title="重置构图缩放" aria-label="重置构图缩放"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-rotate-ccw%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M3%2012a9%209%200%201%200%209-9%209.75%209.75%200%200%200-6.74%202.74L3%208%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M3%203v5h5%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div></div><button id="centerCrop" class="secondary-button">取景居中</button></div><div class="control-section"><h2>方向</h2><div id="rotationTabs" class="mode-tabs"><button data-rot="0">0°</button><button data-rot="90">90°</button><button data-rot="180">180°</button><button data-rot="270">270°</button></div><label class="check-row"><input type="checkbox" id="flipX">水平镜像</label><label class="check-row"><input type="checkbox" id="flipY">垂直镜像</label></div></section>
+    </div>
+    <div class="inspector-footer"><span id="profileLabel">读取中</span><span>参考预览 · 未实屏校色</span></div>
+  </aside>
+</main>
+<footer class="app-status"><span id="status" role="status">正在初始化…</span><span id="modeStatus"></span></footer>
+<dialog id="aboutDialog"><div class="dialog-title"><h2>图片工作区</h2><button id="closeAbout" class="icon-button" aria-label="关闭"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-x%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M18%206%206%2018%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22m6%206%2012%2012%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div><p>按当前设备的逻辑画布和墨色生成图片，上传会刷新设备。</p><p>预览为软件参考，未作实屏测色校准。界面主题不会改变上传图片的颜色。</p></dialog>
+</div></template>
+<script src="/image_processor.js"></script>
 <script>
 function setTheme(t){
+  t=['loopy','kitty','lotso'].includes(t)?t:'loopy';
   document.documentElement.setAttribute('data-theme',t);
   localStorage.setItem('epd_theme',t);
   document.querySelectorAll('.tsw button').forEach(function(b){
@@ -568,6 +559,7 @@ function setTheme(t){
   });
 }
 (function(){var t=localStorage.getItem('epd_theme')||'loopy';setTheme(t)})();
+window.addEventListener('storage',event=>{if(event.key==='epd_theme')setTheme(event.newValue);});
 
 function epdAuthHeaders(){
   try{
@@ -588,11 +580,6 @@ function fmt(n){if(n==null||n<0) return '-'; if(n<1024) return n+' B'; if(n<1024
 function fmtStorage(n){n=Number(n)||0; if(n>=1024*1024) return (n/1024/1024).toFixed(n>=10*1024*1024?1:2).replace(/\.0$/,'')+' MB'; if(n>=1024) return (n/1024).toFixed(n>=10*1024?1:2).replace(/\.0$/,'')+' KB'; return n+' B';}
 function fmtVolt(mv){return mv>0?(mv/1000).toFixed(2)+'V':'--';}
 function compactPanel(s){return s&&s.panel_width?s.panel_width+'×'+s.panel_height:'-';}
-let epdPanelW=128, epdPanelH=296, epdPanelHasRed=true, epdPanelHasYellow=false, epdPanelIsE6=false;
-let previewImg=null, previewUrl=null;
-let previewRot=0;
-let previewPreset='photo';
-let previewE6FsMode=false;
 function weatherLabel(s){
   if(!s.weather_configured) return '未配置';
   if(!s.weather_enabled) return '已暂停';
@@ -601,7 +588,7 @@ function weatherLabel(s){
 }
 function log(s,cls){const el=document.getElementById('log'); el.className='log'+(cls?' '+cls:''); el.textContent=s;}
 
-async function refresh(){
+async function refresh(operation=HomeOperation.sequence){
   try{
     const r=await fetch('/status',epdFetchOpts()); const j=await r.json();
     document.getElementById('u_sz').textContent=j.upload_bytes>=0?fmt(j.upload_bytes):'未找到';
@@ -628,424 +615,84 @@ async function refresh(){
     document.getElementById('fw_txt').textContent='v'+(j.version||'-')+' · '+(j.running||'-');
     document.getElementById('wx_txt').textContent=weatherLabel(j)+(j.weather_city?' · '+j.weather_city:'');
     document.getElementById('dev_time').textContent=j.time_synced?j.time:'未同步';
-    if(j.panel_width&&j.panel_height){
-      epdPanelW=j.panel_width; epdPanelH=j.panel_height;
-      epdPanelHasRed=!!j.panel_has_red;
-      epdPanelHasYellow=!!j.panel_has_yellow;
-      epdPanelIsE6=(j.panel===43)||(epdPanelW===792&&epdPanelH===528&&epdPanelHasYellow);
-      updateColorControls();
-      renderPreview();
-    }
     updateDashboard(j);
     updateNetFromStatus(j);
-    log('状态已更新。','ok');
-  }catch(e){log('状态获取失败：'+e,'bad');}
+    if(HomeOperation.current(operation)){
+      if(window.Workspace?.missing)log('图片处理模块加载失败，请刷新页面。','bad');
+      else log('状态已更新。','ok');
+    }
+  }catch(e){if(HomeOperation.current(operation))log('状态获取失败：'+e,'bad');}
 }
+
+const HomeOperation={
+  sequence:0,controller:null,intervalMs:1000,requestTimeoutMs:10000,totalTimeoutMs:300000,
+  begin(){this.controller?.abort();this.controller=null;return ++this.sequence;},
+  current(id){return id===this.sequence;},
+  async waitResult(epoch,id){
+    const deadline=performance.now()+this.totalTimeoutMs;
+    while(this.current(id)&&performance.now()<deadline){
+      const controller=new AbortController();this.controller=controller;
+      const timer=setTimeout(()=>controller.abort(),Math.min(this.requestTimeoutMs,deadline-performance.now()));
+      try{
+        const r=await fetch('/status?display_epoch='+epoch,epdFetchOpts({signal:controller.signal,cache:'no-store'}));
+        if(!r.ok)throw Error('HTTP '+r.status);
+        const result=(await r.json()).display_result;
+        if(!this.current(id))return null;
+        if(!result||result.epoch!==epoch||!['pending','ok','error','canceled','unavailable'].includes(result.state))
+          return {state:'unavailable',error:'设备未提供对应任务结果'};
+        if(result.state!=='pending')return result;
+      }catch(e){
+        if(!this.current(id))return null;
+        log('暂时无法获取显示结果，正在重试…');
+      }finally{clearTimeout(timer);if(this.controller===controller)this.controller=null;}
+      const remaining=deadline-performance.now();
+      if(remaining>0&&this.current(id))await new Promise(resolve=>setTimeout(resolve,Math.min(this.intervalMs,remaining)));
+    }
+    return this.current(id)?{state:'unavailable',error:'等待超时，请检查连接和屏幕'}:null;
+  }
+};
+window.addEventListener('pagehide',()=>HomeOperation.begin());
 
 async function delFiles(){
-  try{const r=await fetch('/delete',epdFetchOpts({method:'POST'})); const t=await r.text();
-    await refresh(); await loadGallery(); log('删除结果：'+t,'ok');
-  }catch(e){log('删除失败：'+e,'bad');}
-}
-
-function previewOpts(){
-  return {
-    preset: previewPreset,
-    rot: previewRot,
-    flipX: !!document.getElementById('flipX')?.checked,
-    flipY: !!document.getElementById('flipY')?.checked,
-    fit: document.getElementById('fitMode')?.value || 'cover',
-    threshold: +(document.getElementById('thr')?.value || 96),
-    brightness: +(document.getElementById('brightness')?.value || 0),
-    contrast: (+(document.getElementById('contrast')?.value || 120)) / 100,
-    gamma: (+(document.getElementById('gamma')?.value || 100)) / 100,
-    sharpness: (+(document.getElementById('sharp')?.value || 20)) / 100,
-    redMode: document.getElementById('redMode')?.value || 'normal',
-    redSensitivity: (+(document.getElementById('redSens')?.value || 35)) / 100,
-    yellowSensitivity: (+(document.getElementById('yellowSens')?.value || 35)) / 100,
-    dither: (+(document.getElementById('dither')?.value || 100)) / 100,
-    e6DitherMode: previewE6FsMode ? 'six' : 'tri',
-    invert: !!document.getElementById('invertImg')?.checked
-  };
-}
-
-const PRESET_VALUES={
-  photo:{threshold:108,brightness:4,contrast:130,gamma:92,sharp:12,red:32,yellow:32,dither:70,redMode:'normal',fit:'cover'},
-  anime:{threshold:116,brightness:0,contrast:170,gamma:90,sharp:32,red:42,yellow:38,dither:20,redMode:'strong',fit:'cover'},
-  text:{threshold:128,brightness:0,contrast:190,gamma:100,sharp:0,red:0,yellow:0,dither:0,redMode:'off',fit:'contain'},
-  soft:{threshold:104,brightness:8,contrast:110,gamma:108,sharp:0,red:20,yellow:20,dither:90,redMode:'safe',fit:'contain'},
-  e6fs:{threshold:108,brightness:4,contrast:130,gamma:92,sharp:12,red:32,yellow:32,dither:100,redMode:'normal',fit:'cover'}
-};
-
-function applyPreset(name, save){
-  const p=PRESET_VALUES[name]||PRESET_VALUES.photo;
-  previewPreset=name;
-  previewE6FsMode=(name==='e6fs');
-  document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('on',b.dataset.preset===name));
-  if(document.getElementById('thr')) document.getElementById('thr').value=p.threshold;
-  if(document.getElementById('brightness')) document.getElementById('brightness').value=p.brightness;
-  if(document.getElementById('contrast')) document.getElementById('contrast').value=p.contrast;
-  if(document.getElementById('gamma')) document.getElementById('gamma').value=p.gamma;
-  if(document.getElementById('sharp')) document.getElementById('sharp').value=p.sharp;
-  if(document.getElementById('redSens')) document.getElementById('redSens').value=p.red;
-  if(document.getElementById('yellowSens')) document.getElementById('yellowSens').value=p.yellow;
-  if(document.getElementById('dither')) document.getElementById('dither').value=p.dither;
-  if(document.getElementById('redMode')) document.getElementById('redMode').value=p.redMode;
-  if(document.getElementById('fitMode')) document.getElementById('fitMode').value=p.fit;
-  updateColorControls();
-  if(save) saveUploadPreviewOptions();
-}
-
-function markPresetCustom(){
-  previewPreset='custom';
-  document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.remove('on'));
-}
-
-function saveUploadPreviewOptions(){
-  try{
-    localStorage.setItem('upload_img_opts',JSON.stringify({
-      preset:previewPreset,
-      threshold:document.getElementById('thr')?.value || '96',
-      brightness:document.getElementById('brightness')?.value || '0',
-      contrast:document.getElementById('contrast')?.value || '120',
-      gamma:document.getElementById('gamma')?.value || '100',
-      sharp:document.getElementById('sharp')?.value || '20',
-      redMode:document.getElementById('redMode')?.value || 'normal',
-      red:document.getElementById('redSens')?.value || '35',
-      yellow:document.getElementById('yellowSens')?.value || '35',
-      dither:document.getElementById('dither')?.value || '100',
-      e6FsMode:!!previewE6FsMode,
-      fit:document.getElementById('fitMode')?.value || 'cover',
-      invert:!!document.getElementById('invertImg')?.checked,
-      flipX:!!document.getElementById('flipX')?.checked,
-      flipY:!!document.getElementById('flipY')?.checked,
-      rot:previewRot
-    }));
-  }catch(e){}
-}
-
-function loadUploadPreviewOptions(){
-  try{
-    const opt=JSON.parse(localStorage.getItem('upload_img_opts')||'{}');
-    if(opt.preset!=null) previewPreset=opt.preset;
-    previewE6FsMode=(opt.e6FsMode!=null)?!!opt.e6FsMode:(previewPreset==='e6fs');
-    if(opt.threshold!=null) document.getElementById('thr').value=opt.threshold;
-    if(opt.brightness!=null) document.getElementById('brightness').value=opt.brightness;
-    if(opt.contrast!=null) document.getElementById('contrast').value=opt.contrast;
-    if(opt.gamma!=null) document.getElementById('gamma').value=opt.gamma;
-    if(opt.sharp!=null) document.getElementById('sharp').value=opt.sharp;
-    if(opt.redMode!=null) document.getElementById('redMode').value=opt.redMode;
-    if(opt.red!=null) document.getElementById('redSens').value=opt.red;
-    if(opt.yellow!=null) document.getElementById('yellowSens').value=opt.yellow;
-    if(opt.dither!=null) document.getElementById('dither').value=opt.dither;
-    if(opt.fit!=null) document.getElementById('fitMode').value=opt.fit;
-    if(opt.invert!=null) document.getElementById('invertImg').checked=!!opt.invert;
-    if(opt.flipX!=null) document.getElementById('flipX').checked=!!opt.flipX;
-    if(opt.flipY!=null) document.getElementById('flipY').checked=!!opt.flipY;
-    if(opt.rot!=null){
-      previewRot=+opt.rot||0;
-      document.querySelectorAll('#rotSeg button').forEach(b=>b.classList.toggle('on',+(b.dataset.rot||0)===previewRot));
-    }
-    document.querySelectorAll('#presetSeg button').forEach(b=>b.classList.toggle('on',b.dataset.preset===previewPreset));
-  }catch(e){}
-}
-
-function updatePreviewControlLabels(opt){
-  document.getElementById('thrVal').textContent=opt.threshold;
-  document.getElementById('brightnessVal').textContent=opt.brightness;
-  document.getElementById('contrastVal').textContent=opt.contrast.toFixed(2)+'×';
-  document.getElementById('gammaVal').textContent=opt.gamma.toFixed(2);
-  document.getElementById('sharpVal').textContent=opt.sharpness.toFixed(2);
-  document.getElementById('redVal').textContent=opt.redSensitivity.toFixed(2);
-  document.getElementById('yellowVal').textContent=opt.yellowSensitivity.toFixed(2);
-  document.getElementById('ditherVal').textContent=opt.dither.toFixed(2)+'×';
-}
-
-function updateColorControls(){
-  const redOff=!epdPanelHasRed;
-  const yellowOff=!epdPanelHasYellow || (isE6PreviewPanel()&&!previewE6FsMode);
-  ['redCtrl','redSensCtrl'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.classList.toggle('color-unsupported',redOff);
-  });
-  const yel=document.getElementById('yellowSensCtrl');
-  if(yel) yel.classList.toggle('color-unsupported',yellowOff);
-}
-
-function updatePreviewStageSize(){
-  const w=Math.max(1,epdPanelW||128);
-  const h=Math.max(1,epdPanelH||296);
-  const wrap=document.getElementById('previewWrap');
-  if(!wrap) return;
-  const isWide=w>=h;
-  const maxWide=Math.min(560,Math.max(360,w));
-  const maxTall=Math.min(420,Math.max(220,w*1.8));
-  wrap.style.setProperty('--preview-aspect',w+' / '+h);
-  wrap.style.setProperty('--preview-pane-max',(isWide?maxWide:maxTall)+'px');
-}
-
-function transformedSize(img,opt){
-  return (opt.rot%180===0) ? {w:img.width,h:img.height} : {w:img.height,h:img.width};
-}
-
-function drawTransformedImage(ctx,img,opt,dw,dh){
-  const ts=transformedSize(img,opt);
-  const stage=document.createElement('canvas');
-  stage.width=ts.w; stage.height=ts.h;
-  const sctx=stage.getContext('2d');
-  sctx.save();
-  sctx.translate(ts.w/2,ts.h/2);
-  sctx.scale(opt.flipX?-1:1,opt.flipY?-1:1);
-  sctx.rotate(opt.rot*Math.PI/180);
-  sctx.drawImage(img,-img.width/2,-img.height/2);
-  sctx.restore();
-  let sx=0,sy=0,sw=ts.w,sh=ts.h,dx=0,dy=0,tw=dw,th=dh;
-  if(opt.fit==='contain'){
-    const sc=Math.min(dw/ts.w,dh/ts.h);
-    tw=Math.max(1,Math.round(ts.w*sc)); th=Math.max(1,Math.round(ts.h*sc));
-    dx=Math.floor((dw-tw)/2); dy=Math.floor((dh-th)/2);
-  }else if(opt.fit==='cover'){
-    const sc=Math.max(dw/ts.w,dh/ts.h);
-    sw=Math.max(1,Math.min(ts.w,dw/sc));
-    sh=Math.max(1,Math.min(ts.h,dh/sc));
-    sx=(ts.w-sw)/2; sy=(ts.h-sh)/2;
-  }
-  ctx.save();
-  ctx.fillStyle='#fff';
-  ctx.fillRect(0,0,dw,dh);
-  ctx.drawImage(stage,sx,sy,sw,sh,dx,dy,tw,th);
-  ctx.restore();
-}
-
-function applySharpen(data,w,h,amount){
-  if(amount<=0) return;
-  const src=new Uint8ClampedArray(data);
-  const a=Math.min(1.2,amount);
-  for(let y=1;y<h-1;y++){
-    for(let x=1;x<w-1;x++){
-      const p=(y*w+x)*4;
-      for(let c=0;c<3;c++){
-        const center=src[p+c]*5;
-        const around=src[p-4+c]+src[p+4+c]+src[p-w*4+c]+src[p+w*4+c];
-        const sharp=center-around;
-        data[p+c]=Math.max(0,Math.min(255,src[p+c]*(1-a)+sharp*a));
-      }
-    }
-  }
-}
-
-function correctedChannel(v,opt){
-  v=Math.max(0,Math.min(255,v+opt.brightness));
-  const gamma=Math.max(0.35,Math.min(2.4,opt.gamma||1));
-  return Math.pow(v/255,1/gamma)*255;
-}
-
-const E6_FS_NEAR_PALETTE = [[2,2,2],[190,200,200],[205,202,0],[135,19,0],[5,64,158],[39,102,60]];
-const E6_FS_OUT_PALETTE = [[0,0,0],[255,255,255],[255,232,0],[196,36,28],[20,80,185],[40,150,90]];
-
-function clamp255(v){return Math.max(0,Math.min(255,v));}
-function isE6PreviewPanel(){return epdPanelIsE6||(epdPanelW===792&&epdPanelH===528&&epdPanelHasYellow);}
-function nearestE6FsColor(r,g,b){
-  let best=0,bestErr=Infinity;
-  for(let i=0;i<E6_FS_NEAR_PALETTE.length;i++){
-    const p=E6_FS_NEAR_PALETTE[i];
-    const dr=r-p[0],dg=g-p[1],db=b-p[2];
-    const err=dr*dr+dg*dg+db*db;
-    if(err<bestErr){bestErr=err;best=i;}
-  }
-  return best;
-}
-
-function ditherPreviewE6SixColor(ctx,im,opt){
-  const d=im.data,w=im.width,h=im.height;
-  const contrast=Math.max(0.2,Math.min(3,opt.contrast));
-  const strength=Math.max(0,Math.min(2,opt.dither));
-  const rb=new Float32Array(w*h);
-  const gb=new Float32Array(w*h);
-  const bb=new Float32Array(w*h);
-  for(let i=0;i<w*h;i++){
-    let r=d[i*4],g=d[i*4+1],b=d[i*4+2],a=d[i*4+3];
-    if(a<128){r=255;g=255;b=255;}
-    if(opt.invert){r=255-r;g=255-g;b=255-b;}
-    rb[i]=clamp255((correctedChannel(r,opt)-128)*contrast+128);
-    gb[i]=clamp255((correctedChannel(g,opt)-128)*contrast+128);
-    bb[i]=clamp255((correctedChannel(b,opt)-128)*contrast+128);
-  }
-  for(let y=0;y<h;y++){
-    for(let x=0;x<w;x++){
-      const idx=y*w+x,p=idx*4;
-      const r=clamp255(rb[idx]),g=clamp255(gb[idx]),b=clamp255(bb[idx]);
-      const c=nearestE6FsColor(r,g,b);
-      const out=E6_FS_OUT_PALETTE[c];
-      d[p]=out[0];d[p+1]=out[1];d[p+2]=out[2];d[p+3]=255;
-      if(strength<=0.001) continue;
-      const near=E6_FS_NEAR_PALETTE[c];
-      const er=(r-near[0])*strength,eg=(g-near[1])*strength,eb=(b-near[2])*strength;
-      const add=(ni,wgt)=>{rb[ni]+=er*wgt/16;gb[ni]+=eg*wgt/16;bb[ni]+=eb*wgt/16;};
-      if(x+1<w)add(idx+1,7);
-      if(y+1<h){
-        if(x>0)add(idx+w-1,3);
-        add(idx+w,5);
-        if(x+1<w)add(idx+w+1,1);
-      }
-    }
-  }
-  ctx.putImageData(im,0,0);
-}
-
-function ditherPreview(canvas,opt){
-  const ctx=canvas.getContext('2d');
-  const im=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const d=im.data,w=canvas.width,h=canvas.height;
-  applySharpen(d,w,h,opt.sharpness);
-  if(isE6PreviewPanel() && opt.e6DitherMode!=='tri'){
-    ditherPreviewE6SixColor(ctx,im,opt);
-    return;
-  }
-  const threshold=Math.max(0,Math.min(255,opt.threshold));
-  const contrast=Math.max(0.2,Math.min(3,opt.contrast));
-  const redSensitivity=Math.max(0,Math.min(1,opt.redSensitivity));
-  const yellowSensitivity=Math.max(0,Math.min(1,opt.yellowSensitivity));
-  const strength=Math.max(0,Math.min(2,opt.dither));
-  const pureBw = strength<=0.001 && (opt.redMode||'normal')==='off';
-  const gray=new Float32Array(w*h);
-  const redScore=new Float32Array(w*h);
-  const yellowScore=new Float32Array(w*h);
-  for(let i=0;i<w*h;i++){
-    let r=d[i*4],g=d[i*4+1],b=d[i*4+2],a=d[i*4+3];
-    if(a<128){r=255;g=255;b=255;}
-    if(opt.invert){r=255-r;g=255-g;b=255-b;}
-    r=correctedChannel(r,opt);
-    g=correctedChannel(g,opt);
-    b=correctedChannel(b,opt);
-    let y=0.299*r+0.587*g+0.114*b;
-    y=Math.max(0,Math.min(255,(y-128)*contrast+128));
-    gray[i]=y;
-    if(pureBw) continue;
-    const mode=opt.redMode||'normal';
-    const modeBias=mode==='strong'?-18:(mode==='safe'?20:(mode==='off'?999:0));
-    const warm=r-Math.max(g,b)*(0.72+redSensitivity*0.18);
-    const saturation=r-Math.min(g,b);
-    redScore[i]=warm+saturation*0.35-modeBias;
-    const yellowBase=Math.min(r,g)-b*(0.72+yellowSensitivity*0.18);
-    const yellowSat=Math.min(r,g)-Math.min(r,g,b);
-    yellowScore[i]=yellowBase+yellowSat*0.30;
-  }
-  if(pureBw){
-    for(let i=0;i<w*h;i++){
-      const p=i*4;
-      const out=gray[i]<threshold?0:255;
-      d[p]=d[p+1]=d[p+2]=out;d[p+3]=255;
-    }
-    ctx.putImageData(im,0,0);
-    return;
-  }
-  const redGate=80-redSensitivity*55;
-  const redLightGate=230-redSensitivity*80;
-  const yellowGate=86-yellowSensitivity*58;
-  const yellowLightGate=238-yellowSensitivity*72;
-  const useYellow=epdPanelHasYellow && !(isE6PreviewPanel() && opt.e6DitherMode==='tri');
-  for(let y=0;y<h;y++){
-    for(let x=0;x<w;x++){
-      const idx=y*w+x;
-      const p=idx*4;
-      const old=Math.max(0,Math.min(255,gray[idx]));
-      const isYellow=useYellow&&yellowScore[idx]>yellowGate&&old<yellowLightGate&&yellowScore[idx]>=redScore[idx]-8;
-      if(isYellow){
-        d[p]=210;d[p+1]=165;d[p+2]=24;d[p+3]=255;
-        gray[idx]=255;
-        continue;
-      }
-      const isRed=epdPanelHasRed&&opt.redMode!=='off'&&redScore[idx]>redGate&&old<redLightGate;
-      if(isRed){
-        d[p]=192;d[p+1]=57;d[p+2]=43;d[p+3]=255;
-        gray[idx]=255;
-        continue;
-      }
-      const out=old<threshold?0:255;
-      d[p]=d[p+1]=d[p+2]=out;d[p+3]=255;
-      const e=(old-out)*strength;
-      if(x+1<w) gray[idx+1]+=e*7/16;
-      if(y+1<h){
-        if(x>0) gray[idx+w-1]+=e*3/16;
-        gray[idx+w]+=e*5/16;
-        if(x+1<w) gray[idx+w+1]+=e/16;
-      }
-    }
-  }
-  ctx.putImageData(im,0,0);
-}
-
-function renderPreview(){
-  const canvas=document.getElementById('epdPreview');
-  if(!canvas) return;
-  canvas.width=epdPanelW||128; canvas.height=epdPanelH||296;
-  updatePreviewStageSize();
-  const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  const opt=previewOpts();
-  updatePreviewControlLabels(opt);
-  if(!previewImg){
-    const m=document.getElementById('previewMeta');
-    if(m)m.textContent='选择图片后显示预览。';
-    return;
-  }
-  drawTransformedImage(ctx,previewImg,opt,canvas.width,canvas.height);
-  ditherPreview(canvas,opt);
-  const ts=transformedSize(previewImg,opt);
-  document.getElementById('previewMeta').textContent=
-    '原图 '+previewImg.width+'×'+previewImg.height+'，方向后 '+ts.w+'×'+ts.h+
-    '，输出 '+canvas.width+'×'+canvas.height+'，算法参数已应用到上传图片。';
-}
-
-function buildUploadBlobFromPreview(){
-  return new Promise((resolve,reject)=>{
-    const img=previewImg;
-    if(!img){reject('preview not ready');return;}
-    const opt=previewOpts();
-    const c=document.createElement('canvas');
-    c.width=epdPanelW||128; c.height=epdPanelH||296;
-    const ctx=c.getContext('2d');
-    drawTransformedImage(ctx,img,opt,c.width,c.height);
-    ditherPreview(c,opt);
-    c.toBlob(b=>b?resolve(b):reject('preview export failed'),'image/png');
-  });
-}
-
-async function upload(){
-  const fi=document.getElementById('f');
-  if(!fi.files.length){log('请先选择一张 JPEG 或 PNG 图片。','bad');return;}
-  const file=fi.files[0];
-  document.getElementById('up').disabled=true;
-  log('正在压缩：'+file.name+'（'+fmt(file.size)+'）…');
-  try{
-    const blob=await buildUploadBlobFromPreview();
-    log('压缩完成：'+fmt(file.size)+' → '+fmt(blob.size)+'，正在上传…');
-    log('⏳ 上传 + 图片转换 + 墨水屏刷新中，全程约 15-30 秒，请勿关闭页面…');
-    const r=await fetch('/upload',epdFetchOpts({method:'POST',headers:{'Content-Type':'image/png'},body:blob}));
-    const t=await r.text();
-    await refresh(); await loadGallery();
-    log(r.ok?'✅ 上传成功！墨水屏已刷新':'❌ 上传失败：'+t,(r.ok?'ok':'bad'));
-  }catch(e){log('上传失败：'+e,'bad');}
-  document.getElementById('up').disabled=false;
+  const operation=HomeOperation.begin();
+  try{const r=await fetch('/delete',epdFetchOpts({method:'POST'}));const t=await r.text();
+    if(!HomeOperation.current(operation))return;
+    await refresh(operation);await loadGallery();
+    if(HomeOperation.current(operation))log((r.ok?'操作完成：':'操作未完成：')+t,r.ok?'ok':'bad');
+  }catch(e){if(HomeOperation.current(operation))log('删除/清屏结果未确认：'+e,'bad');}
 }
 
 async function showImg(name){
-  log('⏳ 正在转换并显示 '+name+'，墨水屏刷新约需 15-20 秒…');
+  const operation=HomeOperation.begin();
+  log('正在提交显示请求：'+name);
   try{
     const r=await fetch('/show?name='+encodeURIComponent(name),epdFetchOpts({method:'POST'}));
-    const t=await r.text();
-    log(r.ok?'✅ 显示成功':'❌ '+t,(r.ok?'ok':'bad'));
-  }catch(e){log('显示失败：'+e,'bad');}
+    const t=await r.text();let response=null;try{response=JSON.parse(t);}catch(e){}
+    if(!HomeOperation.current(operation))return;
+    if(!r.ok||response?.ok===false){log('显示请求失败：'+(response?.error||t||r.status),'bad');return;}
+    if(response?.queued!==true||!Number.isInteger(response.epoch)||response.epoch<=0||response.epoch>4294967295){
+      log('显示请求已提交；当前固件未提供任务回执，结果未确认。');return;
+    }
+    log('显示任务已提交，等待屏幕刷新…');
+    const result=await HomeOperation.waitResult(response.epoch,operation);
+    if(!result||!HomeOperation.current(operation))return;
+    if(result.state==='ok')log('显示成功','ok');
+    else if(result.state==='error')log('显示失败：'+(result.error||'设备刷新失败'),'bad');
+    else if(result.state==='canceled')log('显示任务已被新请求替换。');
+    else log('结果未确认：'+(result.error||'任务结果不可用'));
+  }catch(e){if(HomeOperation.current(operation))log('显示结果未确认：'+e,'bad');}
 }
 
 async function delImg(name){
   if(!confirm('删除 '+name+'？')) return;
+  const operation=HomeOperation.begin();
   try{
     const r=await fetch('/delete_image?name='+encodeURIComponent(name),epdFetchOpts({method:'POST'}));
-    await loadGallery(); await refresh();
-    log('已删除 '+name,'ok');
-  }catch(e){log('删除失败：'+e,'bad');}
+    const message=await r.text();
+    if(!HomeOperation.current(operation))return;
+    await loadGallery(); await refresh(operation);
+    if(HomeOperation.current(operation))log(r.ok?'已删除 '+name:'删除失败：'+(message||r.status),r.ok?'ok':'bad');
+  }catch(e){if(HomeOperation.current(operation))log('删除结果未确认：'+e,'bad');}
 }
 
 async function loadGallery(){
@@ -1121,49 +768,6 @@ async function loadDashboard(){
   }catch(e){}
 }
 
-function initUploadPreview(){
-  applyPreset('photo',false);
-  loadUploadPreviewOptions();
-  updateColorControls();
-  const fi=document.getElementById('f');
-  if(fi){
-    fi.addEventListener('change',()=>{
-      const file=fi.files&&fi.files[0];
-      if(previewUrl){URL.revokeObjectURL(previewUrl); previewUrl=null;}
-      previewImg=null;
-      if(!file){document.getElementById('previewWrap').style.display='none';renderPreview();return;}
-      previewUrl=URL.createObjectURL(file);
-      const img=new Image();
-      img.onload=()=>{
-        previewImg=img;
-        document.getElementById('previewWrap').style.display='grid';
-        renderPreview();
-      };
-      img.onerror=()=>log('图片预览加载失败。','bad');
-      img.src=previewUrl;
-    });
-  }
-  document.querySelectorAll('#rotSeg button').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      previewRot=+(btn.dataset.rot||0);
-      document.querySelectorAll('#rotSeg button').forEach(b=>b.classList.toggle('on',b===btn));
-      saveUploadPreviewOptions();
-      renderPreview();
-    });
-  });
-  document.querySelectorAll('#presetSeg button').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      applyPreset(btn.dataset.preset||'photo',true);
-      renderPreview();
-    });
-  });
-  ['flipX','flipY','fitMode','thr','brightness','contrast','gamma','sharp','redMode','redSens','yellowSens','dither','invertImg'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.addEventListener('input',()=>{markPresetCustom();saveUploadPreviewOptions();renderPreview();});
-    if(el) el.addEventListener('change',()=>{markPresetCustom();saveUploadPreviewOptions();renderPreview();});
-  });
-  renderPreview();
-}
 function updateDashboard(s){
   document.getElementById('d_time').textContent=s.time_synced?s.time.slice(11,16):'未同步';
   if(s.spiffs_ok===false){
@@ -1214,7 +818,7 @@ function updateDashboard(s){
     document.body.appendChild(ov);
   }
 })();
-initUploadPreview(); refresh(); loadGallery();
+
 </script>
 <style id="mobile-page-picker-v2">
 .mobile-page-picker-wrap{display:none}
@@ -1226,5 +830,284 @@ initUploadPreview(); refresh(); loadGallery();
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+
+<script id="image-workspace-app">
+(function(){
+'use strict';
+const icons={"panel-right-open":"data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-panel-right-open%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%203v18%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22m10%2015-3-3%203-3%22%20%2F%3E%0A%3C%2Fsvg%3E%0A","panel-right-close":"data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-panel-right-close%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M15%203v18%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22m8%209%203%203-3%203%22%20%2F%3E%0A%3C%2Fsvg%3E%0A"};
+const host=document.getElementById('imageWorkspace'),root=host.attachShadow({mode:'open'});
+root.append(document.getElementById('imageWorkspaceTemplate').content.cloneNode(true));
+const $=id=>root.getElementById(id);
+if(typeof ImageProcessor==='undefined'||typeof ImageProcessor.processProfile!=='function'||typeof ImageProcessor.profileFromStatus!=='function'){
+  const fail=()=>log('图片处理模块加载失败，请刷新页面。','bad');
+  window.Workspace={open:fail,load:fail,missing:true};document.getElementById('up').disabled=true;document.getElementById('f').disabled=true;fail();return;
+}
+const FAMILY={bw:'黑白',bwr:'黑白红',bwy:'黑白黄',bwry:'黑白红黄',e6:'六色'};
+const clone=value=>JSON.parse(JSON.stringify(value));
+const FIELDS=[['brightness','亮度',-80,80,''],['contrast','对比度',40,260,'%'],['shadows','暗部',0,100,'%'],['saturation','饱和度',0,160,'%'],['neutralProtection','偏色抑制',0,100,'%'],['gamma','伽马',55,180,''],['sharp','锐化',0,100,'%'],['dither','抖动强度',0,160,'%'],['threshold','文字阈值',40,210,'']];
+const linear=Float32Array.from({length:256},(_,i)=>ImageProcessor.linear(i));
+function average(source,width,height){
+  const sw=source.width,sh=source.height,src=source.data,mid=new Float32Array(width*sh*3),out=new ImageData(width,height);
+  for(let y=0;y<sh;y++)for(let x=0;x<width;x++){
+    const a=x*sw/width,b=(x+1)*sw/width,q=(y*width+x)*3;
+    for(let sx=Math.floor(a);sx<Math.ceil(b)&&sx<sw;sx++){
+      const weight=(Math.min(b,sx+1)-Math.max(a,sx))/(b-a),p=(y*sw+sx)*4;
+      for(let k=0;k<3;k++)mid[q+k]+=linear[src[p+k]]*weight;
+    }
+  }
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const a=y*sh/height,b=(y+1)*sh/height,p=(y*width+x)*4;
+    for(let k=0;k<3;k++){
+      let v=0;for(let sy=Math.floor(a);sy<Math.ceil(b)&&sy<sh;sy++)v+=mid[(sy*width+x)*3+k]*(Math.min(b,sy+1)-Math.max(a,sy))/(b-a);
+      v=Math.max(0,Math.min(1,v));out.data[p+k]=Math.round(255*(v<=.0031308?12.92*v:1.055*v**(1/2.4)-.055));
+    }out.data[p+3]=255;
+  }return out;
+}
+function usesFourColor(profile){return profile.family==='bwry'||profile.family==='bwr'||profile.family==='bwy';}
+function defaults(profile,mode){
+  return ImageProcessor.profileDefaults(profile,mode);
+}
+const App={
+  profile:null,state:null,epoch:0,revision:0,rendered:-1,ready:-1,
+  image:null,fileName:'',url:null,frame:document.createElement('canvas'),original:document.createElement('canvas'),
+  worker:null,failedWorker:false,job:null,pending:null,timer:0,sourceRequest:0,fileEpoch:0,loading:false,busy:false,error:'',notice:'',
+  history:[],future:[],gesture:null,drag:null,tab:'adjust',tool:'view',compare:false,
+  view:{fit:true,zoom:100,kind:'effect'},sidebar:300,paintFrame:0,
+  key:'upload_editor_v4_panel_',opened:false,online:false,statusVersion:0,
+  async init(){
+    this.makeControls();this.bind();
+    $('upload').setAttribute('aria-label','上传并显示');$('upload').title='上传并显示';
+    try{this.sidebar=Math.min(380,Math.max(260,Number(localStorage.getItem('upload_editor_v4_sidebar'))||300));}catch(e){}
+    $('editorShell').style.setProperty('--sidebar',this.sidebar+'px');$('splitter').setAttribute('aria-valuenow',this.sidebar);
+    this.controls();setInterval(()=>{if(this.opened&&!this.busy)this.readStatus().catch(()=>{});},15000);
+  },
+  open(){if(host.hidden){this.returnFocus=document.activeElement;host.hidden=false;this.opened=true;document.querySelector('.wrap').inert=true;document.body.classList.add('workspace-open');$('openFile').focus();}this.paint();this.readStatus().catch(()=>{});},
+  close(){this.drag=null;this.setCompare(false);this.commit();host.hidden=true;this.opened=false;document.querySelector('.wrap').inert=false;document.body.classList.remove('workspace-open');this.returnFocus?.focus();},
+  async readStatus(){
+    const version=++this.statusVersion,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+    try{const r=await fetch('/status',epdFetchOpts({signal:controller.signal,cache:'no-store'}));if(!r.ok)throw Error('设备状态读取失败（'+r.status+'）');const s=await r.json();if(version!==this.statusVersion)throw Error('设备状态已更新');this.acceptStatus(s);if(!this.profile)throw Error('设备未提供有效图片处理能力');return s;}
+    catch(e){if(version===this.statusVersion){this.online=false;this.controls();}throw e;}finally{clearTimeout(timer);}
+  },
+  acceptStatus(status){
+    const profile=ImageProcessor.profileFromStatus(status),identity=p=>p&&[p.id,p.profileId,p.width,p.height,p.family].join(':');
+    this.online=!!profile;this.deviceReady=status.epd_ready!==false;
+    if(identity(profile)===identity(this.profile)){this.controls();return;}
+    this.save();this.commit();this.stop();this.epoch++;this.revision++;this.ready=this.rendered=-1;
+    this.profile=profile;this.history=[];this.future=[];this.gesture=null;this.drag=null;this.compare=false;this.tool='view';this.view={fit:true,zoom:100,kind:'effect'};
+    if(!profile){this.state=null;this.error='设备未提供有效图片处理能力，请核对固件和屏幕配置';this.controls();this.paint();return;}
+    this.state=this.loadState(profile);this.request();this.paint();
+  },
+  loadState(profile){
+    const state={mode:profile.family==='bw'?'mono':'color',params:Object.fromEntries(['color','mono','text'].map(m=>[m,defaults(profile,m)])),composition:ImageProcessor.composition()};
+    try{
+      const saved=JSON.parse(localStorage.getItem(this.key+profile.id)||'null');
+      if(saved?.version===4&&saved.profileId===profile.profileId){state.mode=saved.mode;for(const m of ['color','mono','text'])state.params[m]=ImageProcessor.tuning({...state.params[m],...saved.params?.[m]},m);}
+      else if(!saved){
+        const v3=JSON.parse(localStorage.getItem('upload_editor_v3_panel_'+profile.id)||'null');
+        if(v3?.version===3){state.mode=v3.mode;for(const m of ['color','mono','text'])state.params[m]=ImageProcessor.tuning({...state.params[m],...v3.profiles?.[m]},m);}
+        else{
+          const old=JSON.parse(localStorage.getItem('upload_img_opts_panel_'+profile.id)||(profile.id===0?localStorage.getItem('upload_img_opts'):null)||'{}');
+          state.mode=old.preset==='text'||old.preset==='bw'?'text':old.preset==='gray'||old.palette==='mono'?'mono':state.mode;
+          if(old.preset==='custom')state.params[state.mode]=ImageProcessor.tuning({...state.params[state.mode],...old},state.mode);
+        }
+      }
+    }catch(e){}
+    if(!['color','mono','text'].includes(state.mode)||profile.family==='bw'&&state.mode==='color')state.mode=profile.family==='bw'?'mono':'color';
+    return state;
+  },
+  makeControls(){
+    for(const [i,[key,label,min,max]] of FIELDS.entries()){
+      const row=document.createElement('div');row.className='slider-row';row.dataset.field=key;
+      row.innerHTML=`<label for="param-${key}">${label}<output id="value-${key}"></output></label><div class="slider-input"><input id="param-${key}" data-param="${key}" type="range" min="${min}" max="${max}"><button class="icon-button reset-control" data-reset="${key}" title="重置${label}" aria-label="重置${label}"><img src="data:image/svg+xml,%3C!--%20%40license%20lucide-static%20v1.45.0%20-%20ISC%20--%3E%0A%3Csvg%0A%20%20class%3D%22lucide%20lucide-rotate-ccw%22%0A%20%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%0A%20%20width%3D%2224%22%0A%20%20height%3D%2224%22%0A%20%20viewBox%3D%220%200%2024%2024%22%0A%20%20fill%3D%22none%22%0A%20%20stroke%3D%22currentColor%22%0A%20%20stroke-width%3D%222%22%0A%20%20stroke-linecap%3D%22round%22%0A%20%20stroke-linejoin%3D%22round%22%0A%3E%0A%20%20%3Cpath%20d%3D%22M3%2012a9%209%200%201%200%209-9%209.75%209.75%200%200%200-6.74%202.74L3%208%22%20%2F%3E%0A%20%20%3Cpath%20d%3D%22M3%203v5h5%22%20%2F%3E%0A%3C%2Fsvg%3E%0A" alt=""></button></div>`;
+      $(i<4?'basicControls':'advancedControls').append(row);
+    }
+  },
+  bind(){
+    const on=(id,event,fn,options)=>$(id).addEventListener(event,fn,options);
+    on('openFile','click',()=>$('file').click());on('file','change',e=>{this.sourceRequest++;this.load(e.target.files[0]);});
+    on('back','click',()=>this.close());
+    root.querySelectorAll('[data-param]').forEach(el=>{
+      el.addEventListener('input',()=>this.change(()=>{this.state.params[this.state.mode][el.dataset.param]=+el.value;}));
+      for(const event of ['change','blur'])el.addEventListener(event,()=>this.commit());
+    });
+    root.querySelectorAll('[data-reset]').forEach(el=>el.addEventListener('click',()=>this.change(()=>{const key=el.dataset.reset;this.state.params[this.state.mode][key]=defaults(this.profile,this.state.mode)[key];},true)));
+    root.querySelectorAll('[data-mode]').forEach(el=>el.addEventListener('click',()=>this.change(()=>{this.state.mode=el.dataset.mode;},true)));
+    root.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click',()=>this.setTab(el.dataset.tab)));
+    root.querySelector('.inspector-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...root.querySelectorAll('[data-tab]')],i=e.key==='Home'?0:e.key==='End'?1:this.tab==='adjust'?1:0;this.setTab(tabs[i].dataset.tab);tabs[i].focus();});
+    for(const [id,label] of [['adjustTab','tabAdjust'],['composeTab','tabCompose']]){$(id).setAttribute('role','tabpanel');$(id).setAttribute('aria-labelledby',label);}
+    root.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>{this.view.kind=el.dataset.view;this.view.fit=el.dataset.view==='effect';if(!this.view.fit)this.view.zoom=100;this.controls();this.paint();}));
+    root.querySelectorAll('[data-rot]').forEach(el=>el.addEventListener('click',()=>this.change(()=>{this.state.composition.rot=+el.dataset.rot;},true)));
+    on('fitMode','change',e=>this.change(()=>{this.state.composition.fit=e.target.value;this.tool=e.target.value==='cover'?'crop':'view';},true));
+    on('cropZoom','input',e=>this.change(()=>{this.state.composition.zoom=+e.target.value;}));for(const event of ['change','blur'])on('cropZoom',event,()=>this.commit());
+    on('resetCropZoom','click',()=>this.change(()=>{this.state.composition.zoom=1;},true));
+    on('centerCrop','click',()=>this.change(()=>{this.state.composition.cx=this.state.composition.cy=.5;},true));
+    on('flipX','change',e=>this.change(()=>{this.state.composition.flipX=e.target.checked;},true));on('flipY','change',e=>this.change(()=>{this.state.composition.flipY=e.target.checked;},true));
+    on('pattern','change',e=>this.change(()=>{this.state.params[this.state.mode].dotPattern=e.target.value;},true));
+    on('panTool','click',()=>{this.tool='view';this.controls();});on('cropTool','click',()=>{this.tool='crop';this.setTab('compose');this.controls();});
+    on('fitView','click',()=>{this.view.fit=true;this.paint();});on('actualView','click',()=>this.zoom(100));
+    on('zoomSelect','change',e=>{if(e.target.value==='fit'){this.view.fit=true;this.paint();}else this.zoom(+e.target.value);});
+    on('zoomIn','click',()=>this.zoom((this.scale||1)*125));on('zoomOut','click',()=>this.zoom((this.scale||1)*80));
+    on('undo','click',()=>this.undo());on('redo','click',()=>this.redo());
+    on('reset','click',()=>this.change(()=>{this.state.params[this.state.mode]=defaults(this.profile,this.state.mode);this.state.composition=ImageProcessor.composition();this.view.fit=true;},true));
+    on('resetTab','click',()=>this.change(()=>{if(this.tab==='compose')this.state.composition=ImageProcessor.composition();else this.state.params[this.state.mode]=defaults(this.profile,this.state.mode);},true));
+    on('toggleSidebar','click',()=>{const closed=$('editorShell').classList.toggle('sidebar-closed');$('toggleSidebar').setAttribute('aria-expanded',String(!closed));$('toggleSidebar').title=closed?'展开参数栏':'收起参数栏';$('toggleSidebar').setAttribute('aria-label',$('toggleSidebar').title);$('toggleSidebar').querySelector('img').src=icons[closed?'panel-right-open':'panel-right-close'];this.schedulePaint();});
+    on('splitter','pointerdown',e=>{if(e.button!==0)return;$('splitter').setPointerCapture(e.pointerId);this.splitDrag={x:e.clientX,width:$('inspector').getBoundingClientRect().width,id:e.pointerId};e.preventDefault();});
+    on('splitter','pointermove',e=>{if(this.splitDrag?.id===e.pointerId)this.resizeSidebar(this.splitDrag.width+this.splitDrag.x-e.clientX);});
+    for(const event of ['pointerup','pointercancel'])on('splitter',event,()=>{this.splitDrag=null;this.save();});
+    on('splitter','keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();this.resizeSidebar(this.sidebar+(e.key==='ArrowLeft'?10:-10));this.save();}});
+    on('viewport','pointerdown',e=>this.pointerDown(e));on('viewport','pointermove',e=>this.pointerMove(e));
+    for(const event of ['pointerup','pointercancel'])on('viewport',event,e=>this.pointerEnd(e));
+    on('viewport','wheel',e=>{if(e.ctrlKey){e.preventDefault();this.zoom((this.scale||1)*100*(e.deltaY>0?.9:1.1));}},{passive:false});
+    on('compare','pointerdown',e=>{if($('compare').disabled)return;$('compare').setPointerCapture(e.pointerId);this.setCompare(true);e.preventDefault();});
+    for(const event of ['pointerup','pointercancel','blur'])on('compare',event,()=>this.setCompare(false));
+    on('compare','keydown',e=>{if([' ','Enter'].includes(e.key)){e.preventDefault();this.setCompare(true);}});on('compare','keyup',()=>this.setCompare(false));
+    window.addEventListener('blur',()=>this.setCompare(false));
+    window.addEventListener('keydown',e=>{
+      if(!this.opened)return;
+      if(e.key==='Escape'&&!$('aboutDialog').open){this.close();return;}
+      const target=root.activeElement||e.target;
+      if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!['INPUT','TEXTAREA'].includes(target.tagName)){e.preventDefault();e.shiftKey?this.redo():this.undo();}
+      if(e.code==='Space'&&!['INPUT','SELECT','TEXTAREA','BUTTON'].includes(target.tagName)){e.preventDefault();this.setCompare(true);}
+    });window.addEventListener('keyup',e=>{if(e.code==='Space')this.setCompare(false);});
+    on('upload','click',()=>this.upload());on('download','click',()=>this.download());
+    on('about','click',()=>$('aboutDialog').showModal());on('closeAbout','click',()=>$('aboutDialog').close());
+    new ResizeObserver(()=>this.schedulePaint()).observe($('viewport'));window.addEventListener('resize',()=>this.schedulePaint());
+  },
+  save(){
+    try{if(this.profile&&this.state)localStorage.setItem(this.key+this.profile.id,JSON.stringify({version:4,profileId:this.profile.profileId,mode:this.state.mode,params:this.state.params}));localStorage.setItem('upload_editor_v4_sidebar',String(this.sidebar));}catch(e){}
+  },
+  normalize(){
+    const mode=this.state.mode,p=this.state.params[mode],clean=ImageProcessor.tuning(p,mode);
+    this.state.params[mode]=clean;
+    this.state.composition=ImageProcessor.composition(this.state.composition);
+    if(this.image){const c=ImageProcessor.crop(this.image.width,this.image.height,this.profile.width,this.profile.height,this.state.composition);this.state.composition.cx=c.cx;this.state.composition.cy=c.cy;}
+  },
+  change(fn,commit=false){if(this.busy||!this.state)return;if(!this.gesture)this.gesture=clone(this.state);fn();this.normalize();this.request();this.controls();if(commit)this.commit();},
+  commit(){if(this.gesture&&JSON.stringify(this.gesture)!==JSON.stringify(this.state)){this.history.push(this.gesture);if(this.history.length>50)this.history.shift();this.future=[];this.save();}this.gesture=null;this.controls();},
+  undo(){if(this.busy||!this.state)return;this.commit();if(!this.history.length)return;this.future.push(clone(this.state));this.state=this.history.pop();this.request();this.save();this.controls();},
+  redo(){if(this.busy||!this.future.length)return;this.history.push(clone(this.state));this.state=this.future.pop();this.request();this.save();this.controls();},
+  setTab(tab){this.tab=tab;$('adjustTab').hidden=tab!=='adjust';$('composeTab').hidden=tab!=='compose';root.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.tab===tab);b.setAttribute('aria-selected',String(b.dataset.tab===tab));b.tabIndex=b.dataset.tab===tab?0:-1;});$('resetTab').title=tab==='adjust'?'重置调整':'重置构图';$('resetTab').setAttribute('aria-label',$('resetTab').title);$('parameterScroll').scrollTop=0;},
+  supports(key){
+    if(!this.state||!this.profile)return false;const m=this.state.mode,p=this.profile;
+    if(key==='threshold')return m==='text';if(key==='sharp'||key==='dither')return m!=='text';
+    if(key==='shadows')return m!=='text'&&(m!=='color'||usesFourColor(p));
+    if(key==='saturation')return m==='color'&&usesFourColor(p);
+    if(key==='neutralProtection')return m==='color'&&usesFourColor(p);
+    if(key==='red'||key==='yellow')return false;
+    return true;
+  },
+  controls(){
+    const p=this.profile,s=this.state;
+    root.querySelectorAll('[data-param],[data-reset],[data-mode],#fitMode,#cropZoom,#flipX,#flipY,#pattern,#reset,#resetTab,#openFile,#file').forEach(e=>e.disabled=this.busy||!p);
+    $('panelName').textContent=p?p.name+' · '+p.width+'×'+p.height:'屏幕信息不可用';$('panelName').title=$('panelName').textContent;
+    $('connectionText').textContent=this.online?'已连接':'未连接';
+    root.querySelector('.connection').classList.toggle('connected',this.online);
+    $('undo').disabled=this.busy||!this.history.length;$('redo').disabled=this.busy||!this.future.length;
+    const ready=!!this.image&&!this.loading&&this.ready===this.revision&&!this.error&&!this.busy&&!!p;
+    $('upload').disabled=!ready||!this.online||!this.deviceReady;$('download').disabled=!ready;$('compare').disabled=this.rendered<0;
+    $('status').classList.toggle('error',!!this.error);$('status').textContent=this.error||this.notice||(this.loading?'正在读取图片…':this.busy?'正在上传并刷新…':!this.online?'连接不可用，上传已禁用':!this.image?'请选择图片':this.ready!==this.revision?'正在生成预览…':'预览就绪');
+    $('fileName').textContent=this.fileName||'未选择图片';$('fileName').title=this.fileName;
+    $('empty').hidden=!!this.image||this.loading;
+    if(!p||!s)return;
+    const values=s.params[s.mode],c=s.composition;
+    root.querySelectorAll('[data-mode]').forEach(b=>{b.hidden=b.dataset.mode==='color'&&p.family==='bw';b.classList.toggle('active',b.dataset.mode===s.mode);b.setAttribute('aria-pressed',String(b.dataset.mode===s.mode));});
+    for(const [key,,min,max,suffix] of FIELDS){const row=root.querySelector('[data-field="'+key+'"]');row.hidden=!this.supports(key);$('param-'+key).value=values[key];$('param-'+key).style.setProperty('--range-progress',(100*(values[key]-min)/(max-min))+'%');$('value-'+key).textContent=key==='gamma'?(values[key]/100).toFixed(2):values[key]+suffix;}
+    $('patternRow').hidden=s.mode==='text'||(s.mode==='color'&&!usesFourColor(p));$('pattern').value=values.dotPattern;
+    $('fitMode').value=c.fit;$('cropZoom').value=c.zoom;$('cropZoomValue').textContent=c.zoom.toFixed(2)+'×';$('cropZoomRow').hidden=c.fit!=='cover';$('centerCrop').hidden=c.fit!=='cover';
+    $('cropZoom').style.setProperty('--range-progress',(100*(c.zoom-1)/3)+'%');
+    $('flipX').checked=c.flipX;$('flipY').checked=c.flipY;
+    root.querySelectorAll('[data-rot]').forEach(b=>{b.classList.toggle('active',+b.dataset.rot===c.rot);b.disabled=this.busy;});
+    if(c.fit!=='cover')this.tool='view';$('cropTool').disabled=c.fit!=='cover'||this.busy||!this.image;
+    for(const [id,value] of [['panTool','view'],['cropTool','crop']]){$(id).classList.toggle('active',this.tool===value);$(id).setAttribute('aria-pressed',String(this.tool===value));}
+    $('viewport').classList.toggle('crop',this.tool==='crop');
+    root.querySelectorAll('[data-view]').forEach(b=>{b.classList.toggle('active',this.view.kind===b.dataset.view);b.setAttribute('aria-pressed',String(this.view.kind===b.dataset.view));});
+    $('canvasTitle').textContent=FAMILY[p.family]+' · '+p.width+' × '+p.height;$('geometry').textContent=(this.image?this.image.width+'×'+this.image.height+' → ':'')+p.width+'×'+p.height;
+    $('profileLabel').textContent=p.profileId+' · ID '+p.id;
+    $('modeStatus').textContent='参考预览 · 未实屏校色';
+    $('inkSwatches').replaceChildren();for(const [i,color] of ImageProcessor.profilePalette(p).entries()){const dot=document.createElement('i');dot.style.background='rgb('+color.join(',')+')';dot.title=p.inks[i];$('inkSwatches').append(dot);}
+  },
+  load(file,name){
+    if(this.busy)return;this.stop();this.sourceRequest++;this.fileEpoch++;this.epoch++;this.revision++;this.ready=-1;this.rendered=-1;this.image=null;this.error='';this.notice='';this.loading=!!file;this.compare=false;this.history=[];this.future=[];this.gesture=null;this.drag=null;
+    if(this.state)this.state.composition=ImageProcessor.composition();this.view={fit:true,zoom:100,kind:'effect'};this.tool='view';this.fileName=name||file?.name||'';
+    if(this.url)URL.revokeObjectURL(this.url);this.url=null;this.controls();this.paint();if(!file)return;
+    const epoch=this.fileEpoch,img=new Image();this.url=URL.createObjectURL(file);
+    img.onload=()=>{if(epoch!==this.fileEpoch)return;this.loading=false;if(!img.width||!img.height||img.width*img.height>24000000){this.error='图片过大或尺寸无效';this.controls();return;}this.image=img;this.request();};
+    img.onerror=()=>{if(epoch===this.fileEpoch){this.loading=false;this.error='图片读取失败，请重新选择图片';this.controls();}};img.src=this.url;
+  },
+  source(){
+    const p=this.profile,c=ImageProcessor.crop(this.image.width,this.image.height,p.width,p.height,this.state.composition),canvas=document.createElement('canvas');canvas.width=p.width;canvas.height=p.height;
+    const x=canvas.getContext('2d',{willReadFrequently:true});x.fillStyle='#fff';x.fillRect(0,0,p.width,p.height);x.save();x.beginPath();x.rect(c.dx,c.dy,c.dw,c.dh);x.clip();x.translate(c.dx+c.dw/2,c.dy+c.dh/2);x.scale(c.dw/c.cw,c.dh/c.ch);x.translate(c.sw/2-c.cx*c.sw,c.sh/2-c.cy*c.sh);x.scale(c.flipX?-1:1,c.flipY?-1:1);x.rotate(c.rot*Math.PI/180);x.drawImage(this.image,-this.image.width/2,-this.image.height/2);x.restore();return x.getImageData(0,0,p.width,p.height);
+  },
+  request(){
+    this.revision++;this.ready=-1;this.notice='';this.error='';if(!this.profile){this.error='缺少有效屏幕能力';this.controls();return;}if(!this.image){this.controls();return;}
+    try{this.pending={epoch:this.epoch,revision:this.revision,panel:this.profile.id,profileId:this.profile.profileId,profile:clone(this.profile),width:this.profile.width,height:this.profile.height,mode:this.state.mode,params:clone(this.state.params[this.state.mode]),pixels:this.source().data};}catch(e){this.error=e.message;this.pending=null;}
+    this.controls();this.pump();
+  },
+  stop(){if(this.timer)clearTimeout(this.timer);this.timer=0;if(this.worker)this.worker.terminate();this.worker=null;this.job=null;this.pending=null;},
+  pump(){
+    if(this.job||!this.pending)return;const job=this.pending;this.pending=null;this.job=job;
+    if(!this.worker&&!this.failedWorker){try{const w=new Worker('/image_processor.js');this.worker=w;w.onmessage=e=>{if(this.worker===w)this.complete(e.data);};w.onerror=e=>{e.preventDefault();if(this.worker===w)this.fallback();};w.onmessageerror=()=>{if(this.worker===w)this.fallback();};}catch(e){this.failedWorker=true;}}
+    if(this.worker){try{const pixels=job.pixels.slice();this.timer=setTimeout(()=>this.fallback(),10000);this.worker.postMessage({...job,pixels:undefined,buffer:pixels.buffer},[pixels.buffer]);}catch(e){this.fallback();}}
+    else this.runFallback(job);
+  },
+  fallback(){if(this.timer)clearTimeout(this.timer);this.timer=0;if(this.worker)this.worker.terminate();this.worker=null;this.failedWorker=true;if(this.job)this.runFallback(this.job);},
+  runFallback(job){setTimeout(()=>{if(this.job!==job||job.epoch!==this.epoch)return;try{const im={width:job.width,height:job.height,data:job.pixels.slice()},out=ImageProcessor.processProfile(im,job.profile,{...job.params,mode:job.mode});this.complete({...job,buffer:out.data.buffer});}catch(e){this.complete({...job,error:e.message});}},0);},
+  complete(result){
+    const job=this.job;if(!job||result.epoch!==job.epoch||result.revision!==job.revision||result.profileId!==job.profileId||result.panel!==job.panel)return;
+    if(this.timer)clearTimeout(this.timer);this.timer=0;this.job=null;
+    if(job.epoch===this.epoch&&job.profileId===this.profile?.profileId){
+      if(result.error){if(job.revision===this.revision)this.error='处理失败：'+result.error;}
+      else if(job.revision>this.rendered){try{
+        if(result.buffer?.byteLength!==job.width*job.height*4)throw Error('结果尺寸不匹配');
+        this.frame.width=this.original.width=job.width;this.frame.height=this.original.height=job.height;
+        this.frame.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(result.buffer),job.width,job.height),0,0);
+        this.original.getContext('2d').putImageData(new ImageData(job.pixels.slice(),job.width,job.height),0,0);
+        this.rendered=job.revision;if(job.revision===this.revision)this.ready=job.revision;this.paint();
+      }catch(e){this.error=e.message;}}
+    }this.controls();this.pump();
+  },
+  schedulePaint(){if(this.paintFrame)cancelAnimationFrame(this.paintFrame);this.paintFrame=requestAnimationFrame(()=>{this.paintFrame=0;this.paint();});},
+  paint(){
+    const vp=$('viewport'),canvas=$('display'),p=this.profile;if(!vp.clientWidth||!vp.clientHeight)return;
+    if(!p){canvas.width=canvas.height=1;canvas.style.width=canvas.style.height='0px';return;}
+    const fit=Math.min(vp.clientWidth/p.width,vp.clientHeight/p.height,Math.max(1,400/Math.min(p.width,p.height)));
+    this.scale=this.view.fit?fit:this.view.zoom/100;const w=p.width*this.scale,h=p.height*this.scale;
+    $('surface').style.width=Math.max(w,vp.clientWidth)+'px';$('surface').style.height=Math.max(h,vp.clientHeight)+'px';canvas.style.width=w+'px';canvas.style.height=h+'px';canvas.style.left=Math.max(0,(vp.clientWidth-w)/2)+'px';canvas.style.top=Math.max(0,(vp.clientHeight-h)/2)+'px';canvas.style.imageRendering=this.view.kind==='pixels'?'pixelated':'auto';
+    const dpr=window.devicePixelRatio||1;canvas.width=Math.max(1,Math.min(p.width,Math.round(w*dpr)));canvas.height=Math.max(1,Math.min(p.height,Math.round(h*dpr)));
+    const x=canvas.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,canvas.width,canvas.height);
+    if(this.rendered>=0){const source=this.compare?this.original:this.frame;if(this.view.kind==='pixels'||(canvas.width===p.width&&canvas.height===p.height)){x.imageSmoothingEnabled=false;x.drawImage(source,0,0,canvas.width,canvas.height);}else x.putImageData(average(source.getContext('2d').getImageData(0,0,p.width,p.height),canvas.width,canvas.height),0,0);}
+    if(this.view.fit){vp.scrollLeft=vp.scrollTop=0;$('zoomSelect').value='fit';}
+    else{let option=$('zoomSelect').querySelector('[data-custom]');const z=String(Math.round(this.view.zoom));if(![...$('zoomSelect').options].some(o=>o.value===z)){if(!option){option=document.createElement('option');option.dataset.custom='true';$('zoomSelect').append(option);}option.value=z;option.textContent=z+'%';}$('zoomSelect').value=z;}
+    $('compare').classList.toggle('active',this.compare);$('compare').setAttribute('aria-pressed',String(this.compare));$('compareLabel').hidden=!this.compare;
+  },
+  zoom(value){this.view.fit=false;this.view.zoom=Math.min(400,Math.max(25,value));this.paint();},
+  setCompare(value){this.compare=!!value&&this.rendered>=0;this.paint();},
+  resizeSidebar(width){this.sidebar=Math.max(260,Math.min(380,Math.round(width)));$('editorShell').style.setProperty('--sidebar',this.sidebar+'px');$('splitter').setAttribute('aria-valuenow',this.sidebar);this.schedulePaint();},
+  pointerDown(e){
+    if(e.button!==0||this.busy||!this.image||!this.profile||this.compare)return;
+    this.drag={id:e.pointerId,x:e.clientX,y:e.clientY,left:$('viewport').scrollLeft,top:$('viewport').scrollTop,rect:$('display').getBoundingClientRect(),crop:ImageProcessor.crop(this.image.width,this.image.height,this.profile.width,this.profile.height,this.state.composition),tool:this.tool};
+    $('viewport').setPointerCapture(e.pointerId);if(this.tool==='crop')this.gesture=clone(this.state);e.preventDefault();
+  },
+  pointerMove(e){const d=this.drag;if(!d||d.id!==e.pointerId)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;if(d.tool==='view'){$('viewport').scrollLeft=d.left-dx;$('viewport').scrollTop=d.top-dy;}else this.change(()=>{this.state.composition.cx=d.crop.cx-dx/d.rect.width*d.crop.cw/d.crop.sw;this.state.composition.cy=d.crop.cy-dy/d.rect.height*d.crop.ch/d.crop.sh;});},
+  pointerEnd(e){if(this.drag?.id!==e.pointerId)return;const crop=this.drag.tool==='crop';this.drag=null;if(crop)this.commit();},
+  async blob(){const epoch=this.epoch,revision=this.revision,profileId=this.profile?.profileId;if(!this.profile||this.ready!==revision||!this.image||this.error)throw Error('请等待当前预览完成');const blob=await new Promise((resolve,reject)=>this.frame.toBlob(b=>b?resolve(b):reject(Error('PNG编码失败')),'image/png'));if(epoch!==this.epoch||revision!==this.revision||profileId!==this.profile?.profileId||this.ready!==revision)throw Error('图像或屏幕已改变，请重新操作');return blob;},
+  async upload(){
+    if(this.busy||this.encoding)return;const operation=HomeOperation.begin();this.encoding=true;const target={epoch:this.epoch,revision:this.revision,id:this.profile?.id};
+    try{const blob=await this.blob();await this.readStatus();if(!this.deviceReady)throw Error('屏幕尚未初始化');if(target.epoch!==this.epoch||target.revision!==this.revision||target.id!==this.profile?.id||this.ready!==this.revision)throw Error('屏幕或参数已改变，请重新上传');this.busy=true;this.notice='';this.controls();
+      const r=await fetch('/upload',epdFetchOpts({method:'POST',headers:{'Content-Type':'image/png'},body:blob}));const message=await r.text();let result=null;try{result=JSON.parse(message);}catch(e){}if(!r.ok||result?.ok===false||result?.canceled)throw Error(result?.error||message||'上传失败（'+r.status+'）');
+      this.notice='上传完成 · '+Math.round(blob.size/1024)+' KB';if(HomeOperation.current(operation))log('上传完成，设备已返回成功。','ok');loadGallery();
+    }catch(e){this.notice='上传未完成：'+e.message;if(HomeOperation.current(operation))log(this.notice,'bad');}finally{this.busy=false;this.encoding=false;this.controls();}
+  },
+  async download(){try{const blob=await this.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='preview-id'+this.profile.id+'-'+this.state.mode+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){this.notice='导出未完成：'+e.message;this.controls();}}
+};
+window.Workspace=App;
+App.init();
+})();
+
+// The dashboard and the editor share no visual CSS or image processing state.
+document.getElementById('f').addEventListener('change',e=>{Workspace.open();Workspace.load(e.target.files[0]);});
+refresh();loadGallery();
+</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

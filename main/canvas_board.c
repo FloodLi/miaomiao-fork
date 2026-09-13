@@ -610,12 +610,14 @@ static void do_render(unsigned epoch)
     /* 先确认布局文件存在并读取大小：避免无布局时白白占用 78KB 帧缓冲。 */
     if (!layout_file_lock(pdMS_TO_TICKS(5000))) {
         ESP_LOGW(TAG, "Layout file busy, skip render");
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_TIMEOUT, true);
         return;
     }
     FILE *f = fopen(LAYOUT_PATH, "r");
     if (!f) {
         layout_file_unlock();
         ESP_LOGW(TAG, "No layout file, nothing to render");
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_NOT_FOUND, true);
         return;
     }
     fseek(f, 0, SEEK_END);
@@ -625,6 +627,7 @@ static void do_render(unsigned epoch)
         fclose(f);
         layout_file_unlock();
         ESP_LOGE(TAG, "Layout file size invalid: %ld", sz);
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_INVALID_SIZE, true);
         return;
     }
 
@@ -637,6 +640,7 @@ static void do_render(unsigned epoch)
                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         fclose(f);
         layout_file_unlock();
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_NO_MEM, true);
         return;
     }
 
@@ -646,6 +650,7 @@ static void do_render(unsigned epoch)
         layout_file_unlock();
         fb_destroy(fb);
         ESP_LOGE(TAG, "malloc failed for layout (%ld bytes)", sz);
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_NO_MEM, true);
         return;
     }
     size_t nr = fread(json_str, 1, (size_t)sz, f);
@@ -656,6 +661,7 @@ static void do_render(unsigned epoch)
         ESP_LOGE(TAG, "Layout read incomplete: %zu/%ld", nr, sz);
         free(json_str);
         fb_destroy(fb);
+        (void)display_policy_finish_epoch(epoch, ESP_FAIL, true);
         return;
     }
 
@@ -689,6 +695,7 @@ static void do_render(unsigned epoch)
         }
         free(json_str);
         fb_destroy(fb);
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_INVALID_ARG, true);
         return;
     }
     free(json_str);
@@ -696,6 +703,7 @@ static void do_render(unsigned epoch)
         ESP_LOGE(TAG, "Layout root is not an array");
         cJSON_Delete(root);
         fb_destroy(fb);
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_INVALID_ARG, true);
         return;
     }
 
@@ -714,12 +722,17 @@ static void do_render(unsigned epoch)
         return;
     }
 
-    esp_err_t err = epd_display_fb_free_mode(fb, EPD_REFRESH_FAST);
+    esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FAST, epoch);
+    if (err == ESP_OK && !display_policy_epoch_is_current(epoch)) {
+        ESP_LOGI(TAG, "Canvas refresh completed but was superseded");
+        return;
+    }
     if (err == ESP_OK) {
-        display_policy_set_manual_screen_active(true);
+        (void)display_policy_finish_epoch(epoch, ESP_OK, true);
         scheduler_notify_manual_show();
         ESP_LOGI(TAG, "Canvas rendered (%d elements)", n);
     } else {
+        (void)display_policy_finish_epoch(epoch, err, true);
         ESP_LOGE(TAG, "epd_display_fb_free: %s", esp_err_to_name(err));
     }
 }
@@ -999,22 +1012,25 @@ esp_err_t canvas_board_commit_layout_from_file(const char *tmp_path)
 
 esp_err_t canvas_board_show_queued(unsigned *out_epoch)
 {
+    if (out_epoch)
+        *out_epoch = 0;
     if (!s_mutex) return ESP_ERR_INVALID_STATE;
     if (!epd_is_ready()) {
         ESP_LOGW(TAG, "EPD not ready");
         return ESP_ERR_INVALID_STATE;
     }
-    unsigned epoch = display_policy_begin_manual_display_mode(EPD_REFRESH_FAST);
-    if (out_epoch)
-        *out_epoch = epoch;
     if (xSemaphoreTake(s_mutex, 0) != pdTRUE) {
         ESP_LOGW(TAG, "render already in progress");
         return ESP_ERR_INVALID_STATE;
     }
+    unsigned epoch = display_policy_begin_manual_display_mode(EPD_REFRESH_FAST);
+    if (out_epoch)
+        *out_epoch = epoch;
     if (xTaskCreate(render_task, "canvas_render", 8192,
                     (void *)(uintptr_t)epoch, 5, NULL) != pdPASS) {
         xSemaphoreGive(s_mutex);
-        return ESP_FAIL;
+        (void)display_policy_finish_epoch(epoch, ESP_ERR_NO_MEM, true);
+        return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
 }
@@ -1022,6 +1038,11 @@ esp_err_t canvas_board_show_queued(unsigned *out_epoch)
 esp_err_t canvas_board_show(void)
 {
     return canvas_board_show_queued(NULL);
+}
+
+display_result_t canvas_board_wait_result(unsigned epoch)
+{
+    return display_policy_wait_result(epoch);
 }
 
 void canvas_board_wait_idle(void)

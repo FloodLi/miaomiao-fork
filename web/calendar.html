@@ -100,7 +100,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     <a href="/config"><span class="ni">⚙</span> 设备配置</a>
   </div>
 
-  <div class="card"><div class="hd"><div class="title" style="font-size:16px">万年历</div><div class="sub">显示月历视图，含公历、农历、节气、节日。周末和今日用红色高亮。</div></div><div class="bd">
+  <div class="card"><div class="hd"><div class="title help-heading" style="font-size:16px"><span>万年历</span><button type="button" class="info-dot" aria-label="查看万年历说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="年份和月份决定本次推送的月历；留空时使用设备已同步的本地日期。上月、下月会修改输入值并立即推送。"></button></div><div class="sub">显示月历视图，含公历、农历、节气、节日。周末和今日用红色高亮。</div></div><div class="bd">
     <div class="form-row"><label>年份</label><input type="number" id="calYear" min="1900" max="2100" placeholder="留空=当前年" style="max-width:140px"></div>
     <div class="form-row"><label>月份</label><input type="number" id="calMonth" min="1" max="12" placeholder="留空=当前月" style="max-width:140px"></div>
     <div class="row"><button class="btn" onclick="showCalendar()">显示万年历</button><button class="btn ghost sm" onclick="showCalendarPrev()">上月</button><button class="btn ghost sm" onclick="showCalendarNext()">下月</button></div><div class="log" id="calLog">就绪</div>
@@ -127,5 +127,6 @@ function showCalendarPrev(){calStep(-1);}function showCalendarNext(){calStep(1);
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

@@ -71,7 +71,12 @@ static void draw_todo_stat_card(fb_t *fb, int x, int y, int w, int h,
     const bool is_e6 = ui_layout_is_e6_37(fb);
     if (value_scale > 1 && h < 58)
         value_scale = 1;
-    ui_draw_card(fb, x, y, w, h, accent == COLOR_RED);
+    if (ui_color_theme_applicable()) {
+        ui_draw_card_for(fb, UI_COLOR_PAGE_TODO, x, y, w, h,
+                         accent != COLOR_BLACK);
+    } else {
+        ui_draw_card(fb, x, y, w, h, accent == COLOR_RED);
+    }
     int inner_x = x + 8;
     int inner_w = w - 16;
     if (inner_w < 1)
@@ -139,17 +144,20 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
     if (time_sync_get_local_relaxed(&now)) {
         snprintf(right, sizeof(right), "%02d:%02d", now.tm_hour, now.tm_min);
     }
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    ui_draw_header(fb, "\xe5\xbe\x85\xe5\x8a\x9e\xe4\xba\x8b\xe9\xa1\xb9", right, true);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_TODO,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    ui_draw_header_for(fb, UI_COLOR_PAGE_TODO, "待办事项", right, true);
 
     if (cfg->count == 0) {
-        ui_draw_empty_state(fb, "\xe6\x9a\x82\xe6\x97\xa0\xe5\xbe\x85\xe5\x8a\x9e",
-                            "\xe8\xaf\xb7\xe9\x80\x9a\xe8\xbf\x87\xe7\xbd\x91\xe9\xa1\xb5\xe6\xb7\xbb\xe5\x8a\xa0");
+        ui_draw_empty_state_for(fb, UI_COLOR_PAGE_TODO,
+                                "暂无待办", "请通过网页添加",
+                                UI_COLOR_ROLE_NOTICE);
         if (!display_policy_epoch_is_current(epoch)) {
             fb_destroy(fb);
             return false;
         }
-        return epd_display_fb_free(fb) == ESP_OK;
+        esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
+        return err == ESP_OK && display_policy_epoch_is_current(epoch);
     }
 
     int pct = done_n * 100 / cfg->count;
@@ -178,21 +186,32 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
     snprintf(focus_str, sizeof(focus_str), "%d/%d",
              urgent_n, important_n);
 
+    fb_color_t todo_accent = ui_color_resolve(UI_COLOR_PAGE_TODO,
+                                               UI_COLOR_ROLE_ACCENT,
+                                               COLOR_RED);
+    fb_color_t todo_notice = ui_color_resolve(UI_COLOR_PAGE_TODO,
+                                               UI_COLOR_ROLE_NOTICE,
+                                               COLOR_BLACK);
+    fb_color_t todo_warning = ui_color_resolve(UI_COLOR_PAGE_TODO,
+                                                UI_COLOR_ROLE_WARNING,
+                                                COLOR_RED);
+
     draw_todo_stat_card(fb, pad, summary_y, stat_w, summary_h,
-                        "\xe5\x89\xa9\xe4\xbd\x99", pending_str,
-                        is_e6 ? COLOR_BLUE : (pending_n ? COLOR_RED : COLOR_BLACK), 2);
+                        "剩余", pending_str,
+                        is_e6 ? COLOR_BLUE : (pending_n ? todo_accent : COLOR_BLACK), 2);
     draw_todo_stat_card(fb, pad + stat_w + gap, summary_y, stat_w, summary_h,
-                        "\xe5\xae\x8c\xe6\x88\x90\xe7\x8e\x87", done_str,
-                        is_e6 ? COLOR_GREEN : (pct >= 100 ? COLOR_BLACK : COLOR_RED), 2);
+                        "完成率", done_str,
+                        is_e6 ? COLOR_GREEN : (pct >= 100 ? COLOR_BLACK : todo_accent), 2);
     draw_todo_stat_card(fb, pad + (stat_w + gap) * 2, summary_y, stat_w, summary_h,
-                        "\xe7\xb4\xa7\xe6\x80\xa5/\xe9\x87\x8d\xe8\xa6\x81",
+                        "紧急/重要",
                         focus_str,
                         is_e6 ? (urgent_n ? COLOR_RED : COLOR_YELLOW)
-                              : (urgent_n ? COLOR_RED : COLOR_BLACK), 2);
+                              : (urgent_n ? todo_warning :
+                                 (important_n ? todo_notice : COLOR_BLACK)), 2);
 
     int bar_y = summary_y + summary_h + (xl ? 14 : (is_583 ? 10 : 5 * s));
     ui_draw_progress_bar(fb, pad, bar_y, W - 2 * pad, xl ? 12 : (is_583 ? 8 : 5 * s), pct,
-                         is_e6 ? COLOR_RED : ((pct >= 100) ? COLOR_BLACK : COLOR_RED));
+                         is_e6 ? COLOR_RED : ((pct >= 100) ? COLOR_BLACK : todo_accent));
 
     int list_y = bar_y + (xl ? 26 : (is_583 ? 18 : 9 * s));
     int footer_h = 22 * s;
@@ -225,14 +244,15 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
         int y      = list_y + i * (item_h + item_gap);
         int text_y = y + (item_h - ch_h) / 2;
 
-        ui_draw_card(fb, pad, y, W - 2 * pad, item_h,
-                     (!it->done && it->priority >= 2));
+        ui_draw_card_for(fb, UI_COLOR_PAGE_TODO, pad, y, W - 2 * pad,
+                         item_h, (!it->done && it->priority >= 2));
 
         if (it->priority >= 2)
-            fb_fill_rect(fb, pad + 1, y + 5, 3 * s, item_h - 10, COLOR_RED);
+            fb_fill_rect(fb, pad + 1, y + 5, 3 * s, item_h - 10,
+                         todo_warning);
         else if (it->priority == 1)
             fb_fill_rect(fb, pad + 1, y + 5, 3 * s, item_h - 10,
-                         is_e6 ? COLOR_YELLOW : COLOR_BLACK);
+                         is_e6 ? COLOR_YELLOW : todo_notice);
 
         int cb_x  = pad + (xl ? 22 : (is_583 ? 18 : 12 * s));
         int cb_sz = ch_h - 2;
@@ -278,26 +298,25 @@ static bool render_todo_snapshot(const todo_config_t *cfg, unsigned epoch)
 
         int pri_x = W - 2 * 16 * pri_sc - 13 * s;
         if (show_pri && it->priority >= 2)
-            ui_draw_fixed_text(fb, pri_x, text_y,
-                               "\xe7\xb4\xa7\xe6\x80\xa5", COLOR_RED, pri_sc);
+            ui_draw_fixed_text(fb, pri_x, text_y, "紧急", todo_warning, pri_sc);
         else if (show_pri && it->priority == 1)
-            ui_draw_fixed_text(fb, pri_x, text_y,
-                               "\xe9\x87\x8d\xe8\xa6\x81",
-                               is_e6 ? COLOR_YELLOW : COLOR_BLACK, pri_sc);
+            ui_draw_fixed_text(fb, pri_x, text_y, "重要",
+                               is_e6 ? COLOR_YELLOW : todo_notice, pri_sc);
     }
 
     char foot[48];
     if (cfg->count > n_show)
         snprintf(foot, sizeof(foot), "%d/%d", n_show, (int)cfg->count);
     else
-        snprintf(foot, sizeof(foot), "%d \xe6\x9c\xaa\xe5\xae\x8c\xe6\x88\x90", pending_n);
-    ui_draw_footer(fb, "\xe5\xbe\x85\xe5\x8a\x9e", foot);
+        snprintf(foot, sizeof(foot), "%d 未完成", pending_n);
+    ui_draw_footer(fb, "待办", foot);
 
     if (!display_policy_epoch_is_current(epoch)) {
         fb_destroy(fb);
         return false;
     }
-    return epd_display_fb_free(fb) == ESP_OK;
+    esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
+    return err == ESP_OK && display_policy_epoch_is_current(epoch);
 }
 
 /* Public API */
@@ -347,10 +366,9 @@ esp_err_t todo_show(void)
     if (!epd_is_ready())
         return ESP_ERR_INVALID_STATE;
 
-    unsigned epoch = display_policy_display_epoch();
+    unsigned epoch = display_mode_render_epoch();
     if (!render_todo_snapshot(&snap, epoch))
         return ESP_ERR_INVALID_STATE;
-    display_policy_set_manual_screen_active(true);
     ESP_LOGI(TAG, "displayed %d items (%d pending)",
              snap.count, count_pending_in(&snap));
     return ESP_OK;
@@ -412,10 +430,11 @@ esp_err_t todo_http_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_CONFIG_MS);
     int received = 0;
     while (received < len) {
-        int got = httpd_req_recv(req, buf + received, (size_t)(len - received));
-        if (got == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        int got = http_receive_chunk(req, &receive, buf + received, (size_t)(len - received));
         if (got <= 0) { free(buf); return ESP_FAIL; }
         received += got;
     }
@@ -486,6 +505,9 @@ esp_err_t todo_show_http_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    if (!http_require_mode_available(req, DISPLAY_MODE_TODO))
+        return ESP_OK;
+
     todo_config_t snap;
     if (todo_get_config(&snap) != ESP_OK) {
         httpd_resp_send_500(req);
@@ -499,13 +521,20 @@ esp_err_t todo_show_http_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    unsigned epoch = display_policy_begin_manual_display();
+    display_request_token_t token = display_policy_begin_request(
+        DISPLAY_MODE_TODO, EPD_REFRESH_FULL);
+    unsigned epoch = token.epoch;
     if (!render_todo_snapshot(&snap, epoch)) {
+        (void)display_policy_finish_request(&token, ESP_ERR_INVALID_STATE, true);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"display canceled\"}");
         return ESP_OK;
     }
-    display_policy_set_manual_screen_active(true);
+    if (!display_policy_finish_request(&token, ESP_OK, true)) {
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"display superseded\"}");
+        return ESP_OK;
+    }
     button_set_current_mode(DISPLAY_MODE_TODO);
     power_mgr_save_mode(DISPLAY_MODE_TODO);
 

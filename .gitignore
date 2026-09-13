@@ -12,6 +12,9 @@ dependencies.lock
 !.vscode/settings.json
 .idea/
 .cursor/
+/.codex/
+/下一个AI交接/
+/测试固件-*/
 project.private.config.json
 *.swp
 *.swo

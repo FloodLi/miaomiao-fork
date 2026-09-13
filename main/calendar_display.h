@@ -12,3 +12,4 @@ bool calendar_display_needs_midnight_refresh(void);
 
 /* Block until the async calendar render task has finished. */
 void calendar_display_wait_render_idle(void);
+esp_err_t calendar_display_wait_render_result(void);

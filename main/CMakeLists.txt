@@ -11,6 +11,7 @@ idf_component_register(
         "wifi_manager.c"
         "spiffs_mount.c"
         "http_app.c"
+        "http_receive.c"
         "image_convert.c"
         "epd_stub.c"
         "lodepng.c"
@@ -19,6 +20,8 @@ idf_component_register(
         "fb_render.c"
         "font_ext.c"
         "ui_theme.c"
+        "ui_color_theme.c"
+        "welcome_config.c"
         "ui_crisp_font.c"
         "weather.c"
         "weather_icons_qw.c"
@@ -40,6 +43,7 @@ idf_component_register(
         "canvas_board.c"
         "display_mode.c"
         "battery_mon.c"
+        "service_status.c"
     INCLUDE_DIRS "."
     EMBED_FILES
         "${PROJECT_DIR}/web/index.html"
@@ -54,6 +58,8 @@ idf_component_register(
         "${PROJECT_DIR}/web/todo.html"
         "${PROJECT_DIR}/web/countdown.html"
         "${PROJECT_DIR}/web/board.html"
+        "${PROJECT_DIR}/web/feature_help.js"
+        "${PROJECT_DIR}/web/image_processor.js"
         "${PROJECT_DIR}/web/miaooaim-mark.png"
     PRIV_REQUIRES
         nvs_flash
@@ -61,6 +67,7 @@ idf_component_register(
         esp_event
         esp_netif
         esp_http_server
+        lwip
         spiffs
         json
         esp_driver_gpio

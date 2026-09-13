@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #include "fb_render.h"
+#include "ui_color_theme.h"
 
 typedef enum {
     UI_FRAME_RED_ACCENT = 1 << 0,
@@ -12,7 +13,7 @@ typedef enum {
 typedef enum {
     UI_LAYOUT_COMPACT = 0,  /* 2.9" class */
     UI_LAYOUT_42,           /* 400x300 4.2" class */
-    UI_LAYOUT_583,          /* 648x480 5.83" class */
+    UI_LAYOUT_583,          /* 600x448 / 648x480 5.83" class */
     UI_LAYOUT_LARGE,        /* 7.5" / E6 3.7" / 800x480+ class */
 } ui_layout_class_t;
 
@@ -52,11 +53,20 @@ int  ui_draw_text_role_maxw(fb_t *fb, int x, int y, const char *s,
 void ui_draw_dotted_hline(fb_t *fb, int x, int y, int w, fb_color_t color, int step);
 void ui_draw_dotted_vline(fb_t *fb, int x, int y, int h, fb_color_t color, int step);
 void ui_draw_page_frame(fb_t *fb, ui_frame_flags_t flags);
+void ui_draw_page_frame_for(fb_t *fb, ui_color_page_t page, ui_frame_flags_t flags);
 int  ui_draw_battery_badge(fb_t *fb, int right_x, int y);
+int  ui_draw_battery_badge_for(fb_t *fb, ui_color_page_t page, int right_x, int y);
 void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_accent);
+void ui_draw_header_for(fb_t *fb, ui_color_page_t page, const char *title,
+                        const char *right, bool accent);
 void ui_draw_footer(fb_t *fb, const char *left, const char *right);
 void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent);
+void ui_draw_card_for(fb_t *fb, ui_color_page_t page, int x, int y,
+                      int w, int h, bool accent);
 void ui_draw_section_label(fb_t *fb, int x, int y, const char *label, fb_color_t color, int scale);
 void ui_draw_empty_state_compact(fb_t *fb, const char *title, const char *hint);
 void ui_draw_empty_state(fb_t *fb, const char *title, const char *hint);
+void ui_draw_empty_state_for(fb_t *fb, ui_color_page_t page,
+                             const char *title, const char *hint,
+                             ui_color_role_t hint_role);
 void ui_draw_progress_bar(fb_t *fb, int x, int y, int w, int h, int percent, fb_color_t fill);

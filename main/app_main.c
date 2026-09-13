@@ -32,14 +32,30 @@
 #include "fb_render.h"
 #include "font_ext.h"
 #include "ui_theme.h"
+#include "ui_color_theme.h"
+#include "welcome_config.h"
 #include "display_policy.h"
 #include "power_mgr.h"
+#include "service_status.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
 
 static const char *TAG = "app";
 
 #define BOOT_WELCOME_HOLD_MS 10000
+
+typedef esp_err_t (*optional_init_fn_t)(void);
+
+static bool init_optional_service(app_service_t service, optional_init_fn_t init_fn)
+{
+    esp_err_t err = init_fn ? init_fn() : ESP_ERR_INVALID_ARG;
+    bool available = err == ESP_OK;
+    app_service_set_available(service, available);
+    if (!available)
+        ESP_LOGW(TAG, "Optional service %s unavailable: %s",
+                 app_service_name(service), esp_err_to_name(err));
+    return available;
+}
 
 static int count_bits8(uint8_t v)
 {
@@ -108,10 +124,10 @@ static int normalize_saved_mode(int saved_mode, int mode_count, bool *write_back
     return saved_mode;
 }
 
-static void render_welcome_screen(void)
+static esp_err_t render_welcome_screen(const welcome_config_t *welcome_cfg, unsigned epoch)
 {
     fb_t *fb = fb_create();
-    if (!fb) { ESP_LOGE(TAG, "FB alloc failed"); return; }
+    if (!fb) { ESP_LOGE(TAG, "FB alloc failed"); return ESP_ERR_NO_MEM; }
     fb_clear(fb);
 
     int W = fb->width;
@@ -122,17 +138,27 @@ static void render_welcome_screen(void)
     int gap = 4 * sc;
     int pad = 18 * sc;
 
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    const fb_color_t accent = ui_color_resolve(UI_COLOR_PAGE_WELCOME,
+                                                UI_COLOR_ROLE_ACCENT,
+                                                COLOR_RED);
+    const fb_color_t notice = ui_color_resolve(UI_COLOR_PAGE_WELCOME,
+                                                UI_COLOR_ROLE_NOTICE,
+                                                COLOR_BLACK);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_WELCOME,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
     {
-        const char *title = "喵哎-MiaooAim";
+        const char *title = welcome_cfg && welcome_cfg->title[0]
+                                ? welcome_cfg->title
+                                : "喵哎-MiaooAim";
         const int title_px = ui_layout_is_wide(fb) ? 32 : 24;
         const int title_x = 14 * sc;
         const int title_y = ui_layout_is_wide(fb) ? 14 * sc : 6 * sc;
         const int battery_right = W - 14 * sc;
-        const int battery_w = ui_draw_battery_badge(fb, battery_right, title_y + 2);
+        const int battery_w = ui_draw_battery_badge_for(
+            fb, UI_COLOR_PAGE_WELCOME, battery_right, title_y + 2);
         const int title_max_w = battery_right - battery_w - 10 * sc - title_x;
         fb_fill_rect(fb, title_x - 6 * sc, title_y + 3, 2 * sc,
-                     title_px - 8, COLOR_RED);
+                     title_px - 8, accent);
         ui_draw_text_px_maxw(fb, title_x, title_y, title, COLOR_BLACK,
                              title_px, title_max_w);
         ui_draw_dotted_hline(fb, 12 * sc, title_y + title_px + 8 * sc,
@@ -144,17 +170,18 @@ static void render_welcome_screen(void)
     int top_y = ui_layout_is_wide(fb) ? 58 * sc : 44 * sc;
     int card_h = H - top_y - 54 * sc;
 
-    ui_draw_card(fb, pad, top_y, card_w, card_h, true);
-    ui_draw_card(fb, pad + card_w + card_gap, top_y, card_w, card_h, false);
+    ui_draw_card_for(fb, UI_COLOR_PAGE_WELCOME,
+                     pad, top_y, card_w, card_h, true);
+    ui_draw_card_for(fb, UI_COLOR_PAGE_WELCOME,
+                     pad + card_w + card_gap, top_y, card_w, card_h, false);
 
     int y = top_y + 12 * sc;
     int left_x = pad + 10 * sc;
     int right_x = pad + card_w + card_gap + 10 * sc;
     int text_w = card_w - 20 * sc;
 
-    welcome_draw_section_label(fb, left_x, y,
-                               "\xe7\xbd\x91\xe7\xbb\x9c\xe4\xbf\xa1\xe6\x81\xaf",
-                               COLOR_RED, body_sc);
+    welcome_draw_section_label(fb, left_x, y, "网络信息",
+                               accent, body_sc);
     y += ln + gap;
 
     bool sta = wifi_manager_sta_connected();
@@ -169,9 +196,7 @@ static void render_welcome_screen(void)
         welcome_draw_text_maxw(fb, left_x, y, buf, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
     } else {
-        welcome_draw_text(fb, left_x, y,
-                          "STA:\xe7\xa6\xbb\xe7\xba\xbf",
-                          COLOR_BLACK, body_sc);
+        welcome_draw_text(fb, left_x, y, "STA:离线", notice, body_sc);
         y += ln + gap;
     }
     {
@@ -201,39 +226,47 @@ static void render_welcome_screen(void)
         y += ln + gap;
     }
 
-    battery_mon_draw_on_fb(fb, left_x, y, COLOR_BLACK, body_sc);
+    battery_mon_poll();
+    battery_status_t battery;
+    battery_mon_get_status(&battery);
+    fb_color_t battery_color = COLOR_BLACK;
+    if (!battery.valid || battery.percent <= 20) {
+        battery_color = ui_color_resolve(UI_COLOR_PAGE_WELCOME,
+                                         UI_COLOR_ROLE_WARNING, COLOR_BLACK);
+    } else if (battery.charging) {
+        battery_color = ui_color_resolve(UI_COLOR_PAGE_WELCOME,
+                                         UI_COLOR_ROLE_NOTICE, COLOR_BLACK);
+    }
+    battery_mon_draw_on_fb(fb, left_x, y, battery_color, body_sc);
 
     y = top_y + 12 * sc;
-    welcome_draw_section_label(fb, right_x, y,
-                               "\xe4\xbd\xbf\xe7\x94\xa8\xe6\xad\xa5\xe9\xaa\xa4",
-                               COLOR_RED, body_sc);
+    welcome_draw_section_label(fb, right_x, y, "使用步骤",
+                               accent, body_sc);
     y += ln + gap;
 
     {
         char line[88];
-        snprintf(line, sizeof(line),
-                 "1.\xe8\xbf\x9e\xe6\x8e\xa5\xe5\xb7\xa6\xe4\xbe\xa7 AP");
+        snprintf(line, sizeof(line), "%s", "1.连接左侧 AP");
         welcome_draw_text_maxw(fb, right_x, y, line, COLOR_BLACK, body_sc, text_w);
     }
     y += ln + gap;
-    welcome_draw_text(fb, right_x, y,
-                      "2.\xe6\x89\x93\xe5\xbc\x80 WEB",
+    welcome_draw_text(fb, right_x, y, "2.打开 WEB",
                       COLOR_BLACK, body_sc);
     y += ln + gap;
-    welcome_draw_text(fb, right_x, y,
-                      "3.\xe9\x85\x8d\xe7\xbd\xae\xe5\xae\xb6\xe5\xba\xad WiFi",
+    welcome_draw_text(fb, right_x, y, "3.配置家庭 WiFi",
                       COLOR_BLACK, body_sc);
     y += ln + gap;
-    welcome_draw_text(fb, right_x, y,
-                      "4.\xe8\xbf\x94\xe5\x9b\x9e MD.local",
+    welcome_draw_text(fb, right_x, y, "4.返回 MD.local",
                       COLOR_BLACK, body_sc);
     y += ln + gap;
     y += gap;
     ui_draw_dotted_hline(fb, right_x, y, text_w, COLOR_BLACK, 6);
     y += gap * 2;
-    welcome_draw_text_maxw(fb, right_x, y,
-                           "\xe9\x94\xae: \xe6\xa8\xa1\xe5\xbc\x8f / \xe4\xb8\x8a / \xe4\xb8\x8b",
-                           COLOR_RED, body_sc, text_w);
+    const char *message = welcome_cfg && welcome_cfg->message[0]
+                              ? welcome_cfg->message
+                              : "键: 模式 / 上 / 下";
+    welcome_draw_text_maxw(fb, right_x, y, message,
+                           notice, body_sc, text_w);
 
     {
         const esp_app_desc_t *app = esp_app_get_description();
@@ -246,11 +279,15 @@ static void render_welcome_screen(void)
 
     log_welcome_fb_stats(fb);
     epd_request_full_refresh_next();
-    epd_display_fb_free(fb);
-    ESP_LOGI(TAG, "Welcome screen displayed");
+    esp_err_t err = epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
+    if (err == ESP_OK)
+        ESP_LOGI(TAG, "Welcome screen displayed");
+    else
+        ESP_LOGW(TAG, "Welcome screen refresh failed: %s", esp_err_to_name(err));
+    return err;
 }
 
-static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
+static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err, unsigned epoch)
 {
     fb_t *fb = fb_create();
     if (!fb) {
@@ -270,12 +307,17 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
     const int card_y = divider_y + 7;
     const int card_h = H - card_y - ((H >= 430) ? 30 : 14);
 
-    ui_draw_page_frame(fb, UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
-    fb_fill_rect(fb, 12, header_y + 1, 2, 12, COLOR_RED);
+    const fb_color_t warning = ui_color_resolve(UI_COLOR_PAGE_SYSTEM,
+                                                 UI_COLOR_ROLE_WARNING,
+                                                 COLOR_RED);
+    ui_draw_page_frame_for(fb, UI_COLOR_PAGE_SYSTEM,
+                           UI_FRAME_RED_ACCENT | UI_FRAME_THIN);
+    fb_fill_rect(fb, 12, header_y + 1, 2, 12, warning);
     ui_draw_fixed_text_maxw(fb, 20, header_y, "文件系统恢复",
                             COLOR_BLACK, 1, W / 2 - 28);
     {
-        int battery_w = ui_draw_battery_badge(fb, W - 14, header_y);
+        int battery_w = ui_draw_battery_badge_for(
+            fb, UI_COLOR_PAGE_SYSTEM, W - 14, header_y);
         int tag_w = 6 * 8;
         int tag_x = W - 14 - battery_w - 8 - tag_w;
         if (tag_x < W / 2)
@@ -286,22 +328,27 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
     }
     ui_draw_dotted_hline(fb, 12, divider_y, W - 24, COLOR_BLACK, 6);
 
-    ui_draw_card(fb, pad, card_y, W - 2 * pad, card_h, true);
+    ui_draw_card_for(fb, UI_COLOR_PAGE_SYSTEM,
+                     pad, card_y, W - 2 * pad, card_h, true);
     int tx = pad + 12;
     int text_w = W - tx - pad - 8;
     int y = card_y + 12;
 
-    ui_draw_fixed_text(fb, tx, y, "文件系统挂载失败", COLOR_BLACK, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "文件系统挂载失败",
+                       COLOR_BLACK, body_sc);
     y += ln + gap;
-    ui_draw_fixed_text(fb, tx, y, "用户数据未被格式化", COLOR_RED, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "用户数据未被格式化",
+                       warning, body_sc);
     y += ln + gap;
 
     {
         char line[96];
-        snprintf(line, sizeof(line), "热点: %s", device_identity_get_ap_ssid());
+        snprintf(line, sizeof(line), "热点: %s",
+                 device_identity_get_ap_ssid());
         ui_draw_fixed_text_maxw(fb, tx, y, line, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
-        snprintf(line, sizeof(line), "密码: %s", device_identity_get_ap_password());
+        snprintf(line, sizeof(line), "密码: %s",
+                 device_identity_get_ap_password());
         ui_draw_fixed_text_maxw(fb, tx, y, line, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
     }
@@ -315,14 +362,15 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
     ui_draw_fixed_text(fb, tx, y, "2.确认不要图片后再格式化",
                        COLOR_BLACK, body_sc);
     y += ln + gap;
-    ui_draw_fixed_text(fb, tx, y, "确认词: FORMAT_SPIFFS", COLOR_RED, body_sc);
+    ui_draw_fixed_text(fb, tx, y, "确认词: FORMAT_SPIFFS",
+                       warning, body_sc);
     y += ln + gap;
 
     {
         char info[96];
         ui_draw_dotted_hline(fb, tx, y, text_w, COLOR_BLACK, 6);
         y += gap * 2;
-        snprintf(info, sizeof(info), "\xe9\x94\x99\xe8\xaf\xaf:%s",
+        snprintf(info, sizeof(info), "错误:%s",
                  esp_err_to_name(spiffs_err));
         ui_draw_fixed_text_maxw(fb, tx, y, info, COLOR_BLACK, body_sc, text_w);
         y += ln + gap;
@@ -330,7 +378,7 @@ static esp_err_t render_spiffs_recovery_screen(esp_err_t spiffs_err)
                                 COLOR_BLACK, body_sc, text_w);
     }
 
-    return epd_display_fb_free(fb);
+    return epd_display_fb_free_mode_epoch(fb, EPD_REFRESH_FULL, epoch);
 }
 
 static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
@@ -339,6 +387,7 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
 
     fb_reserve_planes_early();
     esp_err_t epd_err = epd_init();
+    app_service_set_available(APP_SERVICE_EPD, epd_err == ESP_OK);
     if (epd_err != ESP_OK) {
         ESP_LOGW(TAG, "SPIFFS diagnostic display skipped: EPD init failed (%s)",
                  esp_err_to_name(epd_err));
@@ -346,8 +395,10 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
         return;
     }
 
-    (void)display_policy_begin_manual_display();
-    esp_err_t disp_err = render_spiffs_recovery_screen(spiffs_err);
+    display_request_token_t token = display_policy_begin_request(
+        DISPLAY_POLICY_KEEP_MODE, EPD_REFRESH_FULL);
+    esp_err_t disp_err = render_spiffs_recovery_screen(spiffs_err, token.epoch);
+    (void)display_policy_finish_request(&token, disp_err, true);
     if (disp_err == ESP_OK) {
         ESP_LOGI(TAG, "SPIFFS recovery screen displayed");
     } else {
@@ -357,20 +408,49 @@ static void try_show_spiffs_recovery_screen(esp_err_t spiffs_err)
     fb_release_reserved_planes();
 }
 
-static void boot_display_route(void)
+static void boot_display_route(unsigned boot_epoch)
 {
     ESP_LOGI(TAG, "boot_display_route: starting");
-    display_policy_set_manual_screen_active(true);
-    unsigned boot_epoch = display_policy_display_epoch();
+    if (!display_policy_epoch_is_current(boot_epoch)) {
+        ESP_LOGI(TAG, "boot_display_route: canceled before start by newer display request");
+        return;
+    }
 
-    ESP_LOGI(TAG, "boot_display_route: showing welcome screen");
-    render_welcome_screen();
-    ESP_LOGI(TAG, "boot_display_route: welcome screen done, delaying %d ms",
-             BOOT_WELCOME_HOLD_MS);
-    vTaskDelay(pdMS_TO_TICKS(BOOT_WELCOME_HOLD_MS));
+    welcome_config_t welcome_cfg;
+    welcome_config_get(&welcome_cfg);
+    if (!welcome_cfg.enabled) {
+        ESP_LOGI(TAG, "boot_display_route: welcome disabled for panel %d",
+                 (int)epd_get_panel());
+    } else {
+        ESP_LOGI(TAG, "boot_display_route: showing welcome screen");
+        display_request_token_t welcome;
+        if (!display_policy_try_begin_request(DISPLAY_POLICY_KEEP_MODE, boot_epoch,
+                                               EPD_REFRESH_FULL, &welcome)) {
+            ESP_LOGI(TAG, "boot_display_route: welcome canceled by newer display request");
+            return;
+        }
+        esp_err_t welcome_err = render_welcome_screen(&welcome_cfg, welcome.epoch);
+        if (!display_policy_finish_request(&welcome, welcome_err, true)) {
+            ESP_LOGI(TAG, "boot_display_route: welcome superseded");
+            return;
+        }
+        boot_epoch = welcome.epoch;
+        if (welcome_err == ESP_OK) {
+            ESP_LOGI(TAG, "boot_display_route: welcome screen done, delaying %d ms",
+                     BOOT_WELCOME_HOLD_MS);
+            vTaskDelay(pdMS_TO_TICKS(BOOT_WELCOME_HOLD_MS));
+        } else {
+            ESP_LOGW(TAG, "boot_display_route: welcome failed, restoring mode immediately");
+        }
+
+        if (display_policy_display_epoch() != boot_epoch) {
+            ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");
+            return;
+        }
+    }
 
     if (display_policy_display_epoch() != boot_epoch) {
-        ESP_LOGI(TAG, "boot_display_route: canceled by newer display request");
+        ESP_LOGI(TAG, "boot_display_route: canceled before saved-mode restore");
         return;
     }
 
@@ -381,8 +461,29 @@ static void boot_display_route(void)
     ESP_LOGI(TAG, "boot_display_route: switching to mode %d (%s)",
              mode, display_mode_name(mode));
 
-    boot_epoch = 0;
-    esp_err_t err = display_mode_show_request(mode, &boot_epoch);
+    slideshow_config_t slideshow_cfg = {0};
+    bool restore_last_image = mode == DISPLAY_MODE_SLIDESHOW &&
+                              display_mode_is_available(mode) &&
+                              scheduler_get_config(&slideshow_cfg) == ESP_OK &&
+                              !slideshow_cfg.enabled;
+    esp_err_t err;
+    if (!display_mode_is_available(mode)) {
+        err = ESP_ERR_INVALID_STATE;
+    } else if (restore_last_image) {
+        display_request_token_t token;
+        if (!display_policy_try_begin_request(DISPLAY_MODE_SLIDESHOW, boot_epoch,
+                                               EPD_REFRESH_FULL, &token)) {
+            ESP_LOGI(TAG, "boot_display_route: image restore canceled by newer display request");
+            return;
+        }
+        boot_epoch = token.epoch;
+        err = scheduler_restore_last_image_epoch(token.epoch);
+        if (!display_policy_finish_request(&token, err,
+                                           scheduler_manual_screen_after_show()))
+            err = ESP_ERR_INVALID_STATE;
+    } else {
+        err = display_mode_show_if_current(mode, boot_epoch, &boot_epoch);
+    }
     if (err == ESP_OK && mode == DISPLAY_MODE_CALENDAR)
         calendar_display_wait_render_idle();
     if (display_policy_display_epoch() != boot_epoch) {
@@ -394,15 +495,23 @@ static void boot_display_route(void)
     if (err != ESP_OK && mode != DISPLAY_MODE_CLOCK) {
         ESP_LOGW(TAG, "boot_display_route: mode %d unavailable (%s), falling back to clock",
                  mode, esp_err_to_name(err));
-        esp_err_t fallback_err = display_mode_show_request(DISPLAY_MODE_CLOCK, &boot_epoch);
+        esp_err_t fallback_err = display_mode_show_if_current(DISPLAY_MODE_CLOCK,
+                                                              boot_epoch, &boot_epoch);
         if (fallback_err == ESP_OK) {
             mode = DISPLAY_MODE_CLOCK;
             err = ESP_OK;
+            if (restore_last_image)
+                write_mode_back = true;
         } else {
             ESP_LOGW(TAG, "boot_display_route: clock fallback failed (%s)",
                      esp_err_to_name(fallback_err));
             err = fallback_err;
         }
+    }
+
+    if (err == ESP_OK && !display_policy_epoch_is_current(boot_epoch)) {
+        ESP_LOGI(TAG, "boot_display_route: final mode commit superseded");
+        return;
     }
 
     if (err == ESP_OK)
@@ -450,16 +559,23 @@ static bool app_codex_config_ready(void)
     return cfg.enabled && cfg.api_url[0] && cfg.api_key[0];
 }
 
+static bool mode_releases_manual_screen(void) { return false; }
+static bool mode_holds_manual_screen(void) { return true; }
+static bool slideshow_manual_screen_policy(void)
+{
+    return scheduler_manual_screen_after_show();
+}
+
 static void register_display_modes(void)
 {
-    display_mode_register(&(display_mode_entry_t){ "clock",     "时钟",     clock_display_show });
-    display_mode_register(&(display_mode_entry_t){ "calendar",  "日历",     calendar_display_show_current });
-    display_mode_register(&(display_mode_entry_t){ "timetable", "课程表",   timetable_show });
-    display_mode_register(&(display_mode_entry_t){ "weather",   "天气",     weather_display_cached });
-    display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图",   scheduler_show_next_image });
-    display_mode_register(&(display_mode_entry_t){ "todo",      "待办事项", todo_show });
-    display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时",   countdown_show });
-    display_mode_register(&(display_mode_entry_t){ "codex",     "额度",     codex_quota_show });
+    display_mode_register(&(display_mode_entry_t){ "clock", "时钟", clock_display_show, mode_releases_manual_screen, app_service_is_available(APP_SERVICE_CLOCK), NULL });
+    display_mode_register(&(display_mode_entry_t){ "calendar", "日历", calendar_display_show_current, mode_holds_manual_screen, app_service_is_available(APP_SERVICE_CALENDAR), calendar_display_wait_render_result });
+    display_mode_register(&(display_mode_entry_t){ "timetable", "课程表", timetable_show, mode_holds_manual_screen, app_service_is_available(APP_SERVICE_TIMETABLE), NULL });
+    display_mode_register(&(display_mode_entry_t){ "weather", "天气", weather_display_cached, mode_holds_manual_screen, app_service_is_available(APP_SERVICE_WEATHER), NULL });
+    display_mode_register(&(display_mode_entry_t){ "slideshow", "轮播图", scheduler_show_next_image, slideshow_manual_screen_policy, app_service_is_available(APP_SERVICE_SCHEDULER), NULL });
+    display_mode_register(&(display_mode_entry_t){ "todo", "待办事项", todo_show, mode_holds_manual_screen, app_service_is_available(APP_SERVICE_TODO), NULL });
+    display_mode_register(&(display_mode_entry_t){ "countdown", "倒计时", countdown_show, mode_holds_manual_screen, app_service_is_available(APP_SERVICE_COUNTDOWN), NULL });
+    display_mode_register(&(display_mode_entry_t){ "codex", "额度", codex_quota_show, mode_holds_manual_screen, app_service_is_available(APP_SERVICE_CODEX), NULL });
 }
 
 static bool quick_mode_needs_wifi(int mode, bool time_valid, bool *needs_weather)
@@ -566,6 +682,7 @@ static void quick_refresh_and_sleep(void)
     epd_load_panel_from_nvs();
     fb_reserve_planes_early();
     esp_err_t epd_err = epd_init();
+    app_service_set_available(APP_SERVICE_EPD, epd_err == ESP_OK);
     if (epd_err != ESP_OK) {
         ESP_LOGE(TAG, "Quick-refresh: EPD init failed (%s), sleeping instead of rebooting",
                  esp_err_to_name(epd_err));
@@ -574,21 +691,21 @@ static void quick_refresh_and_sleep(void)
     }
 
     /* Init content modules (they load NVS config) */
-    ESP_ERROR_CHECK(scheduler_init());
+    init_optional_service(APP_SERVICE_SCHEDULER, scheduler_init);
     /* NOTE: do NOT call scheduler_boot_complete() here.
      * The slideshow_task must stay blocked — we only need
      * scheduler_show_next_image() which works without it. */
     weather_skip_initial_task_fetch_once();
     weather_set_quick_refresh_network_allowed(false);
-    ESP_ERROR_CHECK(weather_init());
-    ESP_ERROR_CHECK(clock_display_init());
+    init_optional_service(APP_SERVICE_WEATHER, weather_init);
+    init_optional_service(APP_SERVICE_CLOCK, clock_display_init);
     /* 与 full_boot 一致：日历依赖 s_mutex，未 init 则 calendar_display_show 直接失败并触发回退到时钟 */
-    ESP_ERROR_CHECK(calendar_display_init());
-    ESP_ERROR_CHECK(timetable_init());
-    ESP_ERROR_CHECK(todo_init());
-    ESP_ERROR_CHECK(countdown_init());
+    init_optional_service(APP_SERVICE_CALENDAR, calendar_display_init);
+    init_optional_service(APP_SERVICE_TIMETABLE, timetable_init);
+    init_optional_service(APP_SERVICE_TODO, todo_init);
+    init_optional_service(APP_SERVICE_COUNTDOWN, countdown_init);
     codex_quota_set_auto_network_allowed(false);
-    ESP_ERROR_CHECK(codex_quota_init());
+    init_optional_service(APP_SERVICE_CODEX, codex_quota_init);
 
     register_display_modes();
 
@@ -644,12 +761,31 @@ static void quick_refresh_and_sleep(void)
     }
 
     esp_err_t err;
-    if (mode == DISPLAY_MODE_WEATHER) {
+    if (!display_mode_is_available(mode)) {
+        ESP_LOGW(TAG, "Quick-refresh: saved mode %d is unavailable", mode);
+        err = ESP_ERR_INVALID_STATE;
+    } else if (mode == DISPLAY_MODE_WEATHER) {
         /* Deep sleep clears the in-RAM weather cache; timer wake must fetch
          * on the weather task stack, then sleep after the EPD update finishes. */
-        (void)display_policy_begin_manual_display();
-        display_mode_set_active(mode);
+        display_request_token_t token = display_policy_begin_request(
+            DISPLAY_MODE_WEATHER, EPD_REFRESH_FULL);
         err = weather_request_fullscreen_fetch_wait(90000);
+        if (!display_policy_finish_request(&token, err, true))
+            err = ESP_ERR_INVALID_STATE;
+    } else if (mode == DISPLAY_MODE_SLIDESHOW) {
+        slideshow_config_t cfg;
+        if (scheduler_get_config(&cfg) == ESP_OK && !cfg.enabled) {
+            display_request_token_t token = display_policy_begin_request(
+                DISPLAY_MODE_SLIDESHOW, EPD_REFRESH_FULL);
+            err = scheduler_restore_last_image_epoch(token.epoch);
+            if (err == ESP_ERR_NOT_FOUND || err == ESP_ERR_NOT_SUPPORTED)
+                write_mode_back = true;
+            if (!display_policy_finish_request(
+                    &token, err, scheduler_manual_screen_after_show()))
+                err = ESP_ERR_INVALID_STATE;
+        } else {
+            err = display_mode_show_request(mode, NULL);
+        }
     } else {
         err = display_mode_show_request(mode, NULL);
     }
@@ -665,7 +801,7 @@ static void quick_refresh_and_sleep(void)
     if (err == ESP_OK) {
         displayed = true;
         if (write_mode_back)
-            power_mgr_save_mode(mode);
+            power_mgr_save_mode(used_fallback ? DISPLAY_MODE_CLOCK : mode);
         if (!used_fallback) {
             /* Original mode succeeded — no need to update NVS */
             ESP_LOGI(TAG, "Quick-refresh: mode %d displayed", mode);
@@ -702,12 +838,17 @@ static void full_boot(void)
                  esp_err_to_name(spiffs_err));
     }
     display_policy_init();
+    const unsigned boot_display_guard_epoch = display_policy_display_epoch();
     font_ext_init();
     device_identity_init();
 
     ESP_ERROR_CHECK(wifi_manager_init(device_identity_get_ap_ssid(),
                                       device_identity_get_ap_password()));
     wifi_manager_set_sta_hostname(device_identity_get_mdns_hostname());
+    esp_err_t time_err = time_sync_init();
+    if (time_err != ESP_OK)
+        ESP_LOGW(TAG, "Time sync initialization degraded: %s",
+                 esp_err_to_name(time_err));
 
     power_config_t power_cfg = {0};
     bool low_power_enabled = false;
@@ -729,7 +870,6 @@ static void full_boot(void)
                  wifi_manager_get_sta_ssid(), wifi_manager_get_sta_ip());
         ESP_LOGI(TAG, "Access http://%s.local/ or http://%s/",
                  device_identity_get_mdns_hostname(), wifi_manager_get_sta_ip());
-        time_sync_init();
     } else {
         ESP_LOGI(TAG, "AP-only: connect to SSID \"%s\" (default AP password)",
                  wifi_manager_get_ap_ssid());
@@ -754,16 +894,16 @@ static void full_boot(void)
     if (!spiffs_ok) {
         display_policy_set_manual_screen_active(true);
         try_show_spiffs_recovery_screen(spiffs_err);
-        if (scheduler_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: scheduler unavailable");
+        init_optional_service(APP_SERVICE_SCHEDULER, scheduler_init);
         weather_set_quick_refresh_network_allowed(true);
-        if (weather_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: weather unavailable");
-        if (clock_display_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: clock unavailable");
-        if (message_board_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: message board unavailable");
-        if (canvas_board_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: canvas unavailable");
-        if (calendar_display_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: calendar unavailable");
-        if (timetable_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: timetable unavailable");
-        if (todo_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: todo unavailable");
-        if (countdown_init() != ESP_OK) ESP_LOGW(TAG, "Diagnostic init: countdown unavailable");
+        init_optional_service(APP_SERVICE_WEATHER, weather_init);
+        init_optional_service(APP_SERVICE_CLOCK, clock_display_init);
+        init_optional_service(APP_SERVICE_MESSAGE, message_board_init);
+        init_optional_service(APP_SERVICE_CANVAS, canvas_board_init);
+        init_optional_service(APP_SERVICE_CALENDAR, calendar_display_init);
+        init_optional_service(APP_SERVICE_TIMETABLE, timetable_init);
+        init_optional_service(APP_SERVICE_TODO, todo_init);
+        init_optional_service(APP_SERVICE_COUNTDOWN, countdown_init);
         ESP_LOGW(TAG, "SPIFFS diagnostic mode: content display and sleep arming are disabled");
         ESP_LOGI(TAG, "Ready. http://%s.local/ or http://192.168.4.1/",
                  device_identity_get_mdns_hostname());
@@ -771,6 +911,7 @@ static void full_boot(void)
     }
 
     esp_err_t epd_err = epd_init();
+    app_service_set_available(APP_SERVICE_EPD, epd_err == ESP_OK);
     if (epd_err != ESP_OK) {
         ESP_LOGE(TAG, "EPD init failed (%s); keeping AP/Web online for diagnostics",
                  esp_err_to_name(epd_err));
@@ -778,14 +919,14 @@ static void full_boot(void)
 
     display_policy_set_manual_screen_active(true);
 
-    ESP_ERROR_CHECK(scheduler_init());
-    ESP_ERROR_CHECK(clock_display_init());
-    ESP_ERROR_CHECK(message_board_init());
-    ESP_ERROR_CHECK(canvas_board_init());
-    ESP_ERROR_CHECK(calendar_display_init());
-    ESP_ERROR_CHECK(timetable_init());
-    ESP_ERROR_CHECK(todo_init());
-    ESP_ERROR_CHECK(countdown_init());
+    init_optional_service(APP_SERVICE_SCHEDULER, scheduler_init);
+    init_optional_service(APP_SERVICE_CLOCK, clock_display_init);
+    init_optional_service(APP_SERVICE_MESSAGE, message_board_init);
+    init_optional_service(APP_SERVICE_CANVAS, canvas_board_init);
+    init_optional_service(APP_SERVICE_CALENDAR, calendar_display_init);
+    init_optional_service(APP_SERVICE_TIMETABLE, timetable_init);
+    init_optional_service(APP_SERVICE_TODO, todo_init);
+    init_optional_service(APP_SERVICE_COUNTDOWN, countdown_init);
     {
         bool write_mode_back = false;
         int boot_mode = normalize_saved_mode(power_mgr_load_mode(),
@@ -805,20 +946,20 @@ static void full_boot(void)
         }
     }
     weather_set_quick_refresh_network_allowed(true);
-    ESP_ERROR_CHECK(weather_init());
+    init_optional_service(APP_SERVICE_WEATHER, weather_init);
     codex_quota_set_auto_network_allowed(true);
-    ESP_ERROR_CHECK(codex_quota_init());
+    init_optional_service(APP_SERVICE_CODEX, codex_quota_init);
 
     register_display_modes();
 
     if (epd_err == ESP_OK) {
-        boot_display_route();
+        boot_display_route(boot_display_guard_epoch);
     } else {
         ESP_LOGW(TAG, "Skipping boot display because EPD is not ready");
     }
     scheduler_boot_complete();
 
-    ESP_ERROR_CHECK(button_init());
+    init_optional_service(APP_SERVICE_BUTTON, button_init);
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     if (running) {
@@ -841,6 +982,7 @@ static void full_boot(void)
 
 void app_main(void)
 {
+    app_service_status_init();
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -849,11 +991,25 @@ void app_main(void)
         ESP_ERROR_CHECK(err);
     }
     ESP_ERROR_CHECK(nvs_utils_init());
+    ESP_ERROR_CHECK(ui_color_theme_init());
+    esp_err_t welcome_err = welcome_config_init();
+    if (welcome_err != ESP_OK)
+        ESP_LOGW(TAG, "Welcome config unavailable, using defaults: %s",
+                 esp_err_to_name(welcome_err));
 
     ESP_ERROR_CHECK(power_mgr_init());
 
-    if (battery_mon_init() != ESP_OK)
+    esp_err_t offline_time_err = time_sync_restore_offline_time();
+    if (offline_time_err != ESP_OK)
+        ESP_LOGW(TAG, "Offline time bootstrap unavailable: %s",
+                 esp_err_to_name(offline_time_err));
+
+    if (battery_mon_init() != ESP_OK) {
+        app_service_set_available(APP_SERVICE_BATTERY, false);
         ESP_LOGW(TAG, "Battery monitor unavailable (check BAT_DET / ADC pin)");
+    } else {
+        app_service_set_available(APP_SERVICE_BATTERY, true);
+    }
 
     if (power_mgr_is_timer_wake()) {
         ESP_LOGI(TAG, "Boot route: low-power timer wake -> quick refresh");

@@ -1,12 +1,18 @@
 # 喵哎-MiaooAim 工程技术文档
 
+## 图片编辑器 v3（2026-09-10）
+
+ID34采用大画布与参数栏的一体化编辑器，仅色彩/黑白/文字三种模式；各模式参数独立，构图、观看、历史和异步任务状态分离。旧ID34命名风格映射新模式并采用中性默认值，自定义只导入可兼容数值；旧键不覆盖，新键为`upload_editor_v3_panel_34`。
+
+`GET /image_processor.js` 为新增公开静态脚本资源，响应策略同共享说明脚本；总81条路由、12个HTML、2个JS、1个PNG。处理模块同时用于Worker和回退；最新完整结果未完成或PNG编码期间版本改变时不允许上传。面板驱动、NVS、上传API、分区及字体未调整，其他面板保持原路径。
+
 ## 工程状态（2026-08-13）
 
 本文档反映当前 ESP32-S3 三色墨水屏固件的工程实现状态。已完成显示 epoch 仲裁、日历/画布/留言异步显示返回语义收紧、GET 数据/媒体接口 Basic Auth、SPIFFS 用户数据保护与挂载失败降级启动/手动恢复入口、配置备份排除 Basic Auth、面板配置重启生效、图库坏图清理、手动画面期间天气后台收敛、EPD 初始化失败降级诊断、AP 密码日志脱敏、外置 fontfs 字库、低功耗按模式快速刷新、日历跨日刷新、Web 画板字体渲染和 5.83" 页面/驱动说明同步。
 
 2026-06-24 完成公开发布目录整理与一致性检查：构建缓存、SDK 配置、生成镜像和工具缓存等可再生成内容不随仓库发布，保留 release、字库下载/生成脚本和必要参考素材；TTF 字体缓存由构建脚本按需下载到本地 ignored 目录；发布检查已覆盖 HTTP 路由、Web 嵌入资源、分区表、字库授权和 release 烧录说明；`release/README.md` 已修正 fontfs 烧录地址为 `0x940000`。
 
-2026-06-25 完成文档一致性补充：低功耗开关不关闭正常启动后台，只有 RTC 定时器唤醒才进入 quick-refresh；5.83" BWR 供应商标注兼容微雪 5.83b V2 时优先选择 `Waveshare 5.83" BWR B V2`；Web 嵌入资源为 12 个 HTML 页面 + 1 个 PNG；用户 SPIFFS 与 fontfs 分区职责分离。
+2026-06-25 完成文档一致性补充：低功耗开关不关闭正常启动后台，只有 RTC 定时器唤醒才进入 quick-refresh；5.83" BWR 供应商标注兼容微雪 5.83b V2 时优先选择 `Waveshare 5.83" BWR B V2`；当前 Web 嵌入资源为 12 个 HTML 页面 + 2 个 JavaScript + 1 个 PNG；用户 SPIFFS 与 fontfs 分区职责分离。
 
 2026-06-28 同步 v2.3.4 版本准备：补充 UC 4.2 三色与 SSD1619A 4.2 双色参考驱动选项，并收紧低功耗闲置计时，避免后台状态轮询和自动刷屏持续阻止深睡。
 
@@ -124,7 +130,7 @@
        │          │          │            │
 ┌──────▼──────────▼──────────▼────────────▼───────────┐
 │              HTTP Server (http_app.c)                │
-│          73 Routes + Basic Auth + OTA                │
+│          80 Routes + Basic Auth + OTA                │
 └────┬──────────┬──────────┬──────────┬──────────────┘
      │          │          │          │
 ┌────▼───┐ ┌───▼────┐ ┌───▼─────┐ ┌─▼────────────┐
@@ -302,6 +308,7 @@ USB (CH340):
         │
         └── 其他（上电、按键 GPIO3/9 唤醒等）──────► full_boot()
                  · AP+STA、mDNS、HTTP、按键、欢迎屏逻辑、power_mgr_arm()
+                 · 欢迎页配置对所有面板生效；关闭时直接恢复保存模式
 ```
 
 完整逻辑见 `main/app_main.c`。
@@ -344,7 +351,13 @@ USB (CH340):
 - **前端**：`config.html` / `index.html` / `timetable.html` / `todo.html` / `countdown.html` / `board.html` 使用 `localStorage`（`epd_auth_u`、`epd_auth_p`）构造 Basic 头；**需先在配置页保存认证**，子页面才能以带鉴权方式通过校验。
 - **备份恢复**：配置导出/导入刻意排除 `/auth_config`，不会备份或恢复 Basic Auth 密码；恢复配置后如需访问保护，必须在配置页重新设置管理账号。
 
-### 4.6 并发与同步机制（v2.1.0 补丁）
+### 4.6 界面语言边界
+
+- 当前公开源码的 Web 管理端和设备固定文案统一使用简体中文。
+- 课程名称、教室、待办内容、倒计时标题、留言、文件名、SSID 与城市名等用户数据保持原文，不由固件自动改写。
+- 其它定制功能在独立目录维护，不属于本开源目录的构建内容。
+
+### 4.7 并发与同步机制（v2.1.0 补丁）
 
 为了保证多任务并发现场的系统稳定性，设计了多层数据保护机制：
 - **`portMUX_TYPE` 自旋锁**：保护极短的临界区数据，例如 `power_mgr` 中的 64 位时间戳 `s_last_activity_us`（防止双核读取撕裂），以及 `scheduler`、`weather`、`clock`、`wifi_manager` 等全局配置项（读多写少且无需阻塞）。
@@ -352,13 +365,17 @@ USB (CH340):
 - **C11 `atomic_bool`**：`time_sync` 的 `s_synced`、`message_board` 的 `s_pending`、`display_policy` 的 `s_manual_screen` 使用 `<stdatomic.h>` 原子布尔，避免自旋锁开销。
 - **数据副本解耦**：`weather` 模块引入 `weather_get_data_copy()` 提供数据副本，替代原有的全局裸指针访问，消除 `clock_display` 混合渲染天气摘要时可能遇到的读写数据竞争。
 
-### 4.7 显示仲裁与异步语义
+### 4.8 显示仲裁与异步语义
 
-`display_policy` 负责统一显示所有权。用户主动触发的显示入口调用 `display_policy_begin_manual_display()` 后会同时设置手动画面、递增 display epoch 并通知轮播让出；各渲染任务在最终 `epd_display_*()` 前调用 `display_policy_epoch_is_current(epoch)`，发现已被新请求抢占时直接丢弃旧帧。
+`display_policy` 负责统一显示所有权。显示事务同时保存 epoch、目标模式、最后一次成功模式和已提交的手动画面状态；`begin` 只声明所有权并暂停后台刷新，不提前改写活跃模式，只有当前 epoch 可以提交成功或回滚。日历等异步页面通过模式完成回调等待真实 EPD 结果后再提交。各渲染任务在 EPD 刷新前后都检查 epoch，过期任务即使已经完成物理刷新，也不能再修改活跃模式、轮播索引或时钟自动刷新状态。
+
+自动轮播关闭时，`scheduler` 使用独立 NVS 键 `last_img` 恢复最后显示图片，`cur_idx` 只表示下一张。可选模块初始化失败会记录服务状态并禁用固定编号的对应模式；HTTP 显示请求返回 503，而 WiFi、HTTP 和其它已初始化模块继续运行。
 
 对仍采用任务渲染的接口，HTTP 返回语义已收紧：`/calendar_show`、`/canvas_show`、`/msg_show` 会等待本次任务结束再返回；如果期间出现更新的显示请求，JSON 中返回 `canceled=true`，调用方不应把这种结果当作最终上屏成功。后续如引入全局 display queue，应继续保留“排队、完成、取消”三种状态的明确区分。
 
 EPD 初始化失败时，完整启动路径不再直接 `ESP_ERROR_CHECK()` 重启循环，而是尽量保留 AP/Web，供用户在网页或串口日志中诊断 BUSY 极性、屏幕排线和面板配置；定时快速刷新路径失败则记录日志并回到深睡，避免无人值守时反复重启耗电。
+
+默认日历不再依赖开机时已经联网。`time_sync_restore_offline_time()` 在网络启动前选择 NVS 中最后一次可信 SNTP 时间或固件编译时间作为保底系统时间；SNTP 无论当前是否连上 STA 都会初始化，后续配网成功后自动纠正时间并唤醒日历刷新。可信时间最多每天持久化一次，限制 Flash 写入。
 
 ---
 
@@ -366,16 +383,27 @@ EPD 初始化失败时，完整启动路径不再直接 `ESP_ERROR_CHECK()` 重�
 
 ### 5.1 EPD 驱动模块 (`epd_stub.c`)
 
+2026-09 可靠性更新：总线、DMA、初始化、数据写入和刷新回调返回 `esp_err_t`；失败使缓存失效，并要求下一次显示重新初始化/全刷。BUSY 日志标明 `init/power-on/refresh/power-off` 阶段、GPIO、空闲电平、忙态观测和耗时；预期刷新未观察到忙态或等待超时返回失败，不能据此提交显示成功。首次初始化失败仍保留 Web 诊断入口，需要重试初始化或重启；不代表面板已完成真机验收。
+
+显示请求同时维护请求 epoch、完成状态和手动画面占用。普通天气/日历模式仍可自动更新；请求进行中或留言/画板占用时，后台不得取得显示所有权。错误恢复此前逻辑所有者，部分物理画面由下一次完整刷新恢复。留言/画板显示响应保留 `ok/canceled`，增加 `error`；任务启动成功不等于上屏成功。
+
+HTTP 请求体统一使用有界接收：30 秒无进展、配置共 60 秒、上传/OTA 共 300 秒。超时会关闭该连接并清理本次资源，客户端可能收到网络错误而不是 JSON；下次请求可重新连接。临时文件完整写入后再替换有效文件，替换失败尝试回滚，回滚失败保留备份以供恢复。此机制不提供断电原子性保证。
+
 **功能:**
 - SSD1619 (4.2" 400×300 BWR) / UC8179 (5.83" 648×480 BWR) 驱动
 - 已验证微雪 5.83" BWR B V2 (648×480 BWR) 驱动
+- 视峰 EI0583T5PCZ / WF0583T5PCZ 5.83" 600×448 BW 实验驱动（ID 30；UC8159 兼容 4bit/像素路径，每字节两个像素；默认 `busy_idle=1` 属参考驱动推断，允许显式配置覆盖，待实测确认，仅开放全刷）
+- P426010-MF1-B / 微雪 4.26" 800×480 BW 实验驱动（历史 ID 8，官方全刷序列，BUSY 空闲低）
+- GDEY075Z08 7.5" 800×480 BWR / UC8179 实验驱动（ID 29，BUSY 空闲高；黑白变化按最小窗口差分局刷，红色变化或窗口覆盖红色时自动回退全刷，每 8 次局刷维护全刷）
+- SSD16xx 2.13" 128×250 BW 实验驱动（ID 47，有效区 122×250、X 偏移 8、BUSY 空闲低）
+- GD7965/UC8179 7.5" 800×480 BW 实验驱动（ID 48，BUSY 空闲高；`HT075A04` 仅作为屏体识别备注，用户可见名称按驱动族、尺寸、颜色、分辨率组织）
 - ATC/Solum 实验面板：SSD1619 1.3"/1.6"/2.2"/2.6"/2.9"、UC8151 2.9"、UC 4.3"、dual SSD 5.85"、UC8159 6.0"、UC8179 7.4"、SSD 9.7"
 - EPD-nRF5 参考实验面板：SSD1619 4.2" BW/BWR、UC8176 4.2" BW/BWR、UC8179 7.5" BW/BWR、UC8159 5.83" BW、UC8159 7.5" low BWR、SSD1677 7.5" HD BW/BWR、JD79668 4.2" BWRY、JD79665 7.5" BWRY（图片转换生成独立黄色平面，JD796xx 按 2bpp 输出）
-- JD79668/JD79665 黄色平面当前覆盖图片上传、画廊转换和测试图案；内置业务页面仍沿用黑/红两平面 framebuffer
-- 除已验证微雪 5.83" BWR B V2 外，早期微雪 2.9"/2.66"/2.7"/4.26"/5.83 BW 等未验证入口已移除，旧 NVS 面板编号会回退默认 4.2"
+- JD79668 4.2" BWRY（面板 ID 37）启用专属语义 UI：九类页面分别保存 `balanced/warm/vivid/mono` 策略，提醒为黄、警告为红，天气图标支持黄太阳+黑云、黑云雨+红雷电等分层绘制；JD79665、SSD2677、E6 和其它面板保持 v2.3.6 页面行为
+- 微雪 4.26" BW 入口已按 P426010-MF1-B 实物恢复；早期微雪 2.9"/2.66"/2.7"/5.83 BW 等未验证入口仍保持移除，无效旧 NVS 面板编号会回退默认 4.2"
 - SPI DMA 批量传输
 - BUSY 信号处理
-- 全刷为默认稳定路径；快刷 / 局部刷新仅对白名单中的 UC8176 4.2 寸黑白实验面板启用
+- 全刷为默认稳定路径；快刷 / 局部刷新仅对能力表白名单启用，其中 GDEY075Z08 只开放不含红色的黑白差分局刷
 
 **关键函数:**
 ```c
@@ -393,12 +421,18 @@ epd_panel_t epd_get_panel(void);
 **技术要点:**
 1. DMA 4KB 分块传输（`EPD_FILL_CHUNK`），非 DMA-capable 源用 bounce buffer
 2. BUSY 极性自动检测 + NVS `epd/busy_idle` 覆盖（4.2" 默认 0、5.83" 默认 1）
-3. 多面板参数自动适配（`s_specs[]` 表）；`/panel_config` 当前只保存 NVS 并提示重启生效，避免热切换期间旧 framebuffer/raw 文件按新尺寸读取
+3. 多面板参数自动适配（`s_specs[]` 表）；`/panel_config` 保存 NVS 后在面板或 BUSY 变化时自动延迟重启，避免热切换期间旧 framebuffer/raw 文件按新尺寸读取
 4. ATC/Solum 移植参考 atc1441/Tag_FW_nRF52811 的控制器序列；EPD-nRF5 参考入口按参考工程的控制器命令模型重写接入；两类实验入口只保留 ESP32 当前硬件可表达的 SPI/BUSY/帧缓冲路径，UC8159 缺少源项目外部 EPD EEPROM/3 线回读脚位，使用默认 VCOM/PLL，需实机验证
 5. 刷新策略：调用方可请求 `FULL`、`FAST` 或 `PARTIAL`，驱动按面板能力解析；不支持的模式自动回退稳定全刷。
 6. **实验刷新策略**：
+   - P426010-MF1-B 4.26 寸黑白面板为 ID 8，分辨率 800×480。初始化、16 位窗口/光标、`0x24` 图像 RAM 和 `0x22/F7/0x20` 全刷严格采用微雪 `EPD_4in26` 官方序列，BUSY 为忙高/空闲低。虽然官方示例还提供快刷、局刷和 4 灰，主固件在首次实屏全刷验收前只公布 `FULL` 能力。
+   - SSD16xx 2.13 寸 128×250 黑白面板为 ID 47，有效区 122×250、X 偏移 8。实物背标与排线仅作为识别依据，不作为驱动名称；全刷保留已被该实屏证明能出图的 HINK/SSD16xx 反相 `0x24` 路径，只把 296 行修正为 250 行。配置页隔离测试分别尝试 2.13 寸 SSD16xx OTP 的 `0xC7` 全屏快刷和 `0xFF` 中央 64×80 局刷，结束后深睡并强制下一次完整初始化；实屏验收前能力表仍只公布 `FULL`。
+   - 视峰 EI0583T5PCZ / WF0583T5PCZ 5.83 寸候选屏为 ID 30，使用 UC8159 600×448 初始化、4bit/像素数据流和 OTP 全刷。保留参考驱动默认 `busy_idle=1`，取消无条件 NVS 迁移及 HTTP/网页强制覆盖，尊重用户显式设置。先前无阶段标识的超时日志不足以确认实际极性；新增阶段日志用于记录初始化、电源开启、刷新、电源关闭的 GPIO、忙态及耗时。能力表仍只公布 `FULL`，方向、极性和画质待新日志与照片验收。
    - 4.2" SSD1619/SSD1683 与 5.83" UC8179 都验证过局刷或快刷实验路径，但三色屏画面稳定性不达上线要求。
    - UC8176 4.2 寸黑白实验面板保存前一帧，`FAST` 更新全屏，`PARTIAL` 只更新变化字节覆盖的矩形；首次显示、强制全刷、控制器重置或累计 8 次实验刷新后执行维护性全刷。
+   - GDEY037T03 3.7 寸 UC8253 黑白面板使用厂家 `0x10/0x13` 前后帧路径；`FAST` 使用 1.5 秒波形，`PARTIAL` 使用全屏局刷波形并在累计 5 次后自动维护全刷，刷新结束后关电并进入深睡。
+   - UC8159 7.5 寸 640×384 低分辨率黑白面板为 ID 46，复用已接入的 UC8159 4bit/像素 数据路径且强制颜色码为空。首轮实机在 `busy_idle=0` 时可刷新，误改为 `1` 会让开机持续等待，因此该型号固定恢复为空闲低电平。厂家参考程序未提供专用快刷/局刷 LUT，能力表仍只开放 `FULL`；配置页通过隔离测试先完整初始化并全刷基线，再分别尝试标准 OTP 下的连续全屏窗口或中央 320×144 窗口刷新。未检测到 BUSY 跳变时仅保留肉眼观察结果，不把固件计时视为有效。
+   - GD7965/UC8179 7.5 寸 800×480 黑白候选面板为 ID 48。普通显示采用 GDEW075T7/GD7965 兼容的 `0x10/0x13` 前后帧、OTP 全刷和 `0x29/0x07` N2OCP 设置；日常能力表只公布 `FULL`。隔离测试先执行一次 OTP 全刷基线，保留控制器复制出的上一帧 RAM，再在不复位控制器的情况下加载 GxEPD2 GDEW075T7 的 42 字节寄存器 LUT（`0x20..0x25`），分别测试全屏快刷和中央 400×180 局刷；测试后关电、深睡并强制下次完整初始化。由于 `HT075A04` 没有公开规格书，控制器兼容性、方向、极性、BUSY 时序、闪烁范围和残影均须以实屏结果为准。
    - 时钟自动更新请求 `PARTIAL`，画板、留言和上传图片请求 `FAST`；手动时钟显示请求 `FULL`。其它面板由能力检查统一回退全刷。
 7. **残影管理**：配置页提供手动“刷屏修复”，支持普通全屏翻转、棋盘格/条纹图案和强力组合，轮数 1/2/3/5/8。
 
@@ -451,8 +485,9 @@ render_clock()（成功后内部更新 s_state）
 **功能:**
 - JPEG/PNG/BMP解码
 - Floyd-Steinberg 抖动
-- HSV 红色识别
+- 红色/黄色分离与多颜色平面输出
 - 自适应缩放
+- 面板专项量化：JD79665 ID34、JD79668 ID37使用独立配置；中性源像素（通道差不超过20）禁止映射红黄，以阈值128、全强度蛇形误差扩散模拟灰度，纯黑白像素保持原色；其它面板保留原参数
 
 **支持格式:**
 ```
@@ -474,15 +509,19 @@ BMP:  24/32-bit RGB
    ▼
 RGBA → RGB 转换
    │
-   ▼
-HSV 红色识别
+   ├─ 面板尺寸预量化 PNG → 颜色平面直通（不重复抖动）
    │
-   ▼
-Floyd-Steinberg 抖动
-   │
-   ▼
-Black/Red Plane 输出
+   └─ 普通图片 → 当前面板量化配置 → Floyd-Steinberg/Bayer
+                                           │
+                                           ▼
+                              Black/Red/Yellow/... Plane 输出
 ```
+
+网页图片设置按面板 ID 分别保存在浏览器 `localStorage`。ID34/37分别使用独立预设，提供四色/黑白配色及黑白照片预设；缺少`quantVersion=2`标记的旧命名预设升级为新默认值，`custom`手动参数保留，变换与适配设置保留。固件只在输入仍是普通 JPEG/PNG/BMP 时使用备用量化配置；精确黑白点阵及受支持墨色PNG继续直通，中间灰色不再被误当作黑白预量化结果。普通JPEG/BMP与网页导出PNG不承诺逐像素相同，网页预览与其导出的PNG一致。
+
+ID34现将原“照片”按钮与“彩色照片”合并为“色彩模式”（内部键仍为`colorphoto`）。保存的命名`photo`迁移到色彩模式默认调色参数，`custom`保留；ID37等其他面板不受此迁移影响。整体预览使用`image-rendering:auto`和`object-fit:contain`，1:1预览使用原始画布尺寸及框内滚动，只有1:1采用`pixelated`。预览比例不保存到图像处理参数，也不影响导出PNG；显示器与反射式墨水屏的实际颜色仍不保证相同。
+
+整体视图进一步使用独立`epdPreviewFit`画布，将原始点阵在线性光空间进行面积平均，避免由CSS抽样产生额外纹理。`ResizeObserver`和窗口变化只重画显示缓冲，不改原始`epdPreview`或量化结果。上传页扩大到1380px，预览置于参数上方；放大窗口临时移动同一个预览节点并在关闭时归位，不复制上传状态。
 
 ### 5.3 WiFi 管理模块 (`wifi_manager.c`)
 
@@ -507,17 +546,17 @@ INIT → AP_MODE → SCANNING → CONNECTING → CONNECTED
 
 ### 5.4 HTTP 服务器模块 (`http_app.c` + `http_gallery.c` + `http_features.c` + `http_canvas.c`)
 
-**路由数量:** 75 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
+**路由数量:** 81 条（`http_app_start` 中 `uris[]` 静态表，`sizeof(uris)/sizeof(uris[0])`）
 **认证方式:** HTTP Basic Auth
 **最大连接:** 5 个并发
 
-**路由分组（共 75 条；以下按功能归类，完整注册表以 `main/http_app.c` 为准）：**
+**路由分组（共 81 条；以下按功能归类，完整注册表以 `main/http_app.c` 为准）：**
 
 | 分组 | 路径示例 |
 |------|-----------|
-| 页面与状态 | `GET /` `/config` `/gallery` `/weather` `/clock` `/calendar` `/message` `/codex` `/favicon.ico` `/miaooaim-mark.png` `/status` |
+| 页面与状态 | `GET /` `/config` `/gallery` `/weather` `/clock` `/calendar` `/message` `/codex` `/favicon.ico` `/miaooaim-mark.png` `/feature_help.js` `/status` |
 | 画廊 | `POST /upload` · `GET /images` `/image` · `POST /show` `/delete_image` `/delete` |
-| 网络与面板 | `GET /wifi_status` `/scan` · `POST /wifi_connect` `/wifi_forget` · `GET|POST /panel_config` |
+| 网络与面板 | `GET /wifi_status` `/scan` · `POST /wifi_connect` `/wifi_forget` · `GET|POST /panel_config` `/ui_color_config` `/welcome_config` |
 | 轮播 / 认证 / 电源 / 按键 | `GET|POST /slideshow` · `GET|POST /auth_config` · `GET|POST /power_config` · `GET|POST /button_modes` |
 | 画布留言板 | `GET /board` · `GET|POST /canvas_layout` · `POST /canvas_show` · 图标图片资源管理 |
 | 天气 / 时钟 / 额度 / 留言 | `GET|POST /weather_config` · `POST /weather_show` · `GET|POST /clock_config` · `POST /clock_show` · `GET|POST /codex_quota_config` · `POST /codex_quota_show` · `GET|POST /msg_config` · `POST /msg_show` |
@@ -671,11 +710,15 @@ POST /show?name=img_20260101.jpg
 ```json
 {
   "ssid": "YourWiFi",
-  "password": "12345678"
+  "password": "YOUR_PASSWORD"
 }
 ```
 
 ### 6.3 业务 API
+
+图库显示`POST /show?name=...`仍异步执行，成功受理返回`ok:true, queued:true, epoch`。通过`GET /status?display_epoch=N`读取对应`display_result`，包含`epoch`、`state`和`error`；状态为pending/ok/error/canceled/unavailable。非法或溢出编号返回400；不携带参数时保持原状态接口响应。缓存仅保留最近32个事务，查询不到结果不能视为成功。
+
+删除图片成功返回200，文件不存在404，I/O失败500。组合删除与清屏说明各步骤实际结果，清屏失败返回500、被新请求替换返回409；部分文件已删除不会被回滚或被隐藏。客户端必须检查HTTP状态，不能仅依据请求完成显示成功。
 
 #### GET /timetable.json
 
@@ -808,6 +851,8 @@ POST /show?name=img_20260101.jpg
 
 **认证联动：** 各页面使用 `epdAuthHeaders()` / `epdFetchOpts()`（或等价逻辑）在 `fetch` 时附加 Basic 凭据；凭据来自配置页写入的 `localStorage`。
 
+**说明联动：** 12 个页面均加载 `/feature_help.js`。共享脚本负责设置说明点的弹出内容；动态状态、课程、待办、留言、图片、WiFi、城市及画板图层等数据按设备实际内容显示。
+
 #### index.html - 主页
 
 **功能模块:**
@@ -836,6 +881,7 @@ POST /show?name=img_20260101.jpg
 8. HTTP 认证
 9. 配置导出/导入
 10. OTA 固件升级
+11. Web 语言与设备屏幕语言
 
 #### timetable.html - 课程表页
 

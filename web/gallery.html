@@ -103,11 +103,16 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
   <div class="card">
     <div class="hd"><div class="title" style="font-size:16px">定时轮播</div><div class="sub">自动在画廊图片之间切换，定时刷新墨水屏显示。</div></div>
     <div class="bd">
-      <div class="kv"><div class="k">轮播状态</div><div class="v" id="ss_status">-</div><div class="k">当前图片</div><div class="v" id="ss_current">-</div></div>
-      <div class="form-row"><label>启用轮播</label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ssEnabled"><span class="sl"></span></span><span id="ssLabel" style="font-size:13px">已关闭</span></label></div>
-      <div class="form-row"><label>轮播间隔</label><select id="ssInterval"><option value="300">5 分钟</option><option value="600">10 分钟</option><option value="900">15 分钟</option><option value="1800">30 分钟</option><option value="3600">1 小时</option><option value="7200">2 小时</option><option value="14400">4 小时</option><option value="28800">8 小时</option><option value="43200">12 小时</option><option value="86400">24 小时</option></select></div>
-      <div class="form-row"><label>轮播模式</label><select id="ssMode"><option value="0">顺序播放</option><option value="1">随机播放</option></select></div>
-      <div class="form-row"><label>图片叠加时钟</label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ssClkOverlay"><span class="sl"></span></span><span style="font-size:13px;color:var(--t2)">在图片右上角显示当前时间</span></label></div>
+    <div class="kv"><div class="k">轮播状态</div><div class="v" id="ss_status">-</div><div class="k">当前图片</div><div class="v" id="ss_current">-</div></div>
+      <div class="form-row"><label class="help-label"><span>启用轮播</span><button type="button" class="info-dot" aria-label="查看图片轮播说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="开启后会在设备画廊已有图片之间自动切换。画廊没有图片时不会产生可显示内容。"></button></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ssEnabled"><span class="sl"></span></span><span id="ssLabel" style="font-size:13px">已关闭</span></label></div>
+      <div class="form-row"><label class="help-label"><span>轮播间隔</span><button type="button" class="info-dot" aria-label="查看轮播间隔说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="表示两次图片切换之间的等待时间。墨水屏刷新较慢，间隔过短会增加刷新次数和耗电。"></button></label><select id="ssInterval"><option value="300">5 分钟</option><option value="600">10 分钟</option><option value="900">15 分钟</option><option value="1800">30 分钟</option><option value="3600">1 小时</option><option value="7200">2 小时</option><option value="14400">4 小时</option><option value="28800">8 小时</option><option value="43200">12 小时</option><option value="86400">24 小时</option></select></div>
+      <details class="more-settings" id="slideshowMoreSettings">
+        <summary>更多设置</summary>
+        <div class="more-settings-body">
+          <div class="form-row"><label>轮播模式</label><select id="ssMode"><option value="0">顺序播放</option><option value="1">随机播放</option></select></div>
+          <div class="form-row"><label class="help-label"><span>图片叠加时钟</span><button type="button" class="info-dot" aria-label="查看图片时钟叠加说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="会在轮播图片右上角叠加设备时间。低功耗定时唤醒时，只有本地时间无效才需要联网校时。"></button></label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="ssClkOverlay"><span class="sl"></span></span><span style="font-size:13px;color:var(--t2)">在图片右上角显示当前时间</span></label></div>
+        </div>
+      </details>
       <div class="row"><button class="btn" onclick="saveSlideshow()">保存设置</button><button class="btn ghost sm" onclick="loadSlideshow()">刷新</button><a class="btn ghost sm" href="/">管理图片</a></div>
       <div class="log" id="ssLog">加载中…</div>
     </div>
@@ -135,5 +140,6 @@ loadSlideshow();
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

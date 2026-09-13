@@ -27,6 +27,7 @@ static const char *TAG = "power";
 
 #define DEFAULT_INTERVAL_MIN   60
 #define DEFAULT_IDLE_TIMEOUT_S 120
+#define DEFAULT_DISPLAY_MODE   DISPLAY_MODE_CALENDAR
 #define CHECK_PERIOD_MS        10000
 #define IDLE_TASK_STACK        4096
 #define EPD_SLEEP_SETTLE_MS    25000
@@ -359,9 +360,11 @@ void power_mgr_save_mode(int mode_index)
 int power_mgr_load_mode(void)
 {
     nvs_handle_t h;
-    int32_t mode = 0;
-    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return 0;
-    nvs_get_i32(h, NVS_KEY_MODE, &mode);
+    int32_t mode = DEFAULT_DISPLAY_MODE;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK)
+        return DEFAULT_DISPLAY_MODE;
+    if (nvs_get_i32(h, NVS_KEY_MODE, &mode) != ESP_OK)
+        mode = DEFAULT_DISPLAY_MODE;
     nvs_close(h);
     return (int)mode;
 }

@@ -1,0 +1,353 @@
+[
+  {
+    "id": 0,
+    "width": 400,
+    "height": 300,
+    "family": "bwr",
+    "name": "SSD1619 4.2\" BWR",
+    "profileId": "preview-0",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 1,
+    "width": 648,
+    "height": 480,
+    "family": "bwr",
+    "name": "UC8179 5.83\" BWR",
+    "profileId": "preview-1",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 8,
+    "width": 800,
+    "height": 480,
+    "family": "bw",
+    "name": "P426010 4.26\" BW",
+    "profileId": "preview-8",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 10,
+    "width": 648,
+    "height": 480,
+    "family": "bwr",
+    "name": "Waveshare 5.83\" BWR B V2",
+    "profileId": "preview-10",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 14,
+    "width": 200,
+    "height": 200,
+    "family": "bwr",
+    "name": "ATC/Solum 1.6\" BWR SSD1619",
+    "profileId": "preview-14",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 15,
+    "width": 160,
+    "height": 296,
+    "family": "bwr",
+    "name": "ATC/Solum 2.2\" BWR SSD1619",
+    "profileId": "preview-15",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 16,
+    "width": 184,
+    "height": 360,
+    "family": "bwr",
+    "name": "ATC/Solum 2.6\" BWR SSD1619",
+    "profileId": "preview-16",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 17,
+    "width": 128,
+    "height": 296,
+    "family": "bwr",
+    "name": "HINK-E029A14-A1 2.9\" BWR SSD1619",
+    "profileId": "preview-17",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 18,
+    "width": 168,
+    "height": 384,
+    "family": "bwr",
+    "name": "ATC/Solum 2.9\" BWR UC8151",
+    "profileId": "preview-18",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 19,
+    "width": 152,
+    "height": 522,
+    "family": "bwr",
+    "name": "ATC/Solum 4.3\" BWR UC",
+    "profileId": "preview-19",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 20,
+    "width": 792,
+    "height": 272,
+    "family": "bwr",
+    "name": "ATC/Solum 5.85\" BWR dual SSD",
+    "profileId": "preview-20",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 21,
+    "width": 792,
+    "height": 272,
+    "family": "bw",
+    "name": "ATC/Solum 5.85\" BW dual SSD",
+    "profileId": "preview-21",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 22,
+    "width": 600,
+    "height": 448,
+    "family": "bwr",
+    "name": "ATC/Solum 6.0\" BWR UC8159",
+    "profileId": "preview-22",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 23,
+    "width": 800,
+    "height": 480,
+    "family": "bwr",
+    "name": "ATC/Solum 7.4\" BWR UC8179",
+    "profileId": "preview-23",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 24,
+    "width": 960,
+    "height": 672,
+    "family": "bwr",
+    "name": "ATC/Solum 9.7\" BWR SSD",
+    "profileId": "preview-24",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 25,
+    "width": 144,
+    "height": 200,
+    "family": "bwr",
+    "name": "ATC/Solum 1.3\" peghook BWR SSD",
+    "profileId": "preview-25",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 26,
+    "width": 400,
+    "height": 300,
+    "family": "bw",
+    "name": "UC8176 4.2\" BW",
+    "profileId": "preview-26",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 27,
+    "width": 400,
+    "height": 300,
+    "family": "bwr",
+    "name": "UC 4.2\" BWR reference",
+    "profileId": "preview-27",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 28,
+    "width": 800,
+    "height": 480,
+    "family": "bw",
+    "name": "UC8179 7.5\" BW",
+    "profileId": "preview-28",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 29,
+    "width": 800,
+    "height": 480,
+    "family": "bwr",
+    "name": "GDEY075Z08 7.5\" HD BWR UC8179",
+    "profileId": "preview-29",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 30,
+    "width": 600,
+    "height": 448,
+    "family": "bw",
+    "name": "Vision Peak EI0583T5PCZ 5.83\" BW",
+    "profileId": "preview-30",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 31,
+    "width": 640,
+    "height": 384,
+    "family": "bwr",
+    "name": "UC8159 7.5\" low BWR",
+    "profileId": "preview-31",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 32,
+    "width": 880,
+    "height": 528,
+    "family": "bw",
+    "name": "SSD1677 7.5\" HD BW",
+    "profileId": "preview-32",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 33,
+    "width": 880,
+    "height": 528,
+    "family": "bwr",
+    "name": "SSD1677 7.5\" HD BWR",
+    "profileId": "preview-33",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 34,
+    "width": 800,
+    "height": 480,
+    "family": "bwry",
+    "name": "JD79665 7.5\" BWRY",
+    "profileId": "preview-34",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 35,
+    "width": 400,
+    "height": 300,
+    "family": "bw",
+    "name": "SSD1619A 4.2\" BW reference",
+    "profileId": "preview-35",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 36,
+    "width": 400,
+    "height": 300,
+    "family": "bwr",
+    "name": "SSD1619 4.2\" BWR",
+    "profileId": "preview-36",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 37,
+    "width": 400,
+    "height": 300,
+    "family": "bwry",
+    "name": "JD79668 4.2\" BWRY",
+    "profileId": "preview-37",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 38,
+    "width": 400,
+    "height": 300,
+    "family": "bwr",
+    "name": "SSD1683 4.2\" BWR",
+    "profileId": "preview-38",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 39,
+    "width": 400,
+    "height": 300,
+    "family": "bwr",
+    "name": "SSD1683 4.2\" BWR",
+    "profileId": "preview-39",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 40,
+    "width": 400,
+    "height": 300,
+    "family": "bw",
+    "name": "SSD1683 4.2\" BW",
+    "profileId": "preview-40",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 41,
+    "width": 400,
+    "height": 300,
+    "family": "bwr",
+    "name": "FPC-194 4.2\" BWR SSD1683",
+    "profileId": "preview-41",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 42,
+    "width": 960,
+    "height": 640,
+    "family": "bwr",
+    "name": "SSD1667 10.2\" BWR",
+    "profileId": "preview-42",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 43,
+    "width": 792,
+    "height": 528,
+    "family": "e6",
+    "name": "E6 3.7\" six-color",
+    "profileId": "preview-43",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 44,
+    "width": 960,
+    "height": 672,
+    "family": "bwry",
+    "name": "SSD2677 9.7\" BWRY",
+    "profileId": "preview-44",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 45,
+    "width": 416,
+    "height": 240,
+    "family": "bw",
+    "name": "GDEY037T03 3.7\" BW UC8253",
+    "profileId": "preview-45",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 46,
+    "width": 640,
+    "height": 384,
+    "family": "bw",
+    "name": "UC8159 7.5\" low BW",
+    "profileId": "preview-46",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 47,
+    "width": 128,
+    "height": 250,
+    "family": "bw",
+    "name": "SSD16xx 2.13\" BW 128x250",
+    "profileId": "preview-47",
+    "source": "driver-descriptor"
+  },
+  {
+    "id": 48,
+    "width": 800,
+    "height": 480,
+    "family": "bw",
+    "name": "GD7965/UC8179 7.5\" BW 800x480",
+    "profileId": "preview-48",
+    "source": "driver-descriptor"
+  }
+]

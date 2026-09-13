@@ -301,7 +301,8 @@ void fb_destroy(fb_t *fb)
 void fb_clear(fb_t *fb)
 {
     memset(fb->black, 0xFF, fb->plane_bytes);
-    memset(fb->red,   0x00, fb->plane_bytes);
+    if (fb->red)
+        memset(fb->red, 0x00, fb->plane_bytes);
     if (fb->yellow)
         memset(fb->yellow, 0x00, fb->plane_bytes);
     if (fb->blue)
@@ -336,7 +337,7 @@ static bool fb_set_extra_color_bit(fb_t *fb, int byte_idx, uint8_t mask,
         return false;
 
     fb->black[byte_idx] |= mask;
-    if (epd_has_red())
+    if (epd_has_red() && fb->red)
         fb->red[byte_idx] &= (uint8_t)~mask;
     if (fb->yellow)
         fb->yellow[byte_idx] &= (uint8_t)~mask;
@@ -350,7 +351,9 @@ static bool fb_set_extra_color_bit(fb_t *fb, int byte_idx, uint8_t mask,
 
 void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
 {
-    if (x < 0 || x >= fb->width || y < 0 || y >= fb->height) return;
+    if (!fb || !fb->black || x < 0 || x >= fb->width ||
+        y < 0 || y >= fb->height)
+        return;
     int byte_idx = y * fb->row_bytes + x / 8;
     uint8_t mask = 0x80 >> (x % 8);
 
@@ -359,7 +362,7 @@ void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
 
     switch (c) {
     case COLOR_RED:
-        if (epd_has_red()) {
+        if (epd_has_red() && fb->red) {
             fb->red[byte_idx] |= mask;
             fb->black[byte_idx] |= mask;
             fb_clear_extra_color_bit(fb, byte_idx, mask);
@@ -368,7 +371,7 @@ void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
         /* BW panels: red maps to black */
         __attribute__((fallthrough));
     case COLOR_YELLOW:
-        if (epd_has_red()) {
+        if (epd_has_red() && fb->red) {
             fb->red[byte_idx] |= mask;
             fb->black[byte_idx] |= mask;
             fb_clear_extra_color_bit(fb, byte_idx, mask);
@@ -380,12 +383,13 @@ void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
     case COLOR_BLACK:
         fb->black[byte_idx] &= ~mask;
         /* Black/red planes are exclusive: black clears any stale red bit. */
-        if (epd_has_red()) fb->red[byte_idx] &= ~mask;
+        if (epd_has_red() && fb->red) fb->red[byte_idx] &= ~mask;
         fb_clear_extra_color_bit(fb, byte_idx, mask);
         break;
     default:
         fb->black[byte_idx] |= mask;
-        fb->red[byte_idx] &= ~mask;
+        if (fb->red)
+            fb->red[byte_idx] &= ~mask;
         fb_clear_extra_color_bit(fb, byte_idx, mask);
         break;
     }
@@ -393,7 +397,7 @@ void fb_pixel(fb_t *fb, int x, int y, fb_color_t c)
 
 void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
 {
-    if (y < 0 || y >= fb->height || w <= 0) return;
+    if (!fb || !fb->black || y < 0 || y >= fb->height || w <= 0) return;
     int x0 = x, x1 = x + w - 1;
     if (x0 < 0) x0 = 0;
     if (x1 >= fb->width) x1 = fb->width - 1;
@@ -408,9 +412,10 @@ void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
     int row_off = y * fb->row_bytes;
     int sb = x0 / 8, eb = x1 / 8;
 
-    bool has_red = epd_has_red();
-    bool is_red = (c == COLOR_RED && has_red);
-    bool is_black = (c == COLOR_BLACK) || (c == COLOR_RED && !has_red);
+    bool has_red = epd_has_red() && fb->red;
+    bool is_red = (c == COLOR_RED || c == COLOR_YELLOW) && has_red;
+    bool is_black = c == COLOR_BLACK || c == COLOR_BLUE || c == COLOR_GREEN ||
+                    ((c == COLOR_RED || c == COLOR_YELLOW) && !has_red);
 
     if (sb == eb) {
         uint8_t mask = (uint8_t)((0xFF >> (x0 % 8)) & (0xFF << (7 - x1 % 8)));
@@ -423,7 +428,8 @@ void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
             fb->black[row_off + sb] |= mask;
         } else {
             fb->black[row_off + sb] |= mask;
-            fb->red[row_off + sb] &= ~mask;
+            if (fb->red)
+                fb->red[row_off + sb] &= ~mask;
         }
         return;
     }
@@ -449,12 +455,17 @@ void fb_hline(fb_t *fb, int x, int y, int w, fb_color_t c)
         }
         fb->red[row_off + eb] |= rm;   fb->black[row_off + eb] |= rm;
     } else {
-        fb->black[row_off + sb] |= lm; fb->red[row_off + sb] &= ~lm;
+        fb->black[row_off + sb] |= lm;
+        if (fb->red)
+            fb->red[row_off + sb] &= ~lm;
         if (eb - sb > 1) {
             memset(&fb->black[row_off + sb + 1], 0xFF, (size_t)(eb - sb - 1));
-            memset(&fb->red[row_off + sb + 1],   0x00, (size_t)(eb - sb - 1));
+            if (fb->red)
+                memset(&fb->red[row_off + sb + 1], 0x00, (size_t)(eb - sb - 1));
         }
-        fb->black[row_off + eb] |= rm; fb->red[row_off + eb] &= ~rm;
+        fb->black[row_off + eb] |= rm;
+        if (fb->red)
+            fb->red[row_off + eb] &= ~rm;
     }
 }
 

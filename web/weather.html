@@ -99,7 +99,7 @@ select,input[type=text]{padding:10px 12px;background:var(--sf);border:1px solid 
         </label>
       </div>
       <div class="form-row">
-        <label>天气源</label>
+        <label class="help-label"><span>天气源</span><button type="button" class="info-dot" aria-label="查看天气源说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="Open-Meteo 可直接按城市查询，不需要 API Key；和风天气需要填写账号对应的 API Key、Host 和 Location。"></button></label>
         <select id="wProvider">
           <option value="open_meteo">Open-Meteo 城市直查</option>
           <option value="qweather">和风天气 API</option>
@@ -109,26 +109,31 @@ select,input[type=text]{padding:10px 12px;background:var(--sf);border:1px solid 
         <label id="wCityLabel">城市</label>
         <input type="text" id="wCity" placeholder="北京 / 上海 / Hangzhou" autocomplete="off">
       </div>
-      <div class="form-row qweather-only hidden">
-        <label>API Key（留空表示保留已保存 Key）</label>
-        <input type="text" id="wApiKey" placeholder="在 dev.qweather.com 获取">
-        <label class="checkline"><input type="checkbox" id="wApiKeyClear"> 清除已保存的 Key</label>
-      </div>
-      <div class="form-row qweather-only hidden">
-        <label>API Host（不含 https://）</label>
-        <input type="text" id="wApiHost" placeholder="xxx.re.qweatherapi.com">
-      </div>
-      <div class="form-row qweather-only hidden">
-        <label>Location ID 或经纬度</label>
-        <input type="text" id="wLocation" placeholder="101010100">
-      </div>
-      <div class="form-row">
-        <label>天气刷新策略</label>
-        <select id="wRefresh">
-          <option value="0">仅手动</option>
-          <option value="30">自动：常开 30 分钟，低功耗按唤醒间隔</option>
-        </select>
-      </div>
+      <details class="more-settings" id="weatherMoreSettings">
+        <summary>更多设置</summary>
+        <div class="more-settings-body">
+          <div class="form-row qweather-only hidden">
+            <label class="help-label"><span>API Key（留空表示保留已保存 Key）</span><button type="button" class="info-dot" aria-label="查看天气 API Key 说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="仅和风天气需要。已保存 Key 时留空不会清除；只有勾选下方“清除已保存的 Key”才会删除。请勿把 Key 公开分享。"></button></label>
+            <input type="text" id="wApiKey" placeholder="在 dev.qweather.com 获取">
+            <label class="checkline"><input type="checkbox" id="wApiKeyClear"> 清除已保存的 Key</label>
+          </div>
+          <div class="form-row qweather-only hidden">
+            <label class="help-label"><span>API Host（不含 https://）</span><button type="button" class="info-dot" aria-label="查看天气 API Host 说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="填写和风天气控制台分配的专属 Host，只填写域名，不要包含 https://、路径或接口参数。"></button></label>
+            <input type="text" id="wApiHost" placeholder="xxx.re.qweatherapi.com">
+          </div>
+          <div class="form-row qweather-only hidden">
+            <label>Location ID 或经纬度</label>
+            <input type="text" id="wLocation" placeholder="101010100">
+          </div>
+          <div class="form-row">
+            <label class="help-label"><span>天气刷新策略</span><button type="button" class="info-dot" aria-label="查看天气刷新策略说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="常开状态可按 30 分钟自动获取；开启低功耗后，定时唤醒刷新频率改由设备配置页的唤醒间隔决定。"></button></label>
+            <select id="wRefresh">
+              <option value="0">仅手动</option>
+              <option value="30">自动：常开 30 分钟，低功耗按唤醒间隔</option>
+            </select>
+          </div>
+        </div>
+      </details>
       <div class="row">
         <button class="btn" onclick="queryWeather()">查询并显示</button>
         <button class="btn ghost sm" onclick="saveWeather()">保存设置</button>
@@ -150,15 +155,16 @@ function normalizeHost(s){return (s||'').trim().replace(/^https?:\/\//,'').repla
 function weatherTimezoneLabel(tz){if(!tz||tz==='auto')return '';return tz==='Asia/Shanghai'?'中国标准时间':tz;}
 function weatherGeoReady(j,p){return p==='qweather'?!!(j.api_host&&j.location):!!j.location;}
 function weatherGeoText(j,p){if(p==='qweather')return (j.api_host||'未配置')+(j.location?' · Location '+j.location:'');var parts=[];if(j.city_name)parts.push('城市：'+j.city_name);if(j.location)parts.push('坐标：'+j.location);else parts.push('坐标：待查询');var tz=weatherTimezoneLabel(j.timezone);if(tz)parts.push('时区：'+tz);return parts.join(' · ');}
-function applyProviderUI(fromUser){var p=document.getElementById('wProvider').value;document.querySelectorAll('.qweather-only').forEach(function(el){el.classList.toggle('hidden',p!=='qweather');});document.getElementById('wCityLabel').textContent=p==='qweather'?'城市名称（显示用，可选）':'城市';document.getElementById('wCity').placeholder=p==='qweather'?'北京':'北京 / 上海 / Hangzhou';if(fromUser&&p==='qweather'&&loadedProvider!=='qweather'){document.getElementById('wApiHost').value='';document.getElementById('wLocation').value='';}}
+function openWeatherMore(){var d=document.getElementById('weatherMoreSettings');if(window.epdExpandMoreSettings)window.epdExpandMoreSettings(d);else if(d)d.open=true;}
+function applyProviderUI(fromUser){var p=document.getElementById('wProvider').value;document.querySelectorAll('.qweather-only').forEach(function(el){el.classList.toggle('hidden',p!=='qweather');});document.getElementById('wCityLabel').textContent=p==='qweather'?'城市名称（显示用，可选）':'城市';document.getElementById('wCity').placeholder=p==='qweather'?'北京':'北京 / 上海 / Hangzhou';if(fromUser&&p==='qweather'){openWeatherMore();if(loadedProvider!=='qweather'){document.getElementById('wApiHost').value='';document.getElementById('wLocation').value='';}}}
 function collectWeatherCfg(){var p=document.getElementById('wProvider').value;var cfg={enabled:document.getElementById('wEnabled').checked,provider:p,city_name:document.getElementById('wCity').value.trim(),refresh_min:parseInt(document.getElementById('wRefresh').value,10)||0};if(p==='qweather'){cfg.api_key=document.getElementById('wApiKey').value.trim();cfg.api_key_clear=document.getElementById('wApiKeyClear').checked;cfg.api_host=normalizeHost(document.getElementById('wApiHost').value);cfg.location=document.getElementById('wLocation').value.trim();if(!cfg.api_key&&weatherApiKeyConfigured&&!cfg.api_key_clear)delete cfg.api_key;}return cfg;}
 function cfgReady(cfg){if(!cfg.enabled)return true;if(cfg.provider==='qweather')return (!!cfg.api_key||weatherApiKeyConfigured)&&!cfg.api_key_clear&&!!cfg.api_host&&!!cfg.location;return !!cfg.city_name;}
 function cfgMissingText(cfg){return cfg.provider==='qweather'?'请填写和风 API Key、API Host 和 Location ID':'请填写城市名';}
 function scheduleWeatherAutoSave(){if(weatherHydrating||weatherSaveInFlight)return;clearTimeout(weatherAutoSaveTimer);weatherAutoSaveTimer=setTimeout(function(){weatherAutoSaveTimer=null;var cfg=collectWeatherCfg();if(!cfgReady(cfg))return;saveWeather({silent:true});},2000);}
-async function loadWeather(){try{weatherHydrating=true;const j=await fetchJsonRetry('/weather_config');loadedProvider=j.provider||'open_meteo';weatherApiKeyConfigured=!!j.api_key_set;document.getElementById('wEnabled').checked=!!j.enabled;document.getElementById('wLabel').textContent=j.enabled?'已开启':'已关闭';document.getElementById('wProvider').value=loadedProvider;document.getElementById('wCity').value=j.city_name||'';document.getElementById('wRefresh').value=String(j.refresh_min?30:0);document.getElementById('wApiKey').value='';document.getElementById('wApiKey').placeholder=weatherApiKeyConfigured?'已保存，留空不修改':'和风天气 API Key';document.getElementById('wApiKeyClear').checked=false;document.getElementById('wApiHost').value=j.api_host||'';document.getElementById('wLocation').value=j.location||'';applyProviderUI(false);const st=document.getElementById('w_status');if(j.enabled&&((loadedProvider==='qweather'&&j.location&&j.api_host&&weatherApiKeyConfigured)||(loadedProvider!=='qweather'&&j.city_name))){st.textContent='运行中';st.className='v ok';}else if(j.enabled){st.textContent='等待配置';st.className='v warn';}else{st.textContent='已关闭';st.className='v warn';}const wd=document.getElementById('w_data');if(j.has_data){wd.textContent=j.temp+'°C '+j.text+' ('+(j.update_time||'--')+')';wd.className='v';}else{wd.textContent='暂无数据';wd.className='v warn';}document.getElementById('w_source').textContent=providerLabel(loadedProvider);const geo=document.getElementById('w_geo');const geoLabel=document.getElementById('wGeoLabel');if(geoLabel)geoLabel.textContent=loadedProvider==='qweather'?'Host/Location':'定位';geo.textContent=weatherGeoText(j,loadedProvider);geo.className=weatherGeoReady(j,loadedProvider)?'v':'v warn';wLog('设置已加载。');}catch(e){wLog('加载失败: '+e,'bad');}finally{weatherHydrating=false;}}
-async function saveWeather(opts){opts=opts||{};var silent=opts.silent===true;var cfg=collectWeatherCfg();if(!cfgReady(cfg)){if(!silent)wLog(cfgMissingText(cfg),'bad');return false;}wLog(silent?'自动保存中…':'保存中…');weatherSaveInFlight=true;try{var j=await fetchJsonRetry('/weather_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)},3,500);if(j.ok){if(!opts.noReload)await loadWeather();wLog(silent?'已自动保存。':'设置已保存。','ok');return true;}wLog('保存失败','bad');return false;}catch(e){wLog('请求失败: '+e,'bad');return false;}finally{weatherSaveInFlight=false;}}
+async function loadWeather(){try{weatherHydrating=true;const j=await fetchJsonRetry('/weather_config');loadedProvider=j.provider||'open_meteo';weatherApiKeyConfigured=!!j.api_key_set;document.getElementById('wEnabled').checked=!!j.enabled;document.getElementById('wLabel').textContent=j.enabled?'已开启':'已关闭';document.getElementById('wProvider').value=loadedProvider;document.getElementById('wCity').value=j.city_name||'';document.getElementById('wRefresh').value=String(j.refresh_min?30:0);document.getElementById('wApiKey').value='';document.getElementById('wApiKey').placeholder=weatherApiKeyConfigured?'已保存，留空不修改':'和风天气 API Key';document.getElementById('wApiKeyClear').checked=false;document.getElementById('wApiHost').value=j.api_host||'';document.getElementById('wLocation').value=j.location||'';applyProviderUI(false);const st=document.getElementById('w_status');if(j.enabled&&((loadedProvider==='qweather'&&j.location&&j.api_host&&weatherApiKeyConfigured)||(loadedProvider!=='qweather'&&j.city_name))){st.textContent='运行中';st.className='v ok';}else if(j.enabled){st.textContent='等待配置';st.className='v warn';}else{st.textContent='已关闭';st.className='v warn';}const wd=document.getElementById('w_data');if(j.has_data){wd.textContent=j.temp+'°C '+(j.text||'天气')+' ('+(j.update_time||'--')+')';wd.className='v';}else{wd.textContent='暂无数据';wd.className='v warn';}document.getElementById('w_source').textContent=providerLabel(loadedProvider);const geo=document.getElementById('w_geo');const geoLabel=document.getElementById('wGeoLabel');if(geoLabel)geoLabel.textContent=loadedProvider==='qweather'?'Host/Location':'定位';geo.textContent=weatherGeoText(j,loadedProvider);geo.className=weatherGeoReady(j,loadedProvider)?'v':'v warn';wLog('设置已加载。');}catch(e){wLog('加载失败: '+e,'bad');}finally{weatherHydrating=false;}}
+async function saveWeather(opts){opts=opts||{};var silent=opts.silent===true;var cfg=collectWeatherCfg();if(!cfgReady(cfg)){if(cfg.provider==='qweather')openWeatherMore();if(!silent)wLog(cfgMissingText(cfg),'bad');return false;}wLog(silent?'自动保存中…':'保存中…');weatherSaveInFlight=true;try{var j=await fetchJsonRetry('/weather_config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)},3,500);if(j.ok){if(!opts.noReload)await loadWeather();wLog(silent?'已自动保存。':'设置已保存。','ok');return true;}wLog('保存失败','bad');return false;}catch(e){wLog('请求失败: '+e,'bad');return false;}finally{weatherSaveInFlight=false;}}
 async function showWeather(){wLog('正在获取天气并渲染…墨水屏刷新需要一点时间');var ctrl=new AbortController();var t=setTimeout(function(){ctrl.abort();},120000);try{const r=await fetch('/weather_show',epdFetchOpts({method:'POST',signal:ctrl.signal}));const j=await r.json();if(j.ok){wLog('天气已显示在墨水屏上。','ok');await loadWeather();return true;}wLog('获取天气失败，请检查当前天气源配置和网络。','bad');return false;}catch(e){wLog('请求失败: '+(e.name==='AbortError'?'超时，墨水屏可能仍在刷新':e),'bad');return false;}finally{clearTimeout(t);}}
-async function queryWeather(){var cfg=collectWeatherCfg();cfg.enabled=true;if(!cfgReady(cfg)){wLog(cfgMissingText(cfg),'bad');return;}document.getElementById('wEnabled').checked=true;document.getElementById('wLabel').textContent='已开启';var ok=await saveWeather({silent:true,noReload:true});if(ok)await showWeather();}
+async function queryWeather(){var cfg=collectWeatherCfg();cfg.enabled=true;if(!cfgReady(cfg)){if(cfg.provider==='qweather')openWeatherMore();wLog(cfgMissingText(cfg),'bad');return;}document.getElementById('wEnabled').checked=true;document.getElementById('wLabel').textContent='已开启';var ok=await saveWeather({silent:true,noReload:true});if(ok)await showWeather();}
 (function(){['wEnabled','wProvider','wCity','wRefresh','wApiKey','wApiKeyClear','wApiHost','wLocation'].forEach(function(id){var el=document.getElementById(id);if(!el)return;var ev=(el.tagName==='SELECT'||el.type==='checkbox')?'change':'input';el.addEventListener(ev,function(){if(id==='wEnabled')document.getElementById('wLabel').textContent=el.checked?'已开启':'已关闭';if(id==='wProvider')applyProviderUI(true);scheduleWeatherAutoSave();});});})();
 loadWeather();
 </script>
@@ -172,5 +178,6 @@ loadWeather();
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

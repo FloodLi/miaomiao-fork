@@ -1600,6 +1600,25 @@ body.config-page{
 .config-page #auth .actions{margin-top:2px}
 .config-page #auth .actions .btn{min-width:70px;min-height:44px}
 .config-page #auth .actions .btn.sm{min-width:60px;min-height:42px;border-radius:999px}
+.config-page .ui-color-panel{margin-top:16px;padding:14px;border:1px solid var(--line,#eadde3);border-radius:8px;background:rgba(255,255,255,.52)}
+.config-page .ui-color-panel[hidden]{display:none!important}
+.config-page #experimentalRefreshTestPanel[hidden]{display:none!important}
+.config-page .ui-color-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.config-page .ui-color-head strong{display:block;font-size:14px;color:var(--t1,#2d2428)}
+.config-page .ui-color-head span{display:block;margin-top:3px;font-size:12px;color:var(--t2,#8b7882)}
+.config-page .ui-color-swatches{display:flex;gap:4px;flex:0 0 auto;padding:4px;border:1px solid var(--line,#eadde3);border-radius:8px;background:#fff}
+.config-page .ui-color-swatches i{display:block;width:16px;height:16px;border:1px solid rgba(0,0,0,.28);border-radius:3px}
+.config-page .ui-color-swatches .sw-white{background:#fff}.config-page .ui-color-swatches .sw-black{background:#111}
+.config-page .ui-color-swatches .sw-red{background:#d93131}.config-page .ui-color-swatches .sw-yellow{background:#f0c92f}
+.config-page .ui-color-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px 10px}
+.config-page .ui-color-grid label{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;min-width:0;font-size:12px;font-weight:800;color:var(--t2,#8b7882)}
+.config-page .ui-color-grid select{min-width:0;width:100%;height:38px;padding:0 30px 0 10px;font-size:13px}
+.config-page .ui-color-actions{margin-top:12px}
+.config-page .label-with-info,
+.config-page .ui-color-title-row,
+.config-page .heading-with-info,
+.config-page .switch-title-with-info{display:inline-flex;align-items:center;gap:4px;min-width:0}
+.config-page .heading-with-info{margin:0}
 .config-page #auth #authLog{
   margin-top:0;
   min-height:58px;
@@ -1617,6 +1636,15 @@ body.config-page{
 @media(max-width:700px){
   .config-page #auth .form-grid{grid-template-columns:1fr}
   .config-page #auth .actions .btn{flex:1 1 120px}
+  .config-page .ui-color-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .config-page .ui-color-grid label{grid-template-columns:72px minmax(0,1fr)}
+  .config-page .ui-color-actions .btn{min-height:44px;flex:1 1 132px}
+}
+@media(max-width:390px){
+  .config-page .ui-color-head{align-items:flex-start}
+  .config-page .ui-color-head span{max-width:210px}
+  .config-page .ui-color-grid{grid-template-columns:1fr}
+  .config-page .ui-color-grid label{grid-template-columns:76px minmax(0,1fr)}
 }
 </style>
 <style id="unified-shell-v2">
@@ -1689,7 +1717,7 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
   body.page-config .section-head,body.page-config .side-head{padding:15px 14px 9px!important}
   body.page-config .section-body,body.page-config .side-body{padding:0 14px 15px!important}
   body.page-config input:not([type=checkbox]):not([type=radio]):not([type=range]),body.page-config select,body.page-config textarea{width:100%;max-width:none!important;min-height:44px;font-size:16px!important}
-  body.page-config .btn,body.page-config label.btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 13px!important;font-size:14px!important;touch-action:manipulation}
+  body.page-config .btn,body.page-config label.btn{min-height:44px!important;display:inline-flex;align-items:center;justify-content:center;padding:0 13px!important;font-size:14px!important;touch-action:manipulation}
   body.page-config .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   body.page-config .actions .btn{width:100%;min-width:0}
   body.page-config .side-col>.side-panel:first-child .side-head{padding:13px 14px 6px!important}
@@ -1859,7 +1887,7 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
             </div>
             <div class="form-grid">
               <div class="field-group">
-                <label>屏幕型号</label>
+                <label class="label-with-info"><span>屏幕型号</span><button type="button" class="info-dot" aria-label="查看屏幕型号说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="必须与实际屏幕控制器、分辨率和颜色通道一致。选错可能出现空白、偏色或刷新超时；保存后需要断电重启。"></button></label>
                 <select id="pnPanel">
                   <optgroup label="1.3 - 3.7 寸">
                     <option value="25" hidden>1.3 寸 | 黑白红 | SSD / ATC Peghook | 144×200 | 实验</option>
@@ -1867,10 +1895,13 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                     <option value="15" hidden>2.2 寸 | 黑白红 | SSD1619 / ATC-Solum | 160×296 | 实验</option>
                     <option value="16" hidden>2.6 寸 | 黑白红 | SSD1619 / ATC-Solum | 184×360 | 实验</option>
                     <option value="17">2.9 寸 | 黑白红 | SSD1619 / HINK-E029A14-A1 | 128×296</option>
+                    <option value="47">2.13 寸 | 黑白 | SSD16xx | 128×250 | 实验</option>
                     <option value="18" hidden>2.9 寸 | 黑白红 | UC8151 / ATC-Solum | 168×384 | 实验</option>
+                    <option value="45">3.7 寸 | 黑白 | UC8253 / GDEY037T03 | 416×240 | 实验</option>
                     <option value="43">3.7 寸 | 六色 | E6 | 792×528 | 实验</option>
                   </optgroup>
                   <optgroup label="4.2 - 4.3 寸">
+                    <option value="8">4.26 寸 | 黑白 | P426010-MF1-B / 微雪 | 800×480 | 实验（仅全刷）</option>
                     <option value="35">4.2 寸 | 黑白 | SSD1619A | 400×300 | 参考</option>
                     <option value="40" hidden>4.2 寸 | 黑白 | SSD1683 | 400×300 | 实验</option>
                     <option value="26">4.2 寸 | 黑白 | UC8176 / 威峰 WFH0420CZ35 | 400×300 | 实验</option>
@@ -1884,7 +1915,7 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                     <option value="19" hidden>4.3 寸 | 黑白红 | UC 系列 / ATC-Solum | 152×522 | 实验</option>
                   </optgroup>
                   <optgroup label="5.83 - 7.5 寸">
-                    <option value="30" hidden>5.83 寸 | 黑白 | UC8159 | 600×448 | 实验</option>
+                    <option value="30">5.83 寸 | 黑白 | 视峰 EI0583T5PCZ / UC8159 兼容 | 600×448 | 实验（仅全刷）</option>
                     <option value="1">5.83 寸 | 黑白红 | UC8179 | 648×480</option>
                     <option value="10">5.83 寸 | 黑白红 | 微雪 B V2 | 648×480 | 已验证</option>
                     <option value="21" hidden>5.85 寸 | 黑白 | 双 SSD / ATC-Solum | 792×272 | 实验</option>
@@ -1893,8 +1924,10 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                     <option value="23" hidden>7.4 寸 | 黑白红 | UC8179 / ATC-Solum | 800×480 | 实验</option>
                     <option value="28" hidden>7.5 寸 | 黑白 | UC8179 | 800×480 | 实验</option>
                     <option value="32" hidden>7.5 寸 | 黑白 | SSD1677 高清 | 880×528 | 实验</option>
+                    <option value="46">7.5 寸 | 黑白 | UC8159 低分辨率 | 640×384 | 实验（仅全刷）</option>
                     <option value="31">7.5 寸 | 黑白红 | UC8159 低分辨率 | 640×384 | 实验</option>
-                    <option value="29" hidden>7.5 寸 | 黑白红 | UC8179 | 800×480 | 实验</option>
+                    <option value="29">7.5 寸 | 黑白红 | UC8179 / GDEY075Z08 | 800×480 高清 | 实验（黑白真局刷）</option>
+                    <option value="48">GD7965 / UC8179 | 7.5 寸 | 黑白 | 800×480 | 实验（仅全刷）</option>
                     <option value="33" hidden>7.5 寸 | 黑白红 | SSD1677 高清 | 880×528 | 实验</option>
                     <option value="34">7.5 寸 | 黑白红黄 | JD79665（红黄独立 2bpp） | 800×480 | 实验</option>
                   </optgroup>
@@ -1906,14 +1939,19 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                 </select>
               </div>
               <div class="field-group">
-                <label>BUSY 空闲电平</label>
+                <label class="label-with-info"><span>BUSY 空闲电平</span><button type="button" class="info-dot" aria-label="查看 BUSY 电平说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="BUSY 是屏幕刷新状态信号。空闲电平选错会导致等待过久或刷新失败；P426010、SSD16xx 2.13寸 128×250 和当前 UC8159 640×384 实机使用空闲低电平；视峰 EI0583T5PCZ 根据参考驱动默认空闲高，可按实际接线显式修改，仍待新日志和实屏确认；GD7965/UC8179 800×480、JD79668 和 GDEY037T03/UC8253 使用空闲高电平。"></button></label>
                 <select id="pnBusy">
                   <option value="0">0 - 空闲低电平</option>
                   <option value="1">1 - 空闲高电平</option>
                 </select>
               </div>
+            </div>
+            <details class="more-settings" id="panelMoreSettings">
+              <summary>更多设置</summary>
+              <div class="more-settings-body">
+                <div class="form-grid">
               <div class="field-group">
-                <label>残影修复轮数</label>
+                <label class="label-with-info"><span>残影修复轮数</span><button type="button" class="info-dot" aria-label="查看残影修复轮数说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="残影越明显可适当增加轮数。轮数越多，修复时间和耗电越高；平时建议使用 1 轮。"></button></label>
                 <select id="repairCycles">
                   <option value="1">1 轮</option>
                   <option value="2">2 轮</option>
@@ -1923,23 +1961,99 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                 </select>
               </div>
               <div class="field-group">
-                <label>残影修复方式</label>
+                <label class="label-with-info"><span>残影修复方式</span><button type="button" class="info-dot" aria-label="查看残影修复方式说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="普通全屏翻转适合日常修复；棋盘格/条纹强度更高；强力组合只建议在残影严重时使用。"></button></label>
                 <select id="repairPattern">
                   <option value="0">普通全屏翻转</option>
                   <option value="1">棋盘格/条纹图案</option>
                   <option value="2">强力组合</option>
                 </select>
               </div>
+                </div>
+            <div class="ui-color-panel" id="uiColorPanel" hidden>
+              <div class="ui-color-head">
+                <div>
+                  <div class="ui-color-title-row"><strong>JD79668 页面配色</strong><button type="button" class="info-dot" aria-label="查看页面配色策略说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="每个页面可独立选择。平衡：普通信息黑、提醒黄、警告红；暖黄：普通强调也用黄；醒目红：普通强调改用红；黑白：不使用红黄。"></button></div>
+                  <span>黑色为正文，黄色用于提醒，红色用于警告。</span>
+                </div>
+                <div class="ui-color-swatches" aria-label="四色预览">
+                  <i class="sw-white" title="白"></i><i class="sw-black" title="黑"></i>
+                  <i class="sw-red" title="红"></i><i class="sw-yellow" title="黄"></i>
+                </div>
+              </div>
+              <div class="ui-color-grid">
+                <label>欢迎页<select data-ui-color-page="welcome"></select></label>
+                <label>时钟<select data-ui-color-page="clock"></select></label>
+                <label>日历<select data-ui-color-page="calendar"></select></label>
+                <label>天气<select data-ui-color-page="weather"></select></label>
+                <label>课程表<select data-ui-color-page="timetable"></select></label>
+                <label>待办<select data-ui-color-page="todo"></select></label>
+                <label>倒计时<select data-ui-color-page="countdown"></select></label>
+                <label>Codex 额度<select data-ui-color-page="codex"></select></label>
+                <label>系统提示<select data-ui-color-page="system"></select></label>
+              </div>
+              <div class="actions ui-color-actions">
+                <button class="btn primary sm" onclick="saveUiColorConfig()">保存页面配色</button>
+                <button class="btn ghost sm" onclick="resetUiColorConfig()">恢复平衡默认</button>
+              </div>
+              <div class="log" id="uiColorLog">加载中…</div>
             </div>
             <div class="actions">
-              <button class="btn primary" onclick="savePanel()">保存并重启</button>
+              <button class="btn ghost sm" id="epdClearBtn" onclick="clearEpdScreen()">屏幕刷白</button>
               <button class="btn ghost sm" onclick="testEpdRed()">清晰度诊断</button>
               <button class="btn ghost sm" onclick="testFont()">字库预览</button>
               <button class="btn ghost sm" id="epdRepairBtn" onclick="repairEpdGhost()">刷屏修复</button>
+            </div>
+            <div class="actions" id="experimentalRefreshTestPanel" hidden>
+              <button class="btn ghost sm" data-refresh-test onclick="testExperimentalRefresh('fast')">测试全屏快刷候选</button>
+              <button class="btn ghost sm" data-refresh-test onclick="testExperimentalRefresh('partial')">测试中央局刷候选</button>
+            </div>
+              </div>
+            </details>
+            <div class="actions">
+              <button class="btn primary" onclick="savePanel()">保存并重启</button>
               <button class="btn ghost sm" id="pnRevertPanelBtn" onclick="revertPanelPending()" style="display:none">改回当前屏幕</button>
               <button class="btn ghost sm" onclick="loadPanel()">刷新</button>
             </div>
             <div class="log" id="pnLog">加载中…</div>
+          </div>
+        </article>
+
+        <article class="section" id="welcome">
+          <div class="section-head">
+            <div class="section-title">
+              <span class="section-icon"><svg viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M5.6 5.6l2.1 2.1"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M16.3 7.7l2.1-2.1"/><path d="M8 17h8"/><path d="M9 21h6"/><path d="M8 13a4 4 0 1 1 8 0c0 1.7-1 2.5-2 3.5H10C9 15.5 8 14.7 8 13z"/></svg></span>
+              <div>
+                <h2 class="heading-with-info">启动欢迎页<button type="button" class="info-dot" aria-label="查看启动欢迎页说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="该设置对项目支持的所有屏幕生效。正常上电和按键唤醒时先显示欢迎页，再恢复上次页面；慢刷屏也会额外执行一次全刷和约 10 秒停留。"></button></h2>
+                <p>自定义所有屏幕共用的开机标题和欢迎语；保存后下一次正常启动生效。</p>
+              </div>
+            </div>
+            <span class="badge">启动显示</span>
+          </div>
+          <div class="section-body">
+            <label class="switch-row">
+              <span><b>显示欢迎页</b><span id="welcomeEnabledLabel">已开启</span></span>
+              <span class="toggle"><input type="checkbox" id="welcomeEnabled"><span class="sl"></span></span>
+            </label>
+            <details class="more-settings" id="welcomeMoreSettings">
+              <summary>更多设置</summary>
+              <div class="more-settings-body">
+                <div class="form-grid">
+                  <div class="field-group">
+                    <label>欢迎页标题</label>
+                    <input type="text" id="welcomeTitle" maxlength="20" placeholder="喵哎-MiaooAim">
+                  </div>
+                  <div class="field-group">
+                    <label>自定义欢迎语</label>
+                    <input type="text" id="welcomeMessage" maxlength="32" placeholder="例如：今天也要开心阅读">
+                  </div>
+                </div>
+              </div>
+            </details>
+            <div class="actions">
+              <button class="btn primary" onclick="saveWelcomeConfig()">保存欢迎页</button>
+              <button class="btn ghost sm" onclick="loadWelcomeConfig()">刷新</button>
+            </div>
+            <div class="log" id="welcomeLog">加载中…</div>
           </div>
         </article>
 
@@ -1990,7 +2104,7 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
         <section class="side-panel" id="power">
           <div class="side-head">
             <div>
-              <h2>低功耗 / 深度睡眠</h2>
+              <h2 class="heading-with-info">低功耗 / 深度睡眠<button type="button" class="info-dot" aria-label="查看低功耗说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="只有开启睡眠模式后，设备才会在闲置时进入深度睡眠。正常开机期间仍保留 WiFi 和网页后台；定时唤醒时才按当前页面决定是否联网。"></button></h2>
               <p>启用后，设备在闲置超时后自动进入深度睡眠。</p>
             </div>
           </div>
@@ -1999,29 +2113,34 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
               <span><b>睡眠模式</b><span id="pwrLabel">已关闭</span></span>
               <span class="toggle"><input type="checkbox" id="pwrEnabled"><span class="sl"></span></span>
             </label>
-            <div class="field-group">
-              <label>定时唤醒间隔</label>
-              <select id="pwrInterval">
-                <option value="5">5 分钟</option>
-                <option value="10">10 分钟</option>
-                <option value="15">15 分钟</option>
-                <option value="30">30 分钟</option>
-                <option value="60">1 小时</option>
-                <option value="120">2 小时</option>
-                <option value="240">4 小时</option>
-                <option value="480">8 小时</option>
-                <option value="1440">24 小时</option>
-              </select>
-            </div>
-            <div class="field-group">
-              <label>闲置超时</label>
-              <select id="pwrIdle">
-                <option value="60">1 分钟</option>
-                <option value="120">2 分钟</option>
-                <option value="300">5 分钟</option>
-                <option value="600">10 分钟</option>
-              </select>
-            </div>
+            <details class="more-settings" id="powerMoreSettings">
+              <summary>更多设置</summary>
+              <div class="more-settings-body">
+                <div class="field-group">
+                  <label class="label-with-info"><span>定时唤醒间隔</span><button type="button" class="info-dot" aria-label="查看定时唤醒间隔说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="设备进入深度睡眠后，每隔多久自动唤醒并刷新一次当前页面。间隔越短，内容越新，但耗电也越高。"></button></label>
+                  <select id="pwrInterval">
+                    <option value="5">5 分钟</option>
+                    <option value="10">10 分钟</option>
+                    <option value="15">15 分钟</option>
+                    <option value="30">30 分钟</option>
+                    <option value="60">1 小时</option>
+                    <option value="120">2 小时</option>
+                    <option value="240">4 小时</option>
+                    <option value="480">8 小时</option>
+                    <option value="1440">24 小时</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label class="label-with-info"><span>闲置超时</span><button type="button" class="info-dot" aria-label="查看闲置超时说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="睡眠模式开启后，正常开机状态连续多久没有有效操作才进入深度睡眠。网页操作或显示请求会重新计算等待时间。"></button></label>
+                  <select id="pwrIdle">
+                    <option value="60">1 分钟</option>
+                    <option value="120">2 分钟</option>
+                    <option value="300">5 分钟</option>
+                    <option value="600">10 分钟</option>
+                  </select>
+                </div>
+              </div>
+            </details>
             <div class="compact-actions">
               <button class="btn primary" onclick="savePower()">保存设置</button>
               <button class="btn ghost sm" onclick="loadPower()">刷新</button>
@@ -2038,7 +2157,9 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
             </div>
           </div>
           <div class="side-body">
-            <div class="switch-list">
+            <details class="more-settings" id="buttonModesMoreSettings">
+              <summary>更多设置</summary>
+              <div class="more-settings-body switch-list">
               <label class="switch-row"><b>时钟</b><span class="toggle"><input type="checkbox" data-button-mode="0"><span class="sl"></span></span></label>
               <label class="switch-row"><b>日历</b><span class="toggle"><input type="checkbox" data-button-mode="1"><span class="sl"></span></span></label>
               <label class="switch-row"><b>课程表</b><span class="toggle"><input type="checkbox" data-button-mode="2"><span class="sl"></span></span></label>
@@ -2047,7 +2168,8 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
               <label class="switch-row"><b>待办事项</b><span class="toggle"><input type="checkbox" data-button-mode="5"><span class="sl"></span></span></label>
               <label class="switch-row"><b>倒计时</b><span class="toggle"><input type="checkbox" data-button-mode="6"><span class="sl"></span></span></label>
               <label class="switch-row"><b>Codex 额度</b><span class="toggle"><input type="checkbox" data-button-mode="7"><span class="sl"></span></span></label>
-            </div>
+              </div>
+            </details>
             <div class="compact-actions" style="margin-top:12px">
               <button class="btn primary" onclick="saveButtonModes()">保存设置</button>
               <button class="btn ghost sm" onclick="loadButtonModes()">刷新</button>
@@ -2059,7 +2181,7 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
         <section class="side-panel" id="backup">
           <div class="side-head">
             <div>
-              <h2>配置导出/导入</h2>
+              <h2 class="heading-with-info">配置导出/导入<button type="button" class="info-dot" aria-label="查看配置备份说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="备份包含天气、额度和页面等常用配置，可能带有 API 信息，但不包含网页后台访问密码。备份文件请妥善保管。"></button></h2>
               <p>备份常用设置到 JSON，恢复时不会导入访问密码。</p>
             </div>
           </div>
@@ -2078,7 +2200,7 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
         <section class="side-panel" id="ota">
           <div class="side-head">
             <div>
-              <h2>固件升级 OTA</h2>
+              <h2 class="heading-with-info">固件升级 OTA<button type="button" class="info-dot" aria-label="查看 OTA 升级说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="这里只能使用本项目生成的网页 OTA 应用固件，不要选择 16MB 完整烧录包。升级会写入备用应用分区，成功后设备自动重启。"></button></h2>
               <p>上传新固件 .bin 文件，设备将写入备用分区并重启。</p>
             </div>
           </div>
@@ -2162,11 +2284,12 @@ function renderSavedWifi(list){
   setText('st_saved_wifi',saved.length?saved.join('、'):'-');
   const el=document.getElementById('savedWifiList');
   if(!el) return;
+  el.replaceChildren();
   if(!saved.length){
-    el.innerHTML='<span class="wifi-chip empty">暂无</span>';
+    const chip=document.createElement('span');chip.className='wifi-chip empty';chip.textContent='暂无';el.appendChild(chip);
     return;
   }
-  el.innerHTML=saved.map((ssid,i)=>'<span class="wifi-chip">'+(i+1)+'. '+String(ssid).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];})+'</span>').join('');
+  saved.forEach((ssid,i)=>{const chip=document.createElement('span');chip.className='wifi-chip';chip.textContent=(i+1)+'. '+String(ssid);el.appendChild(chip);});
 }
 
 function setMeter(id,pct){
@@ -2210,7 +2333,13 @@ async function loadStatus(silent){
     setText('topStatusIp',j.sta_connected?(j.sta_ip||'已连接'):'192.168.4.1');
     setText('ov_conn',j.sta_connected?'已联网':'AP 模式');
     const mh=j.mdns_host||'epd';
-    document.getElementById('st_mdns').innerHTML='<a href="http://'+mh+'.local/" style="color:var(--ac)">'+mh+'.local</a>';
+    const mdns=document.getElementById('st_mdns');
+    mdns.replaceChildren();
+    if(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(mh)){
+      const link=document.createElement('a');
+      link.href='http://'+mh+'.local/';link.style.color='var(--ac)';link.textContent=mh+'.local';
+      mdns.appendChild(link);
+    }else mdns.textContent=String(mh);
     const bat=document.getElementById('st_battery');
     if(bat){
       if(st.battery_valid){
@@ -2309,16 +2438,18 @@ async function scanWifi(){
     const r=await fetch('/scan',epdFetchOpts());const j=await r.json();
     const list=document.getElementById('apList');
     if(!j.aps||j.aps.length===0){list.innerHTML='<div class="empty">未发现任何 WiFi 热点。</div>';return;}
-    list.innerHTML=j.aps.map((a,i)=>{
+    list.replaceChildren();
+    j.aps.forEach(a=>{
       const bars=signalBars(a.rssi);
-      const barsHtml='<span class="signal">'+[3,6,9,12].map((h,bi)=>`<span style="height:${h}px;${bi<bars?'background:var(--ac)':''}"></span>`).join('')+'</span>';
-      return `<li class="ap-item" onclick="selectAP(this,'${a.ssid.replace(/'/g,"\\'")}')">
-        <span class="ap-lock">${a.auth>0?'🔒':''}</span>
-        <span class="ap-ssid">${a.ssid}</span>
-        ${barsHtml}
-        <span class="ap-rssi">${a.rssi} dBm</span>
-      </li>`;
-    }).join('');
+      const item=document.createElement('li');item.className='ap-item';
+      item.addEventListener('click',()=>selectAP(item,String(a.ssid||'')));
+      const lock=document.createElement('span');lock.className='ap-lock';lock.textContent=a.auth>0?'🔒':'';
+      const ssid=document.createElement('span');ssid.className='ap-ssid';ssid.textContent=String(a.ssid||'');
+      const signal=document.createElement('span');signal.className='signal';
+      [3,6,9,12].forEach((h,bi)=>{const bar=document.createElement('span');bar.style.height=h+'px';if(bi<bars)bar.style.background='var(--ac)';signal.appendChild(bar);});
+      const rssi=document.createElement('span');rssi.className='ap-rssi';rssi.textContent=String(a.rssi)+' dBm';
+      item.append(lock,ssid,signal,rssi);list.appendChild(item);
+    });
     document.getElementById('scanHint').textContent='发现 '+j.aps.length+' 个热点';
   }catch(e){
     document.getElementById('apList').innerHTML='<div class="empty bad">扫描失败</div>';
@@ -2454,6 +2585,85 @@ function uploadOTA(){
 function pnLog(s,cls){const el=document.getElementById('pnLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
 let pnActivePanel=0;
 let pnActiveBusy=0;
+let pnPendingPanel=0;
+
+const uiColorProfiles=[
+  ['balanced','平衡'],['warm','暖黄'],['vivid','醒目红'],['mono','黑白']
+];
+
+function uiColorLog(s,cls){
+  const el=document.getElementById('uiColorLog');
+  if(!el)return;
+  el.className='log'+(cls?' '+cls:'');el.textContent=s;
+}
+
+function initUiColorSelects(){
+  document.querySelectorAll('[data-ui-color-page]').forEach(function(el){
+    if(el.options.length)return;
+    uiColorProfiles.forEach(function(p){
+      var o=document.createElement('option');o.value=p[0];o.textContent=p[1];el.appendChild(o);
+    });
+  });
+}
+
+function updateUiColorVisibility(){
+  const panel=document.getElementById('uiColorPanel');
+  if(!panel)return;
+  const selected=normalizePanelId(document.getElementById('pnPanel').value);
+  const visible=pnActivePanel===37||pnPendingPanel===37||selected===37;
+  panel.hidden=!visible;
+  if(visible)loadUiColorConfig();
+  const refreshTest=document.getElementById('experimentalRefreshTestPanel');
+  if(refreshTest)refreshTest.hidden=pnActivePanel!==46&&pnActivePanel!==47&&pnActivePanel!==48;
+}
+
+function applyPanelBusyDefault(){
+  const selected=normalizePanelId(document.getElementById('pnPanel').value);
+  if(selected===8||selected===46||selected===47)document.getElementById('pnBusy').value='0';
+  else if(selected===29||selected===30||selected===48)document.getElementById('pnBusy').value='1';
+  updateUiColorVisibility();
+}
+
+async function loadUiColorConfig(){
+  const panel=document.getElementById('uiColorPanel');
+  if(!panel||panel.hidden)return;
+  initUiColorSelects();
+  try{
+    const r=await fetch('/ui_color_config',epdFetchOpts());
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    Object.keys(j.profiles||{}).forEach(function(key){
+      const el=document.querySelector('[data-ui-color-page="'+key+'"]');
+      if(el)el.value=j.profiles[key];
+    });
+    uiColorLog(j.applicable?'配色已生效，下一次切换或刷新页面即可看到变化。':'已保存预设；JD79668 重启生效后将使用这些配色。','ok');
+  }catch(e){uiColorLog('配色加载失败: '+e,'bad');}
+}
+
+async function saveUiColorConfig(){
+  const profiles={};
+  document.querySelectorAll('[data-ui-color-page]').forEach(function(el){
+    profiles[el.dataset.uiColorPage]=el.value;
+  });
+  uiColorLog('保存中…');
+  try{
+    const r=await fetch('/ui_color_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profiles:profiles})}));
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    await r.json();
+    uiColorLog('已保存，下一次切换或刷新页面时生效。','ok');
+  }catch(e){uiColorLog('配色保存失败: '+e,'bad');}
+}
+
+async function resetUiColorConfig(){
+  if(!confirm('恢复九个页面的平衡配色？'))return;
+  uiColorLog('正在恢复…');
+  try{
+    const r=await fetch('/ui_color_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:'{"reset":true}'}));
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    await r.json();
+    await loadUiColorConfig();
+  }catch(e){uiColorLog('恢复失败: '+e,'bad');}
+}
 
 function normalizePanelId(panel){
   return Number(panel)===39 ? 38 : Number(panel);
@@ -2473,18 +2683,20 @@ async function loadPanel(){
     const active=normalizePanelId(activeRaw);
     const pendingBusy=(j.pending_busy_idle!==undefined)?j.pending_busy_idle:j.busy_idle;
     pnActivePanel=active;
+    pnPendingPanel=pending;
     pnActiveBusy=j.busy_idle;
     document.getElementById('pnPanel').value=pending;
     document.getElementById('pnBusy').value=(pendingBusy===1)?'1':'0';
     const revertBtn=document.getElementById('pnRevertPanelBtn');
     if(revertBtn) revertBtn.style.display=j.reboot_required?'':'none';
     document.getElementById('pn_current').textContent=panelNames[active]||'未知';
-    document.getElementById('pn_res').textContent=j.width+'×'+j.height+(j.has_red?' (BW+R)':' (BW)');
+    document.getElementById('pn_res').textContent=j.width+'×'+j.height+(j.has_yellow?' (BW+R+Y)':(j.has_red?' (BW+R)':' (BW)'));
     document.getElementById('pn_busy_current').textContent='当前 '+j.busy_idle+' / 待生效 '+pendingBusy;
     setText('topStatusPanel',j.width+'×'+j.height);
     setText('ov_panel',j.width+'×'+j.height);
     if(j.reboot_required) pnLog('注意：下次重启会切到 '+(panelNames[pending]||pending)+'，BUSY='+pendingBusy+'；当前仍在运行 '+(panelNames[active]||active)+'。如果这是误选，请点“改回当前屏幕”。','bad');
     else pnLog('已加载当前屏幕配置。');
+    updateUiColorVisibility();
   }catch(e){
     pnLog('加载失败: '+e,'bad');
   }
@@ -2493,13 +2705,24 @@ async function loadPanel(){
 async function savePanel(){
   const panel=normalizePanelId(document.getElementById('pnPanel').value);
   const busy_idle=parseInt(document.getElementById('pnBusy').value);
-  if(!confirm('确定保存屏幕型号和 BUSY 空闲电平？保存后需要断电重启设备才能生效。')) return;
+  if(!confirm('确定保存屏幕型号和 BUSY 空闲电平？保存成功后设备会自动重启。')) return;
   pnLog('保存中…');
   try{
     const r=await fetch('/panel_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({panel,busy_idle})}));
     const j=await r.json();
     if(j.ok){
-      pnLog('已保存！请断电重启设备使新屏幕配置生效。（'+panelNames[panel]+'，BUSY='+busy_idle+'）','ok');
+      if(j.reboot_scheduled){
+        pnLog('已保存！设备将在约 2 秒后自动重启，切换到 '+(panelNames[panel]||panel)+'。（BUSY='+busy_idle+'）','ok');
+        document.getElementById('pnPanel').value=panel;
+        document.getElementById('pnBusy').value=String(busy_idle);
+        setTimeout(function(){ location.reload(); },4500);
+        return;
+      }
+      if(j.reboot_required){
+        pnLog('屏幕配置已保存，但自动重启任务启动失败。请手动重启设备使配置生效。','bad');
+        return;
+      }
+      pnLog('设置已保存，无需重启。（'+panelNames[panel]+'，BUSY='+busy_idle+'）','ok');
       document.getElementById('pnPanel').value=panel;
       document.getElementById('pnBusy').value=String(busy_idle);
       await loadPanel();
@@ -2524,14 +2747,63 @@ async function revertPanelPending(){
 }
 
 async function testEpdRed(){
-  if(!confirm('将刷出一张清晰度诊断图，用来观察四角、边缘、中心细线和红色通道。继续？')) return;
+  const fourColor=pnActivePanel===37;
+  const prompt=fourColor?'将刷出 JD79668 四色诊断图，用来检查黑、白、红、黄、细线和颜色覆盖。继续？':'将刷出一张清晰度诊断图，用来观察四角、边缘、中心细线和红色通道。继续？';
+  if(!confirm(prompt)) return;
   pnLog('正在显示清晰度诊断图…请等待屏幕刷新完成。');
   try{
     const r=await fetch('/epd_test',epdFetchOpts({method:'POST'}));
     const j=await r.json();
-    if(j.ok) pnLog('清晰度诊断图已显示：请对比四角、边缘和中心的 1-8px 线条、棋盘格、黑块和红色块。拍照后可以判断是边缘驱动力/波形问题还是屏体状态问题。','ok');
+    if(j.ok) pnLog(fourColor?'四色诊断图已显示：请检查黄色是否误成红色、四色文字和细线是否完整，以及红→黄→黑→白覆盖区是否清除了旧颜色。':'清晰度诊断图已显示：请对比四角、边缘和中心的 1-8px 线条、棋盘格、黑块和红色块。拍照后可以判断是边缘驱动力/波形问题还是屏体状态问题。','ok');
     else pnLog('诊断失败','bad');
   }catch(e){pnLog('请求失败: '+e,'bad');}
+}
+
+async function clearEpdScreen(){
+  if(!confirm('将执行一次全屏刷新，把当前画面全部刷成白色。后续显示请求会覆盖白屏。继续？'))return;
+  const btn=document.getElementById('epdClearBtn');
+  const oldText=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='刷白中…';}
+  pnLog('正在把屏幕刷成白色，请等待全屏刷新完成…','warn');
+  try{
+    const r=await fetch('/epd_test?mode=clear',epdFetchOpts({method:'POST'}));
+    const text=await r.text();
+    let j={};try{j=JSON.parse(text);}catch(_){j={msg:text};}
+    if(!r.ok||!j.ok)throw new Error(j.error||j.msg||('HTTP '+r.status));
+    pnLog('屏幕已刷成白色。下一次手动显示页面或图片时会覆盖当前白屏。','ok');
+  }catch(e){
+    pnLog('屏幕刷白失败：'+e.message,'bad');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=oldText;}
+  }
+}
+
+async function testExperimentalRefresh(mode){
+  if(pnActivePanel!==46&&pnActivePanel!==47&&pnActivePanel!==48){pnLog('当前屏幕没有隔离的刷新候选测试。','bad');return;}
+  const isPartial=mode==='partial';
+  const name=isPartial?'中央局刷候选':'全屏快刷候选';
+  const isZjy=pnActivePanel===47;
+  const isGd7965=pnActivePanel===48;
+  const detail=isPartial
+    ?(isZjy?'第二次只写入中央 64×80 区域。':(isGd7965?'第二次只写入中央 400×180 区域。':'第二次只写入中央 320×144 区域。'))
+    :'第二次仍写满全屏，用于比较连续刷新耗时。';
+  const waveform=isZjy
+    ?'候选采用 2.13 寸 SSD16xx OTP 快刷命令。'
+    :(isGd7965?'候选采用 GDEW075T7/GD7965 兼容的寄存器快刷 LUT；当前屏体仍需实机确认。':'当前没有专用快刷/局刷 LUT。');
+  if(!confirm('将先执行一次全刷基线，再执行'+name+'。'+detail+waveform+' 请在屏幕旁观察闪烁范围和残影。继续？'))return;
+  const buttons=document.querySelectorAll('[data-refresh-test]');
+  buttons.forEach(function(button){button.disabled=true;});
+  pnLog('正在执行 '+name+'：先全刷基线，再运行候选刷新，请观察屏幕…');
+  try{
+    const r=await fetch('/epd_test?mode='+encodeURIComponent(mode),epdFetchOpts({method:'POST'}));
+    const text=await r.text();
+    let j={};try{j=JSON.parse(text);}catch(_){j={msg:text};}
+    if(!r.ok||!j.ok)throw new Error(j.error||j.msg||('HTTP '+r.status));
+    const rect=(j.rect||[]).join('×');
+    const busy=(j.baseline_busy_ok&&j.candidate_busy_ok)?'BUSY 正常':'BUSY 有超时/回退';
+    pnLog(name+'完成：全刷基线 '+(j.baseline_ms/1000).toFixed(1)+' 秒，候选 '+(j.candidate_ms/1000).toFixed(1)+' 秒，区域 '+rect+'，'+busy+'。请记录实际闪烁范围、残影和是否完整更新。','ok');
+  }catch(e){pnLog(name+'失败：'+e.message+'。测试已结束，下一次显示会重新完整初始化。','bad');}
+  finally{buttons.forEach(function(button){button.disabled=false;});}
 }
 
 async function testFont(){
@@ -2582,8 +2854,19 @@ async function repairEpdGhost(){
 window.loadPanel=loadPanel;
 window.savePanel=savePanel;
 window.revertPanelPending=revertPanelPending;
+window.clearEpdScreen=clearEpdScreen;
 window.testEpdRed=testEpdRed;
+window.testExperimentalRefresh=testExperimentalRefresh;
 window.repairEpdGhost=repairEpdGhost;
+window.loadUiColorConfig=loadUiColorConfig;
+window.saveUiColorConfig=saveUiColorConfig;
+window.resetUiColorConfig=resetUiColorConfig;
+
+(function(){
+  var panel=document.getElementById('pnPanel');
+  if(panel)panel.addEventListener('change',applyPanelBusyDefault);
+  initUiColorSelects();
+})();
 
 (function(){
   ['wEnabled','wApiKey','wApiHost','wLocation','wCity','wRefresh'].forEach(function(id){
@@ -2614,7 +2897,35 @@ window.repairEpdGhost=repairEpdGhost;
   if(cw) cw.addEventListener('change',function(){ syncOtherSectionsFromDevice('cwk'); });
 })();
 
-function authLog(m,t){document.getElementById('authLog').innerHTML='<span class="'+(t||'')+'">'+ m+'</span>';}
+function welcomeLog(s,cls){var el=document.getElementById('welcomeLog');el.className='log'+(cls?' '+cls:'');el.textContent=s;}
+async function loadWelcomeConfig(){
+  try{
+    var r=await fetch('/welcome_config',epdFetchOpts());
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var j=await r.json();
+    document.getElementById('welcomeEnabled').checked=!!j.enabled;
+    document.getElementById('welcomeEnabledLabel').textContent=j.enabled?'已开启':'已关闭';
+    document.getElementById('welcomeTitle').value=j.title||'';
+    document.getElementById('welcomeMessage').value=j.message||'';
+    welcomeLog(j.enabled?'已加载；欢迎页会在所有屏幕上显示。':'已加载；所有屏幕都会跳过欢迎页。');
+  }catch(e){welcomeLog('加载失败: '+e,'bad');}
+}
+async function saveWelcomeConfig(){
+  var cfg={enabled:document.getElementById('welcomeEnabled').checked,
+    title:document.getElementById('welcomeTitle').value.trim(),
+    message:document.getElementById('welcomeMessage').value.trim()};
+  welcomeLog('保存中…');
+  try{
+    var r=await fetch('/welcome_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    await r.json();
+    welcomeLog('已保存，下一次正常启动生效。','ok');
+    await loadWelcomeConfig();
+  }catch(e){welcomeLog('保存失败: '+e,'bad');}
+}
+(function(){var el=document.getElementById('welcomeEnabled');if(el)el.addEventListener('change',function(){document.getElementById('welcomeEnabledLabel').textContent=el.checked?'已开启':'已关闭';});})();
+
+function authLog(m,t){const el=document.getElementById('authLog');el.className='log'+(t?' '+t:'');el.textContent=m;}
 async function loadAuth(){
   try{const r=await fetch('/auth_config',epdFetchOpts());const j=await r.json();
     document.getElementById('authUser').value=j.user||'';
@@ -2700,7 +3011,7 @@ async function saveButtonModes(){
   document.querySelectorAll('[data-button-mode]').forEach(function(el){
     if(el.checked)mask|=1<<parseInt(el.dataset.buttonMode,10);
   });
-  if(!mask){buttonModeLog('请至少选择一个页面。','bad');return;}
+  if(!mask){var d=document.getElementById('buttonModesMoreSettings');if(window.epdExpandMoreSettings)window.epdExpandMoreSettings(d);else if(d)d.open=true;buttonModeLog('请至少选择一个页面。','bad');return;}
   buttonModeLog('保存中…');
   try{
     var r=await fetch('/button_modes',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mask:mask})}));
@@ -2716,8 +3027,8 @@ function bkLog(s,cls){var el=document.getElementById('bkLog');el.className='log'
 async function exportConfig(){
   bkLog('正在收集所有配置…');
   try{
-    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/button_modes'];
-    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','button_modes'];
+    var endpoints=['/weather_config','/codex_quota_config','/clock_config','/msg_config','/slideshow','/timetable.json','/todo.json','/countdown_config','/power_config','/button_modes','/ui_color_config','/welcome_config'];
+    var names=['weather','codex_quota','clock','message','slideshow','timetable','todo','countdown','power','button_modes','ui_color','welcome'];
     var backup={_version:1,_date:new Date().toISOString()};
     for(var i=0;i<endpoints.length;i++){
       try{var r=await fetch(endpoints[i],epdFetchOpts({}));backup[names[i]]=await r.json();}catch(e){backup[names[i]]=null;}
@@ -2740,7 +3051,7 @@ async function importConfig(input){
     var backup=JSON.parse(text);
     if(!backup._version){bkLog('文件格式无效，请使用导出的备份文件','bad');return;}
     var map={weather:'/weather_config',codex_quota:'/codex_quota_config',clock:'/clock_config',message:'/msg_config',slideshow:'/slideshow',
-      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',button_modes:'/button_modes'};
+      timetable:'/timetable',todo:'/todo',countdown:'/countdown_config',power:'/power_config',button_modes:'/button_modes',ui_color:'/ui_color_config',welcome:'/welcome_config'};
     var ok=0,fail=0;
     for(var key in map){
       if(!backup[key])continue;
@@ -2759,6 +3070,7 @@ async function importConfig(input){
 async function initConfigPage(){
   await loadStatus(true);
   await loadPanel();
+  await loadWelcomeConfig();
   await loadVersion();
   await loadAuth();
   await loadPower();
@@ -2778,5 +3090,6 @@ setInterval(function(){ loadStatus(true); }, 30000);
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

@@ -1,7 +1,50 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
 #include "epd.h"
+
+#define DISPLAY_POLICY_KEEP_MODE (-2)
+
+typedef struct {
+    uint32_t epoch;
+    int target_mode;
+    int previous_mode;
+    bool previous_manual;
+    bool previous_content_owner;
+} display_request_token_t;
+
+typedef enum {
+    DISPLAY_RESULT_PENDING,
+    DISPLAY_RESULT_OK,
+    DISPLAY_RESULT_CANCELED,
+    DISPLAY_RESULT_ERROR,
+} display_result_state_t;
+
+typedef struct {
+    display_result_state_t state;
+    esp_err_t error;
+} display_result_t;
+
+/* Results retain the last 32 transactions. Expired/unknown epochs return
+ * ERROR/ESP_ERR_NOT_FOUND, never another request's outcome. */
+display_result_t display_policy_get_result(unsigned epoch);
+display_result_t display_policy_wait_result(unsigned epoch);
+bool display_policy_manual_content_owns_display(void);
+bool display_policy_request_pending(void);
+
+/* Start the next request only if the observed epoch is still current and
+ * complete. Unlike background acquisition this may replace committed content. */
+bool display_policy_try_begin_request(int target_mode, unsigned expected_epoch,
+                                      epd_refresh_mode_t mode,
+                                      display_request_token_t *out);
+
+/* Compare the caller's pre-work snapshot and acquire under the policy lock.
+ * Background callers must never adopt a newly observed user epoch. */
+bool display_policy_try_begin_background(int target_mode, unsigned expected_epoch,
+                                          epd_refresh_mode_t mode,
+                                          display_request_token_t *out);
 
 /**
  * 墨水屏显示仲裁：幻灯片 / 时钟 / 天气全页 / 留言与日历等「手动全屏」互斥，
@@ -37,6 +80,13 @@ bool display_policy_weather_may_render_full_page(void);
 /** 留言板、日历、HTTP 看图、上传预览等全屏内容展示中 */
 void display_policy_set_manual_screen_active(bool active);
 bool display_policy_manual_screen_active(void);
+display_request_token_t display_policy_begin_request(int target_mode,
+                                                     epd_refresh_mode_t mode);
+bool display_policy_finish_request(const display_request_token_t *token,
+                                   esp_err_t result,
+                                   bool manual_after_success);
+bool display_policy_finish_epoch(unsigned epoch, esp_err_t result,
+                                 bool manual_after_success);
 unsigned display_policy_begin_manual_display(void);
 unsigned display_policy_begin_manual_display_mode(epd_refresh_mode_t mode);
 bool display_policy_epoch_is_current(unsigned epoch);

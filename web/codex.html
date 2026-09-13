@@ -103,10 +103,15 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
   <div class="card"><div class="hd"><div class="title" style="font-size:16px">Codex 额度</div><div class="sub">通过中转站额度接口获取余额/用量，并在墨水屏上显示。</div></div><div class="bd">
     <div class="kv"><div class="k">额度状态</div><div class="v" id="cq_status">-</div><div class="k">最新数据</div><div class="v" id="cq_data">-</div></div>
     <div class="form-row"><label>启用额度页</label><label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px"><span class="toggle"><input type="checkbox" id="cqEnabled"><span class="sl"></span></span><span id="cqLabel" style="font-size:13px">已关闭</span></label></div>
-    <div class="form-row"><label>额度 API URL</label><input type="text" id="cqApiUrl" placeholder="https://dash.classicriver.cn/v1/usage"></div>
-    <div class="form-row"><label>API Key</label><input type="password" id="cqApiKey" placeholder="sk-..."></div>
-    <div class="form-row"><label>显示单位</label><input type="text" id="cqUnit" placeholder="USD / 元 / credits"></div>
-    <div class="form-row"><label>自动刷新</label><select id="cqRefresh"><option value="0">仅手动刷新</option><option value="5">自动：每 5 分钟</option><option value="15">自动：每 15 分钟</option><option value="30">自动：每 30 分钟</option></select></div>
+    <div class="form-row"><label class="help-label"><span>额度 API URL</span><button type="button" class="info-dot" aria-label="查看额度 API 地址说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="填写中转站提供的额度查询接口地址。只填站点根地址时，页面会自动补成 /v1/usage；接口格式不兼容时会查询失败。"></button></label><input type="text" id="cqApiUrl" placeholder="https://dash.classicriver.cn/v1/usage"></div>
+    <div class="form-row"><label class="help-label"><span>API Key</span><button type="button" class="info-dot" aria-label="查看额度 API Key 说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="用于访问额度接口。已保存 Key 后留空表示不修改；请勿截图、公开或提交到源码仓库。"></button></label><input type="password" id="cqApiKey" placeholder="sk-..."></div>
+    <details class="more-settings" id="codexMoreSettings">
+      <summary>更多设置</summary>
+      <div class="more-settings-body">
+        <div class="form-row"><label>显示单位</label><input type="text" id="cqUnit" placeholder="USD / 元 / credits"></div>
+        <div class="form-row"><label class="help-label"><span>自动刷新</span><button type="button" class="info-dot" aria-label="查看额度自动刷新说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="设备停留在额度模式时按所选间隔查询。低功耗定时唤醒会按设备唤醒策略联网，频率过高会增加网络请求和耗电。"></button></label><select id="cqRefresh"><option value="0">仅手动刷新</option><option value="5">自动：每 5 分钟</option><option value="15">自动：每 15 分钟</option><option value="30">自动：每 30 分钟</option></select></div>
+      </div>
+    </details>
     <div class="row"><button class="btn" onclick="saveCodexQuota()">保存设置</button><button class="btn ghost sm" onclick="showCodexQuota()">立即显示额度</button><button class="btn ghost sm" onclick="loadCodexQuota()">刷新</button></div><div class="log" id="cqLog">加载中…</div>
   </div></div>
   <footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">源码仓库</a></footer>
@@ -135,5 +140,6 @@ loadCodexQuota();
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

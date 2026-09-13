@@ -78,6 +78,8 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req))
         return ESP_OK;
+    if (!http_require_mode_available(req, DISPLAY_MODE_CALENDAR))
+        return ESP_OK;
 
     int year = 0, month = 0;
     if (req->content_len > 0) {
@@ -96,11 +98,15 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
         }
     }
 
-    unsigned epoch = display_policy_begin_manual_display();
+    display_request_token_t token = display_policy_begin_request(
+        DISPLAY_MODE_CALENDAR, EPD_REFRESH_FULL);
+    unsigned epoch = token.epoch;
     esp_err_t err = calendar_display_show(year, month);
     if (err == ESP_OK)
-        calendar_display_wait_render_idle();
-    if (err == ESP_OK) {
+        err = calendar_display_wait_render_result();
+    if (!display_policy_finish_request(&token, err, true)) {
+        err = ESP_ERR_INVALID_STATE;
+    } else if (err == ESP_OK) {
         if (display_policy_epoch_is_current(epoch)) {
             button_set_current_mode(DISPLAY_MODE_CALENDAR);
             power_mgr_save_mode(DISPLAY_MODE_CALENDAR);
@@ -171,10 +177,11 @@ esp_err_t feat_countdown_config_post(httpd_req_t *req)
     char *buf = malloc((size_t)total + 1);
     if (!buf) { httpd_resp_send_500(req); return ESP_OK; }
 
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_CONFIG_MS);
     int received = 0;
     while (received < total) {
-        int got = httpd_req_recv(req, buf + received, (size_t)(total - received));
-        if (got == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        int got = http_receive_chunk(req, &receive, buf + received, (size_t)(total - received));
         if (got <= 0) { free(buf); return ESP_FAIL; }
         received += got;
     }
@@ -225,9 +232,10 @@ esp_err_t feat_countdown_show_post(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req)) return ESP_OK;
-    display_policy_begin_manual_display();
-    esp_err_t err = countdown_show();
-    if (err == ESP_OK) {
+    if (!http_require_mode_available(req, DISPLAY_MODE_COUNTDOWN)) return ESP_OK;
+    unsigned epoch = 0;
+    esp_err_t err = display_mode_show_request(DISPLAY_MODE_COUNTDOWN, &epoch);
+    if (err == ESP_OK && display_policy_epoch_is_current(epoch)) {
         button_set_current_mode(DISPLAY_MODE_COUNTDOWN);
         power_mgr_save_mode(DISPLAY_MODE_COUNTDOWN);
     }

@@ -177,7 +177,7 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
     <div class="hd">
       <div style="display:flex;gap:14px;align-items:center">
         <label class="toggle"><input type="checkbox" id="chkEnabled"><span class="track"></span></label>
-        <span class="sub">启用倒计时功能</span>
+        <span class="sub help-heading">启用倒计时功能<button type="button" class="info-dot" aria-label="查看倒计时功能说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="总开关和条目右侧开关都开启时，该条目才会显示。最多保存 3 条；目标日期按设备本地日期计算剩余天数。"></button></span>
       </div>
       <span class="sub" id="cntHint"></span>
     </div>
@@ -325,5 +325,6 @@ loadConfig();
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>

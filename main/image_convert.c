@@ -214,6 +214,93 @@ static const uint8_t bayer8[8][8] = {
     { 168, 104, 152,  84, 164, 100, 148,  88 },
 };
 
+#define BW_LUMA_THRESHOLD_DEFAULT 96
+#define IMAGE_QUANT_GAIN_ONE_Q8   256
+
+typedef struct {
+    uint8_t bw_luma_threshold;
+    uint16_t fs_error_gain_q8;
+    uint16_t red_gain_q8;
+    uint16_t yellow_gain_q8;
+    uint8_t neutral_chroma_threshold; /* Zero disables the neutral-tone path. */
+    uint8_t neutral_luma_threshold;
+    uint16_t neutral_fs_error_gain_q8;
+} image_quant_profile_t;
+
+static const image_quant_profile_t s_quant_default = {
+    .bw_luma_threshold = BW_LUMA_THRESHOLD_DEFAULT,
+    .fs_error_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+    .red_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+    .yellow_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+};
+
+static const image_quant_profile_t s_quant_jd79665_75 = {
+    .bw_luma_threshold = 104,
+    .fs_error_gain_q8 = 192, /* 75%: preserve edges and reduce coarse grain. */
+    .red_gain_q8 = 280,      /* 1.09x */
+    .yellow_gain_q8 = 288,   /* 1.13x */
+    .neutral_chroma_threshold = 20,
+    .neutral_luma_threshold = 128,
+    .neutral_fs_error_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+};
+
+static const image_quant_profile_t s_quant_jd79668_42 = {
+    .bw_luma_threshold = 104,
+    .fs_error_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+    .red_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+    .yellow_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+    .neutral_chroma_threshold = 20,
+    .neutral_luma_threshold = 128,
+    .neutral_fs_error_gain_q8 = IMAGE_QUANT_GAIN_ONE_Q8,
+};
+
+static const image_quant_profile_t *image_quant_profile_current(void)
+{
+    switch (epd_get_panel()) {
+    case EPD_PANEL_REF_JD79665_75_BWRY: return &s_quant_jd79665_75;
+    case EPD_PANEL_REF_JD79668_42_BWRY: return &s_quant_jd79668_42;
+    default: return &s_quant_default;
+    }
+}
+
+static bool image_quant_source_is_neutral(uint8_t r, uint8_t g, uint8_t b,
+                                           const image_quant_profile_t *quant)
+{
+    int max_c = r; if (g > max_c) max_c = g; if (b > max_c) max_c = b;
+    int min_c = r; if (g < min_c) min_c = g; if (b < min_c) min_c = b;
+    return quant->neutral_chroma_threshold != 0 &&
+           max_c - min_c <= quant->neutral_chroma_threshold;
+}
+
+static int image_quant_apply_gain(int strength, uint16_t gain_q8)
+{
+    int adjusted = (strength * (int)gain_q8 + 128) / 256;
+    return adjusted > 255 ? 255 : adjusted;
+}
+
+static void image_quant_log_profile(const char *format,
+                                    const image_quant_profile_t *profile)
+{
+    const char *panel_name;
+    if (profile == &s_quant_jd79665_75)
+        panel_name = "JD79665 ID34 7.5";
+    else if (profile == &s_quant_jd79668_42)
+        panel_name = "JD79668 ID37 4.2";
+    else
+        return;
+    ESP_LOGI(TAG,
+             "%s image profile for %s: chromatic bw=%u fs=%u/256 red=%u/256 yellow=%u/256; "
+             "simulated gray (B/W dots, not native grayscale): source chroma<=%u neutral bw=%u "
+             "serpentine fs=%u/256, exact B/W preserved; neutral Bayer unbiased",
+             panel_name, format, (unsigned)profile->bw_luma_threshold,
+             (unsigned)profile->fs_error_gain_q8,
+             (unsigned)profile->red_gain_q8,
+             (unsigned)profile->yellow_gain_q8,
+             (unsigned)profile->neutral_chroma_threshold,
+             (unsigned)profile->neutral_luma_threshold,
+             (unsigned)profile->neutral_fs_error_gain_q8);
+}
+
 static bool red_orange_pixel(uint8_t r, uint8_t g, uint8_t b)
 {
     int ri = (int)r, gi = (int)g, bi = (int)b;
@@ -353,7 +440,8 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
                                       int x, int y, int w,
                                       uint8_t r, uint8_t g, uint8_t b,
                                       bool has_red, bool has_yellow,
-                                      bool has_blue, bool has_green)
+                                      bool has_blue, bool has_green,
+                                      const image_quant_profile_t *profile)
 {
     if (has_blue && has_green) {
         e6_37_nearest_pixel(black, red, yellow, blue, green,
@@ -371,14 +459,32 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
     int chroma = max_c - min_c;
     uint8_t lum = (uint8_t)((ri * 77u + gi * 150u + bi * 29u) >> 8);
 
-    int yellow_strength = has_yellow ? yellow_ink_strength(r, g, b) : 0;
+    const image_quant_profile_t *quant = profile ? profile : &s_quant_default;
+    if (quant->neutral_chroma_threshold) {
+        black[bp] |= bit;
+        if (has_red) red[bp] &= (uint8_t)~bit;
+        if (has_yellow) yellow[bp] &= (uint8_t)~bit;
+        if (image_quant_source_is_neutral(r, g, b, quant)) {
+            /* Center each Bayer bin; no legacy -40 or chromatic BW bias. */
+            if (lum < (int)threshold + 2)
+                black[bp] &= (uint8_t)~bit;
+            return;
+        }
+    }
+    int yellow_strength = has_yellow
+                        ? image_quant_apply_gain(yellow_ink_strength(r, g, b),
+                                                 quant->yellow_gain_q8)
+                        : 0;
     if (yellow_strength > (int)threshold) {
         yellow[bp] |= bit;
         black[bp] |= bit;
         return;
     }
 
-    int red_strength = has_red ? red_ink_strength(r, g, b) : 0;
+    int red_strength = has_red
+                     ? image_quant_apply_gain(red_ink_strength(r, g, b),
+                                              quant->red_gain_q8)
+                     : 0;
     if (red_strength > (int)threshold) {
         red[bp] |= bit;
         black[bp] |= bit;
@@ -405,6 +511,8 @@ static inline void dither_pixel_bayer(uint8_t *black, uint8_t *red,
     }
 
     int bw_threshold = (threshold > 40) ? ((int)threshold - 40) : 0;
+    bw_threshold += (int)quant->bw_luma_threshold - BW_LUMA_THRESHOLD_DEFAULT;
+    if (bw_threshold > 255) bw_threshold = 255;
     if ((int)lum < bw_threshold)
         black[bp] &= ~bit;
 }
@@ -590,6 +698,16 @@ static bool bw_or_color_quantized_pixel(uint8_t r, uint8_t g, uint8_t b, uint8_t
                                         bool has_blue, bool has_green,
                                         prequantized_color_t *out)
 {
+    const image_quant_profile_t *quant = image_quant_profile_current();
+    if (quant->neutral_chroma_threshold) {
+        uint8_t sr = r, sg = g, sb = b;
+        rgba_on_white(&sr, &sg, &sb, a);
+        /* Preserve encoded B/W dots, but do not mistake gray tones for dots. */
+        if (image_quant_source_is_neutral(sr, sg, sb, quant) &&
+            !((sr == 0 && sg == 0 && sb == 0) ||
+              (sr == 255 && sg == 255 && sb == 255)))
+            return false;
+    }
     prequantized_color_t cls = prequantized_pixel_class(r, g, b, a,
                                                         has_red, has_yellow,
                                                         has_blue, has_green);
@@ -1070,6 +1188,10 @@ static esp_err_t png_threshold_bw_passthrough(const unsigned char *rgba,
                                               unsigned pw, unsigned ph,
                                               const char *out_path)
 {
+    /* Exact prequantized PNGs have already been packed before this heuristic. */
+    if (image_quant_profile_current()->neutral_chroma_threshold)
+        return ESP_ERR_NOT_SUPPORTED;
+
     const int EW = epd_width();
     const int EH = epd_height();
     const int EC = EW * EH / 8;
@@ -1185,28 +1307,47 @@ static bool fs_red_eligible(uint8_t r, uint8_t g, uint8_t b)
     return hue_sat || r_led;
 }
 
-#define BW_LUMA_THRESHOLD 96
-
 static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
                           uint8_t *blk, uint8_t *red_plane,
                           uint8_t *yellow_plane,
-                          int y, int w, bool has_red, bool has_yellow)
+                          int y, int w, bool has_red, bool has_yellow,
+                          const image_quant_profile_t *profile)
 {
+    const image_quant_profile_t *quant = profile ? profile : &s_quant_default;
     int rb = w >> 3;
-    for (int x = 0; x < w; x++) {
+    bool tone_profile = quant->neutral_chroma_threshold != 0;
+    int direction = tone_profile && (y & 1) ? -1 : 1;
+    /* Q4 residuals retain low-level tones without changing legacy error units. */
+    int error_scale = tone_profile ? 16 : 1;
+    for (int x = direction > 0 ? 0 : w - 1; x >= 0 && x < w; x += direction) {
         int ex = x + 1;
         uint8_t r0 = rgb[x * 3];
         uint8_t g0 = rgb[x * 3 + 1];
         uint8_t b0 = rgb[x * 3 + 2];
         int lum = ((int)r0 * 77 + (int)g0 * 150 + (int)b0 * 29) >> 8;
-        int yv = lum + ec[ex].r;
+        bool neutral = image_quant_source_is_neutral(r0, g0, b0, quant);
+        int yv = lum * error_scale + ec[ex].r;
         if (yv < 0) yv = 0;
-        if (yv > 255) yv = 255;
+        if (yv > 255 * error_scale) yv = 255 * error_scale;
 
         size_t bp = (size_t)y * rb + (x >> 3);
         uint8_t bit = 0x80u >> (x & 7);
 
-        int yellow_strength = has_yellow ? yellow_ink_strength(r0, g0, b0) : 0;
+        if (tone_profile) {
+            blk[bp] |= bit;
+            if (has_red) red_plane[bp] &= (uint8_t)~bit;
+            if (has_yellow) yellow_plane[bp] &= (uint8_t)~bit;
+            /* Absorb incoming error at exact source text/borders, avoiding halos. */
+            if (r0 == g0 && g0 == b0 && (r0 == 0 || r0 == 255)) {
+                if (r0 == 0) blk[bp] &= (uint8_t)~bit;
+                continue;
+            }
+        }
+
+        int yellow_strength = has_yellow && !neutral
+                            ? image_quant_apply_gain(yellow_ink_strength(r0, g0, b0),
+                                                     quant->yellow_gain_q8)
+                            : 0;
         if (yellow_strength > 0 &&
             yellow_strength > (int)bayer8[y & 7][x & 7]) {
             yellow_plane[bp] |= bit;
@@ -1214,7 +1355,10 @@ static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
             continue;
         }
 
-        int red_strength = has_red ? red_ink_strength(r0, g0, b0) : 0;
+        int red_strength = has_red && !neutral
+                         ? image_quant_apply_gain(red_ink_strength(r0, g0, b0),
+                                                  quant->red_gain_q8)
+                         : 0;
         if (red_strength > 0 && (red_orange_pixel(r0, g0, b0) || fs_red_eligible(r0, g0, b0)) &&
             red_strength > (int)bayer8[y & 7][x & 7]) {
             red_plane[bp] |= bit;
@@ -1222,8 +1366,9 @@ static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
             continue;
         }
 
-        int out = 255;
-        if (yv < BW_LUMA_THRESHOLD) {
+        int out = 255 * error_scale;
+        int bw_threshold = neutral ? quant->neutral_luma_threshold : quant->bw_luma_threshold;
+        if (yv < bw_threshold * error_scale) {
             blk[bp] &= ~bit;
             if (has_red)
                 red_plane[bp] &= ~bit;
@@ -1232,11 +1377,12 @@ static void fs_dither_row(const uint8_t *rgb, fs_err_t *ec, fs_err_t *en,
             out = 0;
         }
 
-        int16_t err = (int16_t)(yv - out);
-        ec[ex + 1].r += err * 7 / 16;
-        en[ex - 1].r += err * 3 / 16;
+        int gain = neutral ? quant->neutral_fs_error_gain_q8 : quant->fs_error_gain_q8;
+        int16_t err = (int16_t)(((yv - out) * gain) / 256);
+        ec[ex + direction].r += err * 7 / 16;
+        en[ex - direction].r += err * 3 / 16;
         en[ex].r     += err * 5 / 16;
-        en[ex + 1].r += err * 1 / 16;
+        en[ex + direction].r += err * 1 / 16;
     }
 }
 
@@ -1312,6 +1458,7 @@ typedef struct {
     bool      has_yellow;
     bool      has_blue;
     bool      has_green;
+    const image_quant_profile_t *quant_profile;
 } epd_out_t;
 
 typedef struct {
@@ -1378,7 +1525,8 @@ static UINT jpeg_outfunc_bayer(JDEC *jd, void *bitmap, JRECT *rect)
                                        o->blue, o->green, ex, ey,
                                        o->w, r, g, b,
                                        o->has_red, o->has_yellow,
-                                       o->has_blue, o->has_green);
+                                       o->has_blue, o->has_green,
+                                       o->quant_profile);
         }
     }
     return 1;
@@ -1428,7 +1576,8 @@ static void fs_flush_band(epd_out_t *o)
         } else {
             fs_dither_row(o->rgb_row, o->ec, o->en,
                           o->black, o->red, o->yellow,
-                          ey, o->w, o->has_red, o->has_yellow);
+                          ey, o->w, o->has_red, o->has_yellow,
+                          o->quant_profile);
         }
         fs_err_t *tmp = o->ec; o->ec = o->en; o->en = tmp;
     }
@@ -1545,6 +1694,8 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
     bool has_yellow = epd_has_yellow();
     bool has_blue = image_panel_is_e6_6c();
     bool has_green = image_panel_is_e6_6c();
+    const image_quant_profile_t *quant_profile = image_quant_profile_current();
+    image_quant_log_profile("JPEG", quant_profile);
     uint8_t *black = (uint8_t *)img_alloc(EC, "jpeg black plane");
     uint8_t *red   = has_red ? (uint8_t *)img_alloc(EC, "jpeg red plane") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "jpeg yellow plane") : NULL;
@@ -1587,7 +1738,8 @@ static esp_err_t jpeg_decode_common(jpeg_ctx_t *ctx, UINT (*infunc)(JDEC*,BYTE*,
         .has_red = has_red,
         .has_yellow = has_yellow,
         .has_blue = has_blue,
-        .has_green = has_green
+        .has_green = has_green,
+        .quant_profile = quant_profile
     };
 
     /* Try color-first Floyd-Steinberg; fall back to Bayer if OOM */
@@ -1711,6 +1863,8 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
     bool has_yellow = epd_has_yellow();
     bool has_blue = image_panel_is_e6_6c();
     bool has_green = image_panel_is_e6_6c();
+    const image_quant_profile_t *quant_profile = image_quant_profile_current();
+    image_quant_log_profile("PNG", quant_profile);
     uint8_t *black = (uint8_t *)img_alloc(EC, "png black plane");
     uint8_t *red   = has_red ? (uint8_t *)img_alloc(EC, "png red plane") : NULL;
     uint8_t *yellow = has_yellow ? (uint8_t *)img_alloc(EC, "png yellow plane") : NULL;
@@ -1774,7 +1928,7 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
                                     black, red, yellow, blue, green, ey, EW);
             } else {
                 fs_dither_row(rgb_row, ec, en, black, red, yellow, ey, EW,
-                              has_red, has_yellow);
+                              has_red, has_yellow, quant_profile);
             }
             fs_err_t *tmp = ec; ec = en; en = tmp;
         }
@@ -1804,7 +1958,8 @@ static esp_err_t png_decode_to_epd(unsigned char *rgba, unsigned pw, unsigned ph
                 }
                 dither_pixel_bayer(black, red, yellow, blue, green,
                                    ex, ey, EW, r, g, b,
-                                   has_red, has_yellow, has_blue, has_green);
+                                   has_red, has_yellow, has_blue, has_green,
+                                   quant_profile);
             }
         }
     }
@@ -2020,6 +2175,8 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
     bool has_yellow_bmp = epd_has_yellow();
     bool has_blue_bmp = image_panel_is_e6_6c();
     bool has_green_bmp = image_panel_is_e6_6c();
+    const image_quant_profile_t *quant_profile = image_quant_profile_current();
+    image_quant_log_profile("BMP", quant_profile);
     uint8_t *black = (uint8_t *)img_alloc(EC, "bmp black plane");
     uint8_t *red   = has_red_bmp ? (uint8_t *)img_alloc(EC, "bmp red plane") : NULL;
     uint8_t *yellow = has_yellow_bmp ? (uint8_t *)img_alloc(EC, "bmp yellow plane") : NULL;
@@ -2098,7 +2255,7 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                                     black, red, yellow, blue, green, ey, EW);
             } else {
                 fs_dither_row(rgb_row, ec_b, en_b, black, red, yellow, ey, EW,
-                              has_red_bmp, has_yellow_bmp);
+                              has_red_bmp, has_yellow_bmp, quant_profile);
             }
             fs_err_t *tmp = ec_b; ec_b = en_b; en_b = tmp;
         }
@@ -2137,7 +2294,8 @@ static esp_err_t bmp_decode_core(FILE *fp, const uint8_t *mem, size_t mem_len,
                 dither_pixel_bayer(black, red, yellow, blue, green,
                                    ex, ey, EW, r, g, b,
                                    has_red_bmp, has_yellow_bmp,
-                                   has_blue_bmp, has_green_bmp);
+                                   has_blue_bmp, has_green_bmp,
+                                   quant_profile);
             }
         }
     }

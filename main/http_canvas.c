@@ -145,25 +145,25 @@ esp_err_t canvas_layout_post(httpd_req_t *req)
     }
 
     char chunk[1024];
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_UPLOAD_MS);
     int total = 0;
     while (total < len) {
         int want = len - total;
         if (want > (int)sizeof(chunk)) want = sizeof(chunk);
-        int r = httpd_req_recv(req, chunk, want);
-        if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        int r = http_receive_chunk(req, &receive, chunk, want);
         if (r <= 0) {
             fclose(tmp);
             unlink(TMP_PATH);
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
             xSemaphoreGive(lock);
-            return ESP_OK;
+            return ESP_FAIL;
         }
         if ((int)fwrite(chunk, 1, (size_t)r, tmp) != r) {
+            http_receive_abort(req);
             fclose(tmp);
             unlink(TMP_PATH);
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "写盘失败");
             xSemaphoreGive(lock);
-            return ESP_OK;
+            return ESP_FAIL;
         }
         total += r;
     }
@@ -200,29 +200,22 @@ esp_err_t canvas_show_post(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
     if (!http_require_epd_ready(req)) return ESP_OK;
+    if (!http_require_service_available(req, APP_SERVICE_CANVAS)) return ESP_OK;
 
-    /* 消耗请求体 */
-    char tmp[64];
-    int remain = req->content_len;
-    while (remain > 0) {
-        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
-        int r = httpd_req_recv(req, tmp, to_recv);
-        if (r <= 0) break;
-        remain -= r;
-    }
+    if (!http_receive_drain(req)) return ESP_OK;
 
-    unsigned epoch = display_policy_display_epoch();
+    unsigned epoch = 0;
     esp_err_t err = canvas_board_show_queued(&epoch);
-    if (err == ESP_OK)
-        canvas_board_wait_idle();
-    if (err == ESP_OK && !display_policy_epoch_is_current(epoch))
-        err = ESP_ERR_INVALID_STATE;
+    display_result_t result = {DISPLAY_RESULT_ERROR, err};
+    if (epoch)
+        result = canvas_board_wait_result(epoch);
     /* 不切换循环模式，留言板属于手动触发内容 */
 
-    char json[96];
-    snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s}",
-             err == ESP_OK ? "true" : "false",
-             err == ESP_ERR_INVALID_STATE ? "true" : "false");
+    char json[160];
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"canceled\":%s,\"error\":\"%s\"}",
+             result.state == DISPLAY_RESULT_OK ? "true" : "false",
+             result.state == DISPLAY_RESULT_CANCELED ? "true" : "false",
+             result.state == DISPLAY_RESULT_ERROR ? esp_err_to_name(result.error) : "");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
@@ -292,11 +285,12 @@ esp_err_t canvas_icon_upload_post(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "内存不足");
         return ESP_OK;
     }
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_UPLOAD_MS);
     int total = 0;
     while (total < len) {
-        int r = httpd_req_recv(req, (char *)buf + total, len - total);
-        if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
-        if (r <= 0) { free(buf); httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败"); return ESP_OK; }
+        int r = http_receive_chunk(req, &receive, (char *)buf + total, len - total);
+        if (r <= 0) { free(buf); return ESP_FAIL; }
         total += r;
     }
 
@@ -407,12 +401,15 @@ esp_err_t canvas_image_upload_post(httpd_req_t *req)
         return ESP_OK;
     }
 
-    /* 直接流式写入文件 */
+    /* Receive completely before replacing an existing image. */
     struct stat _st;
     if (stat(CANVAS_IMAGES_DIR, &_st) != 0) mkdir(CANVAS_IMAGES_DIR, 0755);
     char path[128];
     snprintf(path, sizeof(path), "%s/%s.bin", CANVAS_IMAGES_DIR, name);
-    FILE *f = fopen(path, "wb");
+    char tmp_path[160], bak_path[160];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    snprintf(bak_path, sizeof(bak_path), "%s.bak", path);
+    FILE *f = fopen(tmp_path, "wb");
     if (!f) {
         ESP_LOGE(TAG, "fopen(%s) failed: errno=%d", path, errno);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "创建文件失败");
@@ -420,23 +417,29 @@ esp_err_t canvas_image_upload_post(httpd_req_t *req)
     }
 
     char chunk[512];
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_UPLOAD_MS);
     int remaining = content_len, total = 0;
     bool ok = true;
     while (remaining > 0) {
         int to_read = remaining < (int)sizeof(chunk) ? remaining : (int)sizeof(chunk);
-        int r = httpd_req_recv(req, chunk, to_read);
-        if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        int r = http_receive_chunk(req, &receive, chunk, to_read);
         if (r <= 0) { ok = false; break; }
         if ((int)fwrite(chunk, 1, r, f) != r) { ok = false; break; }
         total += r;
         remaining -= r;
     }
-    fclose(f);
+    if (fclose(f) != 0) ok = false;
 
     if (!ok || total != content_len) {
-        remove(path);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, ok ? "写入不完整" : "接收失败");
-        return ESP_OK;
+        http_receive_abort(req);
+        remove(tmp_path);
+        return ESP_FAIL;
+    }
+    if (!http_receive_commit_file(tmp_path, path, bak_path)) {
+        remove(tmp_path);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "image commit failed");
+        return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Canvas image saved: %s (%d bytes)", name, total);
     httpd_resp_set_type(req, "application/json");
@@ -456,14 +459,7 @@ esp_err_t canvas_image_delete_post(httpd_req_t *req)
         return ESP_OK;
     }
     if (!canvas_validate_name(req, name)) return ESP_OK;
-    char tmp[64];
-    int remain = req->content_len;
-    while (remain > 0) {
-        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
-        int r = httpd_req_recv(req, tmp, to_recv);
-        if (r <= 0) break;
-        remain -= r;
-    }
+    if (!http_receive_drain(req)) return ESP_FAIL;
 
     esp_err_t err = canvas_board_delete_image(name);
     if (err == ESP_ERR_INVALID_ARG) {
@@ -490,14 +486,7 @@ esp_err_t canvas_icon_delete_post(httpd_req_t *req)
     if (!canvas_validate_name(req, name)) return ESP_OK;
 
     /* 消耗请求体 */
-    char tmp[64];
-    int remain = req->content_len;
-    while (remain > 0) {
-        int to_recv = remain < (int)sizeof(tmp) ? remain : (int)sizeof(tmp);
-        int r = httpd_req_recv(req, tmp, to_recv);
-        if (r <= 0) break;
-        remain -= r;
-    }
+    if (!http_receive_drain(req)) return ESP_FAIL;
 
     esp_err_t err = canvas_board_delete_user_icon(name);
     if (err == ESP_ERR_INVALID_ARG) {

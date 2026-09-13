@@ -10,6 +10,8 @@
 #include <string.h>
 #include "esp_http_server.h"
 #include "http_app.h"
+#include "http_receive.h"
+#include "service_status.h"
 
 /** Escape a string for safe embedding in a JSON value.
  *  Writes at most dst_len-1 chars + NUL.  Returns dst. */
@@ -63,20 +65,19 @@ static inline bool http_read_request_body(httpd_req_t *req, char *buf, size_t bu
     if (!req || !buf || buf_len == 0)
         return false;
 
-    int len = req->content_len;
-    if (len <= 0 || len >= (int)buf_len) {
+    size_t len = req->content_len;
+    if (len == 0 || len >= buf_len) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                             bad_msg ? bad_msg : "invalid request body");
         return false;
     }
 
-    int total = 0;
+    http_receive_t receive;
+    http_receive_init(&receive, HTTP_RECEIVE_CONFIG_MS);
+    size_t total = 0;
     while (total < len) {
-        int r = httpd_req_recv(req, buf + total, len - total);
+        int r = http_receive_chunk(req, &receive, buf + total, len - total);
         if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT)
-                continue;
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "接收失败");
             return false;
         }
         total += r;
@@ -94,6 +95,8 @@ bool  http_check_basic_auth(httpd_req_t *req);
 bool  http_auth_is_enabled(void);
 void  http_auth_load_from_nvs(void);
 bool  http_require_epd_ready(httpd_req_t *req);
+bool  http_require_mode_available(httpd_req_t *req, int mode);
+bool  http_require_service_available(httpd_req_t *req, app_service_t service);
 int   http_stat_size_or_neg(const char *path);
 bool  http_get_query_param(httpd_req_t *req, const char *key, char *out, size_t out_len);
 
@@ -120,6 +123,10 @@ extern const uint8_t todo_html_start[]      asm("_binary_todo_html_start");
 extern const uint8_t todo_html_end[]        asm("_binary_todo_html_end");
 extern const uint8_t countdown_html_start[] asm("_binary_countdown_html_start");
 extern const uint8_t countdown_html_end[]   asm("_binary_countdown_html_end");
+extern const uint8_t feature_help_js_start[] asm("_binary_feature_help_js_start");
+extern const uint8_t feature_help_js_end[]   asm("_binary_feature_help_js_end");
+extern const uint8_t image_processor_js_start[] asm("_binary_image_processor_js_start");
+extern const uint8_t image_processor_js_end[] asm("_binary_image_processor_js_end");
 extern const uint8_t miaooaim_mark_png_start[] asm("_binary_miaooaim_mark_png_start");
 extern const uint8_t miaooaim_mark_png_end[]   asm("_binary_miaooaim_mark_png_end");
 

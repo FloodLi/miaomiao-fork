@@ -147,7 +147,7 @@ body.page-message .log{margin-top:14px;min-height:40px}
         </div>
         <div class="form-row msg-text-row"><label>留言内容</label><textarea id="msgText" rows="7" maxlength="500" placeholder="在此输入要显示的文字…" style="resize:vertical"></textarea></div>
         <div class="msg-primary-grid">
-          <div class="form-row"><label>字体</label><select id="webFontFamily">
+          <div class="form-row"><label class="help-label"><span>字体</span><button type="button" class="info-dot" aria-label="查看留言字体说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="这里使用当前手机或电脑浏览器已安装的字体渲染成图片，再发送到墨水屏。设备本身不需要安装该字体；本机没有时会自动使用后备字体。"></button></label><select id="webFontFamily">
             <option value="SimSun, STSong, Songti SC, serif">宋体 / 明体</option>
             <option value="NSimSun, SimSun, STSong, serif">新宋体</option>
             <option value="STZhongsong, 华文中宋, SimSun, serif">华文中宋</option>
@@ -165,15 +165,15 @@ body.page-message .log{margin-top:14px;min-height:40px}
             <option value="YouYuan, 幼圆, Microsoft YaHei UI, sans-serif">幼圆</option>
           </select></div>
           <div class="form-row"><label>字号</label><input type="number" id="webFontPx" value="48" min="12" max="180"></div>
-          <div class="form-row"><label>颜色</label><select id="webColor"><option value="black">黑色</option><option value="red">红色</option><option value="yellow">黄色</option><option value="blue">蓝色</option><option value="green">绿色</option></select></div>
+          <div class="form-row"><label class="help-label"><span>颜色</span><button type="button" class="info-dot" aria-label="查看留言颜色说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="可用颜色取决于当前屏幕：黑白屏只保留黑白，三色屏增加红色，四色屏可使用红黄，E6 才支持蓝绿。不可用颜色会按屏幕能力降级。"></button></label><select id="webColor"><option value="black">黑色</option><option value="red">红色</option><option value="yellow">黄色</option><option value="blue">蓝色</option><option value="green">绿色</option></select></div>
         </div>
         <div class="msg-main-actions">
           <button class="btn" id="webShowBtn" onclick="showWebRenderedMsg()">发送到墨水屏</button>
           <button class="btn ghost sm" onclick="renderWebMessage()">刷新预览</button>
         </div>
-        <details class="msg-advanced">
+        <details class="msg-advanced more-settings">
           <summary>更多设置</summary>
-          <div class="msg-advanced-body">
+          <div class="msg-advanced-body more-settings-body">
             <div class="msg-field-grid">
               <div class="form-row"><label>自定义字体名</label><input type="text" id="webCustomFont" placeholder="例如：汉仪尚巍手书、方正清刻本悦宋"></div>
               <div class="form-row"><label>字重</label><select id="webFontWeight"><option value="400">常规</option><option value="600">半粗</option><option value="700">粗体</option><option value="900">特粗</option></select></div>
@@ -183,10 +183,10 @@ body.page-message .log{margin-top:14px;min-height:40px}
               <div class="form-row"><label>垂直位置</label><select id="webVAlign"><option value="center">居中</option><option value="top">靠上</option><option value="bottom">靠下</option></select></div>
               <div class="form-row"><label>X 偏移</label><input type="number" id="msgXOff" value="0" min="-200" max="200"></div>
               <div class="form-row"><label>Y 偏移</label><input type="number" id="msgYOff" value="0" min="-150" max="150"></div>
-              <div class="form-row"><label>抗锯齿阈值</label><input type="range" id="webThreshold" min="80" max="220" value="170"></div>
+              <div class="form-row"><label class="help-label"><span>抗锯齿阈值</span><button type="button" class="info-dot" aria-label="查看文字抗锯齿阈值说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="决定字形边缘保留多少像素，与所选墨色的亮度无关。调高会保留更多边缘、笔画更粗；缺笔画时可适当调高，笔画粘连时调低，并以右侧预览为准。"></button></label><input type="range" id="webThreshold" min="80" max="220" value="170"></div>
             </div>
             <details>
-              <summary>固件字库兼容模式</summary>
+              <summary><span>固件字库兼容模式</span><button type="button" class="info-dot" aria-label="查看固件字库兼容模式说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="直接让设备使用内置或 fontfs 字库绘制文字，适合不依赖浏览器字体的简单留言；通常优先使用上方网页字体渲染，字体选择更多且效果更稳定。"></button></summary>
               <div class="msg-field-grid" style="margin-top:12px">
                 <div class="form-row"><label>固件字号</label><select id="msgFont"><option value="0">1x 标准 (16px)</option><option value="1">2x 中号 (32px)</option><option value="2">3x 大号 (48px)</option><option value="3">4x 超大 (64px)</option><option value="4">5x 巨大 (80px)</option></select></div>
                 <div class="form-row"><label>固件颜色</label><select id="msgColor"><option value="0">黑色</option><option value="1">红色</option><option value="2">黄色</option><option value="3">蓝色</option><option value="4">绿色</option></select></div>
@@ -221,14 +221,35 @@ function syncCanvasSize(){const c=document.getElementById('webMsgCanvas');if(!c)
 function cssFontFamily(){const custom=(document.getElementById('webCustomFont').value||'').trim();if(custom)return '"'+custom.replace(/"/g,'')+'", '+(document.getElementById('webFontFamily').value||'serif');return document.getElementById('webFontFamily').value||'serif';}
 function wrapCanvasText(ctx,text,maxW){const out=[];String(text||'').split(/\n/).forEach(part=>{let line='';for(const ch of part){const next=line+ch;if(ctx.measureText(next).width>maxW&&line){out.push(line);line=ch;}else line=next;}out.push(line);});return out;}
 function webInkColor(mode){if(mode==='yellow'&&epdPanelHasYellow)return [255,232,0];if(epdPanelIsE6){if(mode==='blue')return [20,80,185];if(mode==='green')return [40,150,90];}if(mode==='red'&&epdPanelHasRed)return [196,36,28];return [0,0,0];}
-function webInkCss(mode){const c=webInkColor(mode);return 'rgb('+c[0]+','+c[1]+','+c[2]+')';}
 function webColorNameFromCfg(v){return v==1?'red':v==2?'yellow':v==3?'blue':v==4?'green':'black';}
 function quantizeWebCanvas(c,colorMode,threshold){const ctx=c.getContext('2d');const im=ctx.getImageData(0,0,c.width,c.height);const d=im.data;const ink=webInkColor(colorMode);for(let i=0;i<d.length;i+=4){const a=d[i+3];const gray=(d[i]*30+d[i+1]*59+d[i+2]*11)/100;const on=a>16&&gray<threshold;if(on){d[i]=ink[0];d[i+1]=ink[1];d[i+2]=ink[2];d[i+3]=255;}else{d[i]=d[i+1]=d[i+2]=255;d[i+3]=255;}}ctx.putImageData(im,0,0);}
-function renderWebMessage(){const c=document.getElementById('webMsgCanvas');if(!c)return;syncCanvasSize();const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);const text=document.getElementById('msgText').value||'在此输入要显示的文字…';const px=Math.max(12,Math.min(180,parseInt(document.getElementById('webFontPx').value,10)||48));const lhMul=parseFloat(document.getElementById('webLineHeight').value)||1.18;const lineH=Math.max(px,Math.round(px*lhMul));const margin=Math.max(0,Math.min(120,parseInt(document.getElementById('webMargin').value,10)||20));const align=parseInt(document.getElementById('msgAlign').value,10)||0;const xoff=parseInt(document.getElementById('msgXOff').value,10)||0;const yoff=parseInt(document.getElementById('msgYOff').value,10)||0;const weight=document.getElementById('webFontWeight').value||'400';const colorMode=document.getElementById('webColor').value;ctx.font=weight+' '+px+'px '+cssFontFamily();ctx.textBaseline='top';ctx.fillStyle=webInkCss(colorMode);ctx.textAlign=align===1?'center':'left';const maxW=Math.max(10,c.width-margin*2);const lines=wrapCanvasText(ctx,text,maxW);const totalH=lines.length*lineH;const valign=document.getElementById('webVAlign').value;let y=margin;if(valign==='center')y=Math.round((c.height-totalH)/2);else if(valign==='bottom')y=c.height-margin-totalH;y+=yoff;const x=align===1?Math.round(c.width/2)+xoff:margin+xoff;for(const line of lines){ctx.fillText(line,x,y);y+=lineH;}quantizeWebCanvas(c,colorMode,parseInt(document.getElementById('webThreshold').value,10)||170);}
+function renderWebMessage(){
+  const c=document.getElementById('webMsgCanvas');if(!c)return;
+  syncCanvasSize();const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
+  const text=document.getElementById('msgText').value||'在此输入要显示的文字…';
+  const px=Math.max(12,Math.min(180,parseInt(document.getElementById('webFontPx').value,10)||48));
+  const lhMul=parseFloat(document.getElementById('webLineHeight').value)||1.18;
+  const lineH=Math.max(px,Math.round(px*lhMul));
+  const margin=Math.max(0,Math.min(120,parseInt(document.getElementById('webMargin').value,10)||20));
+  const align=parseInt(document.getElementById('msgAlign').value,10)||0;
+  const xoff=parseInt(document.getElementById('msgXOff').value,10)||0;
+  const yoff=parseInt(document.getElementById('msgYOff').value,10)||0;
+  const weight=document.getElementById('webFontWeight').value||'400';
+  const colorMode=document.getElementById('webColor').value;
+  ctx.font=weight+' '+px+'px '+cssFontFamily();ctx.textBaseline='top';
+  // Threshold glyph coverage in black/white before applying the selected ink.
+  ctx.fillStyle='#000';ctx.textAlign=align===1?'center':'left';
+  const maxW=Math.max(10,c.width-margin*2),lines=wrapCanvasText(ctx,text,maxW),totalH=lines.length*lineH;
+  const valign=document.getElementById('webVAlign').value;
+  let y=margin;if(valign==='center')y=Math.round((c.height-totalH)/2);else if(valign==='bottom')y=c.height-margin-totalH;y+=yoff;
+  const x=align===1?Math.round(c.width/2)+xoff:margin+xoff;
+  for(const line of lines){ctx.fillText(line,x,y);y+=lineH;}
+  quantizeWebCanvas(c,colorMode,parseInt(document.getElementById('webThreshold').value,10)||170);
+}
 function webCanvasBlob(){return new Promise((resolve,reject)=>{renderWebMessage();const c=document.getElementById('webMsgCanvas');c.toBlob(b=>b?resolve(b):reject('preview export failed'),'image/png');});}
 async function showWebRenderedMsg(){const text=document.getElementById('msgText').value;if(!text.trim()){msgLog('请先输入留言内容','bad');return;}const btn=document.getElementById('webShowBtn');if(btn)btn.disabled=true;msgLog('正在用网页字体渲染图片并发送到墨水屏，请稍候…');try{const blob=await webCanvasBlob();const r=await fetch('/msg_image_show',epdFetchOpts({method:'POST',headers:{'Content-Type':'image/png'},body:blob}));const t=await r.text();msgLog(r.ok?'网页字体图片已发送到墨水屏。':'发送失败：'+t,r.ok?'ok':'bad');}catch(e){msgLog('网页字体渲染失败: '+e,'bad');}finally{if(btn)btn.disabled=false;}}
 ['msgText','msgAlign','msgXOff','msgYOff','webFontFamily','webCustomFont','webFontPx','webFontWeight','webLineHeight','webMargin','webVAlign','webColor','webThreshold'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener((el.tagName==='SELECT')?'change':'input',renderWebMessage);});
-async function loadStatusForPreview(){try{const r=await fetch('/status',epdFetchOpts());const j=await r.json();if(j.panel_width&&j.panel_height){epdPanelW=j.panel_width;epdPanelH=j.panel_height;}epdPanelHasRed=!!j.panel_has_red;epdPanelHasYellow=!!j.panel_has_yellow;epdPanelIsE6=epdPanelHasYellow&&epdPanelW===792&&epdPanelH===528;syncCanvasSize();renderWebMessage();}catch(e){syncCanvasSize();renderWebMessage();}}
+async function loadStatusForPreview(){try{const r=await fetch('/status',epdFetchOpts());const j=await r.json();if(j.panel_width&&j.panel_height){epdPanelW=j.panel_width;epdPanelH=j.panel_height;}epdPanelHasRed=!!j.panel_has_red;epdPanelHasYellow=!!j.panel_has_yellow;epdPanelIsE6=epdPanelHasYellow&&Number(j.panel)===43;syncCanvasSize();renderWebMessage();}catch(e){syncCanvasSize();renderWebMessage();}}
 async function loadMsg(){try{const r=await fetch('/msg_config',epdFetchOpts());const j=await r.json();document.getElementById('msgText').value=j.text||'';document.getElementById('msgFont').value=String(j.font_size||0);document.getElementById('msgAlign').value=String(j.align||0);document.getElementById('msgColor').value=String(j.color||0);document.getElementById('webColor').value=webColorNameFromCfg(j.color||0);document.getElementById('msgXOff').value=j.x_offset||0;document.getElementById('msgYOff').value=j.y_offset||0;renderWebMessage();msgLog('设置已加载。');}catch(e){renderWebMessage();msgLog('加载失败: '+e,'bad');}}
 async function saveMsg(){const text=document.getElementById('msgText').value;if(text.length>500){msgLog('文字过长，最多 500 字符','bad');return false;}const cfg={text:text,font_size:parseInt(document.getElementById('msgFont').value),align:parseInt(document.getElementById('msgAlign').value),color:parseInt(document.getElementById('msgColor').value),x_offset:parseInt(document.getElementById('msgXOff').value)||0,y_offset:parseInt(document.getElementById('msgYOff').value)||0};msgLog('保存中…');try{const r=await fetch('/msg_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));const j=await r.json();if(j.ok){msgLog('设置已保存。','ok');await loadMsg();return true;}msgLog('保存失败','bad');}catch(e){msgLog('请求失败: '+e,'bad');}return false;}
 async function showMsg(){const text=document.getElementById('msgText').value;if(!text.trim()){msgLog('请先输入留言内容','bad');return;}if(!(await saveMsg())) return;msgLog('正在渲染…请稍候（约 15 秒刷新）');try{const r=await fetch('/msg_show',epdFetchOpts({method:'POST'}));const j=await r.json();if(j.ok) msgLog('留言已显示在墨水屏上！','ok');else msgLog('显示失败，请确保已输入文字内容。','bad');}catch(e){msgLog('请求失败: '+e,'bad');}}
@@ -244,5 +265,6 @@ loadStatusForPreview().then(loadMsg);
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="feature_help.js"></script>
 </body>
 </html>
