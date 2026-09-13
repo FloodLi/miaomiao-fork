@@ -6,7 +6,7 @@
 [![JLC Hardware](https://img.shields.io/badge/JLCEDA-%E5%98%89%E7%AB%8B%E5%88%9B%E5%BC%80%E6%BA%90%E7%A1%AC%E4%BB%B6-red)](https://oshwhub.com/team_voosogmo/project_fxbcjhaa)
 
 > 一款基于 ESP32-S3 的三色墨水屏智能终端固件与 Web 管理端，支持图片展示、天气、时钟、日历、课程表、待办、倒计时、留言画板、OTA 和低功耗。固件与仓库代号为 `epaper_uploader`，release 固件文件名沿用该代号。<br>
-> **发布版本：v2.3.6**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
+> **发布版本：v3.7**（与根目录 `CMakeLists.txt` 中 `PROJECT_VER` 一致；烧录后请以串口 `App version` 或 `GET /version` 的 JSON 字段 `version` 为准）。文档导航见 [文档索引.md](文档索引.md)。
 > **构建环境**：**ESP-IDF 最低要求 v5.5.1**；同大版本内更高发行版（如 5.5.4）一般可直接使用，若遇兼容问题以 5.5.1 为对照。
 
 ## 一分钟了解项目
@@ -15,7 +15,7 @@
 
 | 项目 | 当前状态 |
 |------|----------|
-| 当前版本 | v2.3.6，源码版本与 `CMakeLists.txt` 的 `PROJECT_VER` 一致 |
+| 当前版本 | v3.7，源码版本与 `CMakeLists.txt` 的 `PROJECT_VER` 一致 |
 | 主控平台 | ESP32-S3，推荐 16MB Flash；N16 / N16R8 均可，PSRAM 可提升图片转换余量 |
 | 主测屏幕 | 4.2" SSD1619 BWR 400×300、5.83" UC8179 / 微雪 BWR B V2 648×480、10.2" SSD1667 BWR 960×640 |
 | 使用方式 | 可直接刷 release 整包，也可用 ESP-IDF v5.5.x 自行编译 |
@@ -42,9 +42,9 @@
 | [嘉立创开源硬件工程](https://oshwhub.com/team_voosogmo/project_fxbcjhaa) | 配套 4.2" SSD1619 PCB、外壳附件与硬件结构 |
 | [文档索引.md](文档索引.md) | 所有用户文档、工程文档、发布文档和支持文档入口 |
 
-## 当前发布状态（v2.3.6 / 2026-08-17）
+## 当前发布状态（v3.7 / 2026-09-13）
 
-v2.3.6 扩展多色面板和天气数据源：新增 E6 3.7 寸六色、JD79665/JD79668/SSD2677 黑白红黄面板路径，补齐对应 BUSY 与启动刷新策略，并支持在 Open-Meteo 和和风天气之间切换。UC8176 4.2 寸黑白实验面板增加带维护性全刷的快刷/局刷。2026-08-13 维护更新恢复欢迎页后的上次模式跳转，并统一优化 12 个 Web 页面在手机端的导航、触控和信息层级。现有 release 固件以已发布源码为准；后续源码或分区变化后，正式发布前需重新构建。历代版本变化统一记录在 [CHANGELOG.md](CHANGELOG.md)。
+v3.7 正式发布多屏图片工作区、按面板能力的色彩处理和浅粉主题适配，修复黄色文字留言、图库显示回执及缺色层绘图降级。同步包含显示事务、BUSY 故障恢复、HTTP 接收时限与配置页注入修复，以及新增面板入口和启动恢复优化。完整烧录包、网页 OTA 包及下载分支使用同次发布产物；分区表和字库保持不变。软件回归和构建已通过，实验面板及未覆盖型号的实屏色差、残影和长期稳定性仍按原标记待验收，不因正式发布改称全型号验证。历代变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ### 交付物
 
@@ -57,7 +57,7 @@ v2.3.6 扩展多色面板和天气数据源：新增 E6 3.7 寸六色、JD79665/
 | 分区表 | factory + 双 OTA + coredump + fontfs + SPIFFS，面向 16MB Flash 固件发布 |
 
 > 首次源码编译会下载开源字体生成 `fontfs`。若日志停在 `fetch_open_fonts.py` 并提示 read timeout，通常是 GitHub 原始文件访问超时；可重试，或把 `LXGW975YuanSC-400W.ttf`、`NotoSansMono-Regular.ttf` 放入 `tools/fonts/noto/` 后重新执行 `idf.py build`。也可设置 `MIAOO_FONT_SOURCE_DIR` 指向本地开源字体缓存目录。
-| 发布包 | `release/` 同时提供 v2.3.6 完整烧录 BIN/ZIP 与网页 OTA 升级 BIN/ZIP，并记录 SHA256 |
+| 发布包 | `release/` 同时提供 v3.7 完整烧录 BIN/ZIP 与网页 OTA 升级 BIN/ZIP，并记录 SHA256 |
 | 文档 | README、使用说明、工程文档、实现说明、字库说明、发布流程、安全支持、公开发布检查清单和更新日志 |
 
 ### 功能范围
@@ -101,7 +101,7 @@ v2.3.6 扩展多色面板和天气数据源：新增 E6 3.7 寸六色、JD79665/
 | fontfs | `0x940000` 起，2.875MB，放固件随附 24/32px 外置字库资源；16px 小字走内置清晰位图 |
 | 用户 SPIFFS | `0xC20000` 起，3.875MB，放图片、画布素材、运行时文件和用户数据 |
 | Web 字体渲染 | 留言/画板页面可调用浏览器本机字体渲染为图片后推屏，不需要把所有字体都塞进固件 |
-| release 固件 | 当前 `release/` 已按 v2.3.6 重新构建完整固件和网页 OTA 固件并记录 SHA256；后续修改源码、分区表或字库后必须重新构建 |
+| release 固件 | 当前 `release/` 已按 v3.7 重新构建完整固件和网页 OTA 固件并记录 SHA256；后续修改源码、分区表或字库后必须重新构建 |
 
 ### 低功耗边界
 
@@ -341,7 +341,7 @@ DoNotChgBin: 勾选
 BAUD: 115200 或 460800
 ```
 
-新板子或配置混乱时可以先点 `ERASE`，再点 `START`；如果不想清空 WiFi、天气、面板等已有配置，不要点 `ERASE`，直接 `START`。更详细的免编译烧录说明见 [release/README.md](release/README.md)。
+完整烧录前先备份配置和图片：整包覆盖 NVS 所在区间，即使不点 `ERASE` 也会清除 WiFi、面板等配置。已有设备的日常升级优先使用网页 OTA；整片 `ERASE` 还会清空用户 SPIFFS 图片区。更详细的说明见 [release/README.md](release/README.md)。
 
 ### 4. 开发者编译与烧录
 
@@ -357,7 +357,7 @@ idf.py set-target esp32s3
 idf.py -p COM3 build flash monitor
 ```
 
-> 将 `COM3` 替换为你电脑上的实际串口号。日常升级和新芯片首次烧录都使用这条命令，不需要先执行 `erase-flash`。
+> 将 `COM3` 替换为你电脑上的实际串口号。这条命令用于首次烧录或完整恢复，会覆盖 NVS 配置；日常保留配置升级请使用网页 OTA。额外执行 `erase-flash` 会清空整片 Flash，包括用户图片。
 
 如果你是从 Gitee 下载 ZIP 后直接编译，或之前在同一目录生成过 `esp32` 的 `sdkconfig`，请先清理并重新设置目标：
 

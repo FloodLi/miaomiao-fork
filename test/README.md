@@ -3,6 +3,8 @@
 本目录存放**主机端单元测试**，用于在不烧录真机的前提下，对固件中**纯逻辑模块**做回归验证。
 测试工程不会修改运行时数据；每个子工程只编译指定生产模块和测试替身。
 
+正式打包检查可独立运行 `python test/release/test_artifacts.py`，使用合成二进制测试版本描述、整包应用偏移、写入范围及ZIP内容校验；真实产物仍须运行 `python tools/check_public_docs.py`。
+
 ## 可靠性回归入口
 
 Windows 已安装 Node.js、Ubuntu WSL、GCC、CMake、Ninja 后，从项目根目录执行：

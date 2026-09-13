@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DIRS = ("main/", "web/", "test/", "tools/", "docs/", "prototypes/")
 PUBLIC_NEW_ROOT = {".gitattributes", "简易使用说明书.md"}
 PRIVATE_DIRS = (".codex/", "下一个AI交接/", "output/", "outputs/", "build/")
+RELEASE_LIMITS = {
+    "release/epaper_uploader_full_16MB.bin": 16 * 1024 * 1024,
+    "release/epaper_uploader_full_16MB.zip": 16 * 1024 * 1024,
+    "release/web_upgrade.bin": 3 * 1024 * 1024,
+    "release/web_upgrade.zip": 3 * 1024 * 1024,
+}
 TEXT_EXT = {".c", ".h", ".js", ".cjs", ".json", ".html", ".md", ".py", ".ps1", ".sh", ".txt", ".toml", ".yml", ".yaml", ".csv"}
 RULES = {
     "private-key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
@@ -38,6 +44,7 @@ def private(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--staged", action="store_true")
+    parser.add_argument("--release", action="store_true", help="Allow only the four fixed official firmware paths within their size limits")
     parser.add_argument("--write-list", help="Write a NUL-separated reviewed pathspec under output/")
     parser.add_argument("--copy-to", help="Create a fresh source-only test checkout under output/")
     args = parser.parse_args()
@@ -63,7 +70,10 @@ def main():
         suffix = PurePosixPath(path).suffix.lower()
         if file.name in {".env", "id_rsa", "id_ed25519"} or suffix in {".key", ".p12", ".pfx"}:
             findings.append({"file": path, "rule": "credential-file"})
-        if len(data) > 1024 * 1024 or suffix in {".bin", ".zip", ".elf", ".map", ".mef"}:
+        release_limit = RELEASE_LIMITS.get(path) if args.release else None
+        if release_limit is not None and (not data or len(data) > release_limit):
+            findings.append({"file": path, "rule": "invalid-release-size", "bytes": len(data)})
+        elif release_limit is None and (len(data) > 1024 * 1024 or suffix in {".bin", ".zip", ".elf", ".map", ".mef"}):
             findings.append({"file": path, "rule": "large-or-generated-file", "bytes": len(data)})
         if suffix in TEXT_EXT:
             for line_no, line in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):

@@ -47,7 +47,7 @@ v2.3.6 增加 E6 六色与 JD79665/JD79668/SSD2677 黑白红黄数据路径，�
 > 项目代号：**epaper_uploader**
 > 硬件平台：ESP32-S3 + SSD1619(4.2" 400×300) / UC8179(5.83" 648×480) 三色墨水屏
 > 技术栈：ESP-IDF（**最低 v5.5.1**）/ C / SPI DMA / WiFi SoftAP / HTTP Server / TJpgDec / LodePNG
-> 固件版本：v2.3.6（`PROJECT_VER`） | 文档版本：v2.3.6-docs | 2026-08-10
+> 固件版本：v3.7（`PROJECT_VER`） | 文档版本：v3.7-docs | 2026-09-13
 
 ---
 

@@ -45,6 +45,7 @@ python -m esptool --chip esp32s3 merge_bin `
 - `0x920000` 是 `coredump` 分区，不需要合并单独镜像。
 - `fontfs.bin` 的地址是 `0x940000`。
 - 用户 SPIFFS 在 `0xC20000`，整包不主动写入用户图片区。
+- 合并 BIN 用填充字节覆盖各输入段之间的空隙，NVS 位于整包连续写入范围内；完整烧录会覆盖配置，不能以未执行整片 `ERASE` 推断 NVS 保留。保留配置升级应使用 app-only 网页 OTA，并事先备份。
 
 ## 生成 ZIP 与校验
 
@@ -100,9 +101,13 @@ https://gitee.com/gxp666111/miaomiao/repository/archive/firmware-download.zip
 
 ```powershell
 python tools/check_public_docs.py
+python test/release/test_artifacts.py
+python tools/check_commit_candidates.py --staged --release
 git diff --check
 git status --short
 ```
+
+候选扫描默认拒绝二进制生成物；正式发版才使用 `--release`，只允许 `release/` 下四个固定 BIN/ZIP 且检查大小上限。该选项不放行其它测试固件、私人文件或构建缓存。暂存必须使用本次确认的文件清单，随后检查暂存差异和上述两项校验。
 
 推荐实机抽检：
 
@@ -110,7 +115,7 @@ git status --short
 - 5.83" 主测屏：天气、时钟、日历、待办、倒计时、欢迎页。
 - OTA：成功升级、失败处理和回滚路径。
 - 低功耗：正常开机保留 AP+STA/HTTP，RTC 定时唤醒按模式决定是否联网。
-- SPIFFS：不 erase 时保留用户图片/配置；需要恢复时能通过 Web 页面处理。
+- 数据保留：网页 OTA 保留 NVS/fontfs/SPIFFS；完整烧录覆盖 NVS，但写入范围不含用户 SPIFFS；整片 erase 会清除全部数据。分别实测并确认备份恢复入口。
 
 ## 推送顺序
 

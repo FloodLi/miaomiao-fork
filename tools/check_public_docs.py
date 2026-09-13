@@ -12,21 +12,22 @@ import os
 import re
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED = {
-    "project_version": "2.3.6",
+    "project_version": "3.7",
     "http_routes": 81,
     "web_html": 12,
     "web_png": 1,
     "web_js": 2,
-    "release_bin_sha256": "37D164F2B06F87AF1BBBAF3E6A8273FD389A69C23CD2D07222E4AA4100048628",
-    "release_zip_sha256": "55CA82559ADD81EEFDE965E6AADA2D1918CA8DD52558E2AF6FF14BA39C60723C",
-    "web_upgrade_bin_sha256": "3624AB9EE2E9BCFF37170B8B8CE158EFFB193CDEC5A942F08F2520215A001A18",
-    "web_upgrade_zip_sha256": "49CC67E85F12F58838D5A919FEF4BD77DF38C32B27B58036B61776E1894E79AC",
+    "release_bin_sha256": "390682D1C35FA23CA338BD2D953C152B6D9FD2F07981F870D37CE5835ED30DFA",
+    "release_zip_sha256": "F70AEB24F69E5C4DB37432AA609126502462C4CDF40A16B6B411239A18E3DE74",
+    "web_upgrade_bin_sha256": "ADCF8C124D054C2D92E6B29CBBFAD8B76F1EB6F674145B0C90EB895562E6F6EC",
+    "web_upgrade_zip_sha256": "F8EF4E82E5AF291EAAB758FE55FE2CAEDCACA36284860F4E4D756DCF7538C1A4",
 }
 
 EXPECTED_PARTITIONS = {
@@ -609,6 +610,30 @@ def check_release_hashes(failures: list[str]) -> None:
     check(zip_hash == EXPECTED["release_zip_sha256"], "release zip SHA256 matches docs", failures, zip_hash)
     check(web_bin_hash == EXPECTED["web_upgrade_bin_sha256"], "web upgrade bin SHA256 matches docs", failures, web_bin_hash)
     check(web_zip_hash == EXPECTED["web_upgrade_zip_sha256"], "web upgrade zip SHA256 matches docs", failures, web_zip_hash)
+    check_release_contents(failures)
+
+
+def check_release_contents(failures: list[str]) -> None:
+    full = (ROOT / "release/epaper_uploader_full_16MB.bin").read_bytes()
+    app = (ROOT / "release/web_upgrade.bin").read_bytes()
+    # ESP-IDF esp_app_desc_t follows the 24-byte image and 8-byte segment headers.
+    descriptor_ok = len(app) >= 288 and app[0] == 0xE9 and app[32:36] == bytes.fromhex("3254cdab")
+    version = app[48:80].split(b"\0", 1)[0].decode("ascii", errors="replace")
+    check(descriptor_ok and version == EXPECTED["project_version"], "release app descriptor has current version", failures, version)
+    check(288 <= len(app) <= 0x300000, "release app fits 3 MiB partition", failures, str(len(app)))
+    check(len(full) == 0xC20000, "full image stops before user SPIFFS", failures, str(len(full)))
+    check(full[0x20000:0x20000 + len(app)] == app and descriptor_ok, "full image embeds the exact OTA app at 0x20000", failures)
+    for name, data in (("epaper_uploader_full_16MB", full), ("web_upgrade", app)):
+        valid = False
+        try:
+            with zipfile.ZipFile(ROOT / "release" / (name + ".zip")) as archive:
+                entries = archive.infolist()
+                if len(entries) == 1 and entries[0].filename == name + ".bin" and entries[0].file_size == len(data):
+                    with archive.open(entries[0]) as source:
+                        valid = source.read(len(data) + 1) == data
+        except (OSError, ValueError, RuntimeError, zipfile.BadZipFile):
+            pass
+        check(valid, name + " ZIP contains only the matching BIN", failures)
 
 
 def check_markdown_links(failures: list[str]) -> None:

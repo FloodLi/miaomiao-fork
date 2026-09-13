@@ -1,15 +1,19 @@
-# 喵哎-MiaooAim v2.3.6 固件包
+# 喵哎-MiaooAim v3.7 固件包
 
 本目录提供完整烧录固件和网页 OTA 升级固件。两种 BIN 均提供只包含对应 BIN 的 ZIP。
+
+v3.7 发布于 2026-09-13，包含多屏图片工作区、浅粉主题、黄色留言与显示回执修复。分区表及字库保持不变；软件验证通过不等于全型号实屏验收，实验面板保留原有标记。详细变化见[更新日志](../CHANGELOG.md)。
 
 ## 文件与校验
 
 | 文件 | 用途 | 大小 | SHA256 |
 |------|------|------|--------|
-| `epaper_uploader_full_16MB.bin` | ESP32-S3 16MB Flash 首次烧录或完整恢复 | 12713984 bytes | `37D164F2B06F87AF1BBBAF3E6A8273FD389A69C23CD2D07222E4AA4100048628` |
-| `epaper_uploader_full_16MB.zip` | 完整固件 ZIP | 2246867 bytes | `55CA82559ADD81EEFDE965E6AADA2D1918CA8DD52558E2AF6FF14BA39C60723C` |
-| `web_upgrade.bin` | 设备后台网页 OTA 升级 | 2869088 bytes | `3624AB9EE2E9BCFF37170B8B8CE158EFFB193CDEC5A942F08F2520215A001A18` |
-| `web_upgrade.zip` | 网页 OTA 固件 ZIP | 1541744 bytes | `49CC67E85F12F58838D5A919FEF4BD77DF38C32B27B58036B61776E1894E79AC` |
+| `epaper_uploader_full_16MB.bin` | ESP32-S3 16MB Flash 首次烧录或完整恢复 | 12713984 bytes | `390682D1C35FA23CA338BD2D953C152B6D9FD2F07981F870D37CE5835ED30DFA` |
+| `epaper_uploader_full_16MB.zip` | 完整固件 ZIP | 2294531 bytes | `F70AEB24F69E5C4DB37432AA609126502462C4CDF40A16B6B411239A18E3DE74` |
+| `web_upgrade.bin` | 设备后台网页 OTA 升级 | 2999792 bytes | `ADCF8C124D054C2D92E6B29CBBFAD8B76F1EB6F674145B0C90EB895562E6F6EC` |
+| `web_upgrade.zip` | 网页 OTA 固件 ZIP | 1592623 bytes | `F8EF4E82E5AF291EAAB758FE55FE2CAEDCACA36284860F4E4D756DCF7538C1A4` |
+
+应用占用 `0x2dc5f0` 字节，3 MiB 应用分区余 145936 字节（约142.5 KiB）；后续增加嵌入资源需持续检查容量。
 
 ## 完整烧录
 
@@ -34,7 +38,9 @@ SPI MODE:  DIO
 SPI SPEED: 80MHz
 ```
 
-新板子、分区变化或配置损坏时可以先 `ERASE`。需要保留已有 NVS 配置和用户 SPIFFS 文件时，不要执行 `ERASE`。
+首次烧录、分区变化或完整恢复可使用整包。整包从 `0x0000` 连续写入到 `0xC20000` 之前，包含 NVS 所在区间；即使不点 `ERASE`，也会覆盖 WiFi、面板等 NVS 配置。操作前备份配置和图片；需要保留配置的日常升级应使用下方网页 OTA。
+
+用户 SPIFFS 从 `0xC20000` 开始，不在此整包写入范围内；工具执行整片 `ERASE` 则会一并删除用户图片区。不要将“不含用户图片区”等同于“保留所有配置”。
 
 ## 网页升级
 
