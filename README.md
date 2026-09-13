@@ -11,7 +11,9 @@ Gitee 固件仓库:       https://gitee.com/gxp666111/miaomiao
 
 ## 固件文件
 
-> **v2.3.6 发布状态说明（2026-08-13）**：本目录已按 v2.3.6 最新维护源码重新构建并合并 `epaper_uploader_full_16MB.bin`。若源码、分区表或 fontfs 字库在此后继续变化，发布前必须在 ESP-IDF 终端重新 `idf.py build` 并重新合并整包。
+> **v3.7 正式版（2026-09-13）**：本目录提供与源码主分支 `release/` 一致的完整烧录包，包含多屏图片工作区、黄色留言与显示回执等修复。分区表和字库保持不变；软件回归通过，未覆盖型号的实屏验收仍保留原标记。更新内容见[主仓库更新日志](https://gitee.com/gxp666111/miaomiao/blob/master/CHANGELOG.md)。
+
+已有设备需要保留 WiFi、面板等配置时，优先下载[网页 OTA 包](https://gitee.com/gxp666111/miaomiao/blob/master/release/web_upgrade.zip)，在设备配置页升级。下方完整烧录会覆盖 NVS，操作前请备份配置和图片。
 
 推荐下载入口：
 
@@ -31,13 +33,13 @@ firmware-download.zip
 epaper_uploader_full_16MB.bin
 ```
 
-ZIP 内只包含上述整包固件文件；解压后的 bin 校验信息以本文件为准。
+分支下载 ZIP 包含本说明与整包固件；解压后的 bin 校验信息以本文件为准。
 
 校验信息：
 
 ```text
 Size:   12713984 bytes
-SHA256: 37D164F2B06F87AF1BBBAF3E6A8273FD389A69C23CD2D07222E4AA4100048628
+SHA256: 390682D1C35FA23CA338BD2D953C152B6D9FD2F07981F870D37CE5835ED30DFA
 ```
 
 说明：`firmware-download.zip` 是 Gitee 按分支动态打包生成的下载文件，不建议固定校验 ZIP 本身；请以解压后的 `epaper_uploader_full_16MB.bin` SHA256 为准。
@@ -73,7 +75,7 @@ App offset: 0x20000
 在 Espressif Flash Download Tool 的 `SPIDownload` 页面只填一行：
 
 ```text
-File:    release\epaper_uploader_full_16MB.bin
+File:    epaper_uploader_full_16MB.bin
 Address: 0x0000
 ```
 
@@ -109,17 +111,14 @@ START
 可以先点 ERASE，再点 START
 ```
 
-已经配置过 WiFi、天气、日历，不想丢配置时：
-
-```text
-不要点 ERASE，直接点 START
-```
+已经配置过 WiFi、天气、日历，不想丢配置时，请使用网页 OTA 升级，不要用完整合并包替代。
 
 说明：
 
 ```text
-整包固件会写入 bootloader、partition table、otadata、app 和 fontfs 字库分区。
-不点 ERASE 时，NVS 配置区和 SPIFFS 数据区不会被主动清空。
+整包从0x0000连续写入到0xC20000之前，包含bootloader、分区表、otadata、app、fontfs和填充区。
+NVS在写入范围内，即使不点ERASE也会覆盖配置；用户SPIFFS从0xC20000开始，不在此包写入范围。
+整片ERASE会清空全部Flash，包括用户图片。请先备份，不能用“不点ERASE”保证配置保留。
 ```
 
 ## 整包内包含的分区
