@@ -1,17 +1,19 @@
-# 喵哎-MiaooAim v3.7 固件包
+# 喵哎-MiaooAim v2.3.7 固件包
 
 本目录提供完整烧录固件和网页 OTA 升级固件。两种 BIN 均提供只包含对应 BIN 的 ZIP。
 
-v3.7 发布于 2026-09-13，包含多屏图片工作区、浅粉主题、黄色留言与显示回执修复。分区表及字库保持不变；软件验证通过不等于全型号实屏验收，实验面板保留原有标记。详细变化见[更新日志](../CHANGELOG.md)。
+本次更新曾误标为v3.7，正确版本为 **v2.3.7**；本目录已重新编译并更新内部版本，不是只修改文件名。已经安装误标版本的设备可通过网页OTA更正，功能不会因此回退；操作前先备份配置。
+
+v2.3.7 发布于 2026-09-13，包含多屏图片工作区、浅粉主题、黄色留言与显示回执修复。分区表及字库保持不变；软件验证通过不等于全型号实屏验收，实验面板保留原有标记。详细变化见[更新日志](../CHANGELOG.md)。
 
 ## 文件与校验
 
 | 文件 | 用途 | 大小 | SHA256 |
 |------|------|------|--------|
-| `epaper_uploader_full_16MB.bin` | ESP32-S3 16MB Flash 首次烧录或完整恢复 | 12713984 bytes | `390682D1C35FA23CA338BD2D953C152B6D9FD2F07981F870D37CE5835ED30DFA` |
-| `epaper_uploader_full_16MB.zip` | 完整固件 ZIP | 2294531 bytes | `F70AEB24F69E5C4DB37432AA609126502462C4CDF40A16B6B411239A18E3DE74` |
-| `web_upgrade.bin` | 设备后台网页 OTA 升级 | 2999792 bytes | `ADCF8C124D054C2D92E6B29CBBFAD8B76F1EB6F674145B0C90EB895562E6F6EC` |
-| `web_upgrade.zip` | 网页 OTA 固件 ZIP | 1592623 bytes | `F8EF4E82E5AF291EAAB758FE55FE2CAEDCACA36284860F4E4D756DCF7538C1A4` |
+| `epaper_uploader_full_16MB.bin` | ESP32-S3 16MB Flash 首次烧录或完整恢复 | 12713984 bytes | `9D054AF8CFA6071F256A8FED979E1361E7A2CA047B61AEAA6DF06EDF65C7BD08` |
+| `epaper_uploader_full_16MB.zip` | 完整固件 ZIP | 2294531 bytes | `B840D6754F632118697F0802C5484B43C0F828959786DC4F2AE1CEBF6AE1A5E3` |
+| `web_upgrade.bin` | 设备后台网页 OTA 升级 | 2999792 bytes | `AD87F647C9FFCB5122BC343D88758AF9399EB4B1BF6F39F4521EB70948BB73B4` |
+| `web_upgrade.zip` | 网页 OTA 固件 ZIP | 1592624 bytes | `0E8D665D33900AF440030A315E2BF224DBEA8EF423DCCC57F7CC7E549074C588` |
 
 应用占用 `0x2dc5f0` 字节，3 MiB 应用分区余 145936 字节（约142.5 KiB）；后续增加嵌入资源需持续检查容量。
 
