@@ -52,6 +52,7 @@ typedef enum {
     EPD_PANEL_REF_UC8159_75_LOW_BW   = 46, /* 7.5" 640x384 BW low-res, UC8159 */
     EPD_PANEL_SSD16XX_213_BW         = 47, /* SSD16xx 2.13" BW, 128x250 RAM */
     EPD_PANEL_GD7965_UC8179_75_BW    = 48, /* GD7965/UC8179 7.5" BW, 800x480 */
+    EPD_PANEL_JD79686A_583_BWR       = 49, /* 5.83" 648x480 BWR, JD79686A */
 
     EPD_PANEL_COUNT
 } epd_panel_t;

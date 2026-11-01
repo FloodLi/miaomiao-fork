@@ -119,6 +119,7 @@ typedef enum {
     EPD_CMD_DATA_SSD2677_2BPP,   /* SSD2677/2667 9.7" BWRY 2-bit-per-pixel stream on 0x10 */
     EPD_CMD_DATA_E6_3IN7_6C,     /* E6 3.7" six-color 2-bit compact stream, two refresh passes */
     EPD_CMD_DATA_UC8253_BW,      /* UC8253 old/new BW planes on 0x10/0x13 */
+    EPD_CMD_DATA_JD79686A_BWR,     /* JD79686A: BW->0x10, Red->0x13 */
 } epd_data_mode_t;
 
 typedef struct epd_panel_desc {
@@ -172,6 +173,8 @@ static esp_err_t e6_37_init(void);
 static esp_err_t uc8253_init(void);
 static esp_err_t ref_jd79665_init(void);
 static esp_err_t ref_jd79668_init(void);
+static esp_err_t jd79686a_583_bwr_init(void);
+static esp_err_t jd79686a_583_bwr_refresh(void);
 static esp_err_t refresh_22_f7_20(void);
 static esp_err_t refresh_12(void);
 static esp_err_t refresh_power_on_12(void);
@@ -250,6 +253,8 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_SSD16XX_213_BW]       = { SSD16XX_213_RAM_W, SSD16XX_213_H, false, 0, false, EPD_CMD_DATA_24_26, "SSD16xx 2.13\" BW 128x250", ssd16xx_213_bw_init, ssd16xx_213_bw_refresh, ssd16xx_213_bw_cursor_home, SSD16XX_213_X_OFFSET, false, .optional_refresh_caps = 0 },
     /* HT075A04 label: controller compatibility is unverified; keep optional refresh isolated. */
     [EPD_PANEL_GD7965_UC8179_75_BW]  = { 800, 480, false, 1, true, EPD_CMD_DATA_UC81XX_REF, "GD7965/UC8179 7.5\" BW 800x480", gd7965_uc8179_75_bw_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home, .optional_refresh_caps = 0 },
+    [EPD_PANEL_JD79686A_583_BWR]     = { 648, 480, true,  1, true, EPD_CMD_DATA_JD79686A_BWR, "JD79686A 5.83\" BWR", jd79686a_583_bwr_init, jd79686a_583_bwr_refresh, cursor_none },
+
 };
 
 static bool panel_valid(epd_panel_t panel)
@@ -433,6 +438,11 @@ static bool panel_is_gd7965_uc8179_75_bw(void)
     return s_panel == EPD_PANEL_GD7965_UC8179_75_BW;
 }
 
+static bool panel_is_jd79686a_583(void)
+{
+    return s_panel == EPD_PANEL_JD79686A_583_BWR;
+}
+
 static bool panel_is_visionpeak_ei0583_bw(void)
 {
     return s_panel == EPD_PANEL_VISIONPEAK_EI0583T5PCZ_BW;
@@ -462,7 +472,8 @@ static bool panel_is_ref_uc42_bwr(void)
 
 static bool panel_is_jd796xx(void)
 {
-    return panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP;
+    return panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP ||
+	       s_panel == EPD_PANEL_JD79686A_583_BWR;
 }
 
 static bool panel_is_jd79668_42(void)
@@ -656,6 +667,10 @@ bool epd_panel_image_profile(epd_panel_t panel, epd_image_profile_t *out)
         type = "e6";
         id = "e6-v1";
     }
+    else if (panel == EPD_PANEL_JD79686A_583_BWR) {
+        type = "bwr";
+        id = "jd79686a-v1";
+    }
     *out = (epd_image_profile_t){d->w, d->h, id, type, d->has_red, d->has_yellow};
     return true;
 }
@@ -742,6 +757,10 @@ void epd_load_panel_from_nvs(void)
     if (s_panel == EPD_PANEL_42_BWR && busy_idle_effective() == 1) {
         ESP_LOGW(TAG, "4.2 SSD1619 init needs BUSY idle-low on this board; migrating busy_idle -> 0");
         (void)epd_set_busy_idle(0);
+    }
+    if (panel_is_jd79686a_583() && busy_idle_effective() == 0) {
+        ESP_LOGW(TAG, "JD79686A 5.83 BWR uses BUSY idle-high; migrating busy_idle -> 1");
+        (void)epd_set_busy_idle(1);
     }
 }
 
@@ -2758,6 +2777,11 @@ static esp_err_t panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, 
         EPD_TRY(ref_uc81xx_full_window());
         EPD_TRY(panel_write_plane(0x13, red, 0xFF, true, pb));
         break;
+    case EPD_CMD_DATA_JD79686A_BWR:
+        /* JD79686A: BW->0x10(DTM1), Red->0x13(DTM2) */
+        EPD_TRY(panel_write_plane(0x10, bw, 0xFF, false, pb));  /* DTM1: BW */
+        EPD_TRY(panel_write_plane(0x13, red, 0x00, false, pb));  /* DTM2: Red */
+        break;
     case EPD_CMD_DATA_10_13_INV_RED:
         EPD_TRY(panel_write_plane(0x10, bw, 0xFF, false, pb));
         EPD_TRY(panel_write_plane(0x13, red, 0xFF, true, pb));
@@ -3360,6 +3384,15 @@ static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file,
         EPD_TRY(epd_cmd(0x13));
         EPD_TRY(ret = has_red_file ? file_send_plane(f, pb, true) : epd_fill(0xFF, (size_t)pb));
         break;
+    case EPD_CMD_DATA_JD79686A_BWR:
+        /* JD79686A: BW->0x10(DTM1), Red->0x13(DTM2) */
+        EPD_TRY(epd_cmd(0x10));               /* DTM1: 写BW数据 */
+        EPD_TRY(ret = file_send_plane(f, pb, false));
+        if (ret != ESP_OK)
+            return epd_failure(ret);
+        EPD_TRY(epd_cmd(0x13));               /* DTM2: 写Red数据 */
+        EPD_TRY(ret = has_red_file ? file_send_plane(f, pb, true) : epd_fill(0x00, (size_t)pb));
+        break;
     case EPD_CMD_DATA_10_13_INV_RED:
         EPD_TRY(epd_cmd(0x10));
         EPD_TRY(ret = file_send_plane(f, pb, false));
@@ -3481,6 +3514,12 @@ static esp_err_t panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
         EPD_TRY(panel_write_plane(0x10, NULL, bw_byte, false, pb));
         EPD_TRY(ref_uc81xx_full_window());
         EPD_TRY(panel_write_plane(0x13, NULL, (uint8_t)~red_byte, false, pb));
+        break;
+    case EPD_CMD_DATA_JD79686A_BWR:
+        EPD_TRY(ref_uc81xx_full_window());
+        EPD_TRY(panel_write_plane(0x10, NULL, bw_byte, false, pb));  /* DTM1: BW */
+        EPD_TRY(ref_uc81xx_full_window());
+        EPD_TRY(panel_write_plane(0x13, NULL, red_byte, false, pb)); /* DTM2: Red */
         break;
     case EPD_CMD_DATA_10_13_INV_RED:
         EPD_TRY(panel_write_plane(0x10, NULL, bw_byte, false, pb));
@@ -4252,6 +4291,155 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+/* ====================================================================
+ * JD79686A — 5.83" 648x480 BWR
+ * ==================================================================== */
+/**
+ * @brief Load BWR Mode Waveform LUT into JD79686A
+ * @note Must be called after basic initialization commands and before refresh.
+ *       Data extracted from JD79686A Datasheet V1.2, Page 13.
+ */
+static esp_err_t jd79686a_set_bwr_lut(void)
+{
+    esp_err_t epd_err = ESP_OK;
+	
+    // Each LUT group has 42 bytes (P01 - P42)
+    const uint8_t lut_size = 42;
+
+    // 0x20: VCOM LUT (LUTC)
+    static const uint8_t lut_c[] = {
+        0x00, 0x51, 0x51, 0x51, 0x54, 0x01, 0x00, 0x28, 0x28, 0x00, 0x00, 0x05, 0x00, 0x14, 0x01, 0x14, 0x01, 0x0f,
+        0x00, 0x28, 0x28, 0x14, 0x0, 0x05, 0x00, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0x00, 0x03, 0x32, 0x02, 0x1e, 0x04,
+        0x0, 0x10, 0x10, 0x0, 0x0, 0x01
+    };
+
+    // 0x22: Black to White / Red to Black (LUTR)
+    static const uint8_t lut_r[] = {
+        0xA8, 0x51, 0x51, 0x51, 0x54, 0x01, 0x80, 0x28, 0x28, 0x00, 0x00, 0x05, 0x48, 0x14, 0x01, 0x14, 0x01, 0x0f,
+        0x18, 0x28, 0x28, 0x14, 0x0, 0x05, 0xB4, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0xB4, 0x03, 0x32, 0x02, 0x1e, 0x04,
+        0xF0, 0x10, 0x10, 0x0, 0x0, 0x01
+    };
+
+    // 0x23: White to Black / White to Red (LUTW)
+    static const uint8_t lut_w[] = {
+        0x90, 0x51, 0x51, 0x51, 0x54, 0x01, 0x10, 0x28, 0x28, 0x00, 0x00, 0x05, 0x48, 0x14, 0x01, 0x14, 0x01, 0x0f,
+        0x80, 0x28, 0x28, 0x14, 0x0, 0x05, 0x00, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0x00, 0x03, 0x32, 0x02, 0x1e, 0x04,
+        0x0, 0x10, 0x10, 0x0, 0x0, 0x01
+    };
+
+    // 0x24: Black to Black / Red to Red (LUTB)
+    static const uint8_t lut_b[] = {
+        0x90, 0x51, 0x51, 0x51, 0x54, 0x01, 0x80, 0x28, 0x28, 0x00, 0x00, 0x05, 0x48, 0x14, 0x01, 0x14, 0x01, 0x0f,
+        0x10, 0x28, 0x28, 0x14, 0x0, 0x05, 0x00, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0x00, 0x03, 0x32, 0x02, 0x1e, 0x04,
+        0x0, 0x10, 0x10, 0x0, 0x0, 0x01
+    };
+
+    ESP_LOGD(TAG, "Loading LUT C (0x20)...");
+    EPD_TRY(epd_cmd(0x20));
+    for (int i = 0; i < lut_size; i++) {
+        EPD_TRY(epd_dat(lut_c[i]));
+    }
+
+    ESP_LOGD(TAG, "Loading LUT R (0x22)...");
+    EPD_TRY(epd_cmd(0x22));
+    for (int i = 0; i < lut_size; i++) {
+        EPD_TRY(epd_dat(lut_r[i]));
+    }
+
+    ESP_LOGD(TAG, "Loading LUT W (0x23)...");
+    EPD_TRY(epd_cmd(0x23));
+    for (int i = 0; i < lut_size; i++) {
+        EPD_TRY(epd_dat(lut_w[i]));
+    }
+
+    ESP_LOGD(TAG, "Loading LUT B (0x24)...");
+    EPD_TRY(epd_cmd(0x24));
+    for (int i = 0; i < lut_size; i++) {
+        EPD_TRY(epd_dat(lut_b[i]));
+    }
+    
+    ESP_LOGI(TAG, "LUT Loading Complete.");
+    return ESP_OK;
+	
+epd_fail:
+    return epd_failure(epd_err);
+}
+
+static esp_err_t jd79686a_583_bwr_init(void) {
+    esp_err_t epd_err = ESP_OK;
+
+    ESP_LOGI(TAG, "JD79686A Init Start");
+
+    // 1. 硬复位
+    EPD_TRY(epd_hw_reset());
+    delay_ms(100);
+    ESP_LOGI(TAG, "JD79668 4.2: BUSY gpio after reset = %d (idle expect %d)",
+             (int)gpio_get_level(PIN_EPD_BUSY), busy_idle_effective());
+    epd_wait_ready("init", false);
+    ESP_LOGI(TAG, "Reset Done. BUSY: %d", (int)gpio_get_level(PIN_EPD_BUSY));
+
+    // 2. 跳过 TDY 命令
+    // EPD_TRY(cmd2(0xF8, 0x60, 0xA5)); ... 
+
+    // 3. 用户命令
+    EPD_TRY(epd_cmd(0x00)); EPD_TRY(epd_dat(0xAF)); // Panel Setting: BWR Mode
+    EPD_TRY(epd_cmd(0x01)); EPD_TRY(epd_dat(0x03)); EPD_TRY(epd_dat(0x00)); EPD_TRY(epd_dat(0x3F)); EPD_TRY(epd_dat(0x3F)); EPD_TRY(epd_dat(0x28)); // Power
+    EPD_TRY(epd_cmd(0x06)); EPD_TRY(epd_dat(0x57)); EPD_TRY(epd_dat(0x63)); EPD_TRY(epd_dat(0x31)); // Booster
+    EPD_TRY(epd_cmd(0x30)); EPD_TRY(epd_dat(0x3C)); // PLL
+    EPD_TRY(epd_cmd(0x50)); EPD_TRY(epd_dat(0x57)); // CDI
+    EPD_TRY(epd_cmd(0x26)); EPD_TRY(epd_dat(0x0F)); // SET_STG
+    EPD_TRY(epd_cmd(0x61)); EPD_TRY(epd_dat(0x02)); EPD_TRY(epd_dat(0x88)); EPD_TRY(epd_dat(0x01)); EPD_TRY(epd_dat(0xE0)); // Resolution 648x480
+    EPD_TRY(epd_cmd(0x82)); EPD_TRY(epd_dat(0x2C)); // VCOM
+    EPD_TRY(epd_cmd(0xE8)); EPD_TRY(epd_dat(0x40)); // Power Saving
+    EPD_TRY(epd_cmd(0x60)); EPD_TRY(epd_dat(0x04)); // TCON
+    
+    ESP_LOGI(TAG, "User Cmds Done");
+
+    // 4. 加载 LUT
+    EPD_TRY(jd79686a_set_bwr_lut());
+    ESP_LOGI(TAG, "LUT Loaded");
+
+    // 5. 设置窗口
+    EPD_TRY(ref_uc81xx_full_window()); // 复用 UC8179 的窗口设置函数，因为寄存器地址一样
+
+    ESP_LOGI(TAG, "Init Complete");
+	
+    return ESP_OK;
+	
+epd_fail:
+    return epd_failure(epd_err);
+}
+
+static esp_err_t jd79686a_583_bwr_refresh(void)
+{
+    esp_err_t epd_err = ESP_OK;
+
+    /* ---- 1. Power On ---- */
+    EPD_TRY(epd_cmd(0x04));
+    delay_ms(100);
+    EPD_TRY(epd_wait_ready("power-on", false));
+
+    /* ---- 2. Display Refresh ---- */
+    EPD_TRY(epd_cmd(0x12));
+    delay_ms(100);
+    EPD_TRY(epd_wait_ready("refresh", true));
+
+    /* ---- 3. Power Off ---- */
+    EPD_TRY(epd_cmd(0x02));
+    delay_ms(100);
+    EPD_TRY(epd_wait_ready("poweroff", false));
+
+    /* ---- 4. Deep Sleep 恢复序列 */
+    //EPD_TRY(epd_cmd(0x04));        /* Power On */
+    EPD_TRY(epd_cmd(0x07));        /* Deep Sleep */
+    EPD_TRY(epd_dat(0xA5));        /* DSLP check code (必须为0xA5) */
+    EPD_TRY(epd_wait_ready("sleep", false));
+
+    return ESP_OK;
+
+epd_fail:
+    return epd_failure(epd_err);
+}
 /* ═══════════════════════════════════════════════════════════════════
  * SSD1619 — 4.2" 400×300
  * ═══════════════════════════════════════════════════════════════════ */
