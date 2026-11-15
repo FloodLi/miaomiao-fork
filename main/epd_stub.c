@@ -473,7 +473,7 @@ static bool panel_is_ref_uc42_bwr(void)
 static bool panel_is_jd796xx(void)
 {
     return panel_desc()->data_mode == EPD_CMD_DATA_JD796XX_2BPP ||
-	       s_panel == EPD_PANEL_JD79686A_583_BWR;
+	       panel_desc()->data_mode == EPD_CMD_DATA_JD79686A_BWR;
 }
 
 static bool panel_is_jd79668_42(void)
@@ -4294,76 +4294,6 @@ epd_fail:
 /* ====================================================================
  * JD79686A — 5.83" 648x480 BWR
  * ==================================================================== */
-/**
- * @brief Load BWR Mode Waveform LUT into JD79686A
- * @note Must be called after basic initialization commands and before refresh.
- *       Data extracted from JD79686A Datasheet V1.2, Page 13.
- */
-static esp_err_t jd79686a_set_bwr_lut(void)
-{
-    esp_err_t epd_err = ESP_OK;
-	
-    // Each LUT group has 42 bytes (P01 - P42)
-    const uint8_t lut_size = 42;
-
-    // 0x20: VCOM LUT (LUTC)
-    static const uint8_t lut_c[] = {
-        0x00, 0x51, 0x51, 0x51, 0x54, 0x01, 0x00, 0x28, 0x28, 0x00, 0x00, 0x05, 0x00, 0x14, 0x01, 0x14, 0x01, 0x0f,
-        0x00, 0x28, 0x28, 0x14, 0x0, 0x05, 0x00, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0x00, 0x03, 0x32, 0x02, 0x1e, 0x04,
-        0x0, 0x10, 0x10, 0x0, 0x0, 0x01
-    };
-
-    // 0x22: Black to White / Red to Black (LUTR)
-    static const uint8_t lut_r[] = {
-        0xA8, 0x51, 0x51, 0x51, 0x54, 0x01, 0x80, 0x28, 0x28, 0x00, 0x00, 0x05, 0x48, 0x14, 0x01, 0x14, 0x01, 0x0f,
-        0x18, 0x28, 0x28, 0x14, 0x0, 0x05, 0xB4, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0xB4, 0x03, 0x32, 0x02, 0x1e, 0x04,
-        0xF0, 0x10, 0x10, 0x0, 0x0, 0x01
-    };
-
-    // 0x23: White to Black / White to Red (LUTW)
-    static const uint8_t lut_w[] = {
-        0x90, 0x51, 0x51, 0x51, 0x54, 0x01, 0x10, 0x28, 0x28, 0x00, 0x00, 0x05, 0x48, 0x14, 0x01, 0x14, 0x01, 0x0f,
-        0x80, 0x28, 0x28, 0x14, 0x0, 0x05, 0x00, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0x00, 0x03, 0x32, 0x02, 0x1e, 0x04,
-        0x0, 0x10, 0x10, 0x0, 0x0, 0x01
-    };
-
-    // 0x24: Black to Black / Red to Red (LUTB)
-    static const uint8_t lut_b[] = {
-        0x90, 0x51, 0x51, 0x51, 0x54, 0x01, 0x80, 0x28, 0x28, 0x00, 0x00, 0x05, 0x48, 0x14, 0x01, 0x14, 0x01, 0x0f,
-        0x10, 0x28, 0x28, 0x14, 0x0, 0x05, 0x00, 0x04, 0x3c, 0x02, 0x1e, 0x07, 0x00, 0x03, 0x32, 0x02, 0x1e, 0x04,
-        0x0, 0x10, 0x10, 0x0, 0x0, 0x01
-    };
-
-    ESP_LOGD(TAG, "Loading LUT C (0x20)...");
-    EPD_TRY(epd_cmd(0x20));
-    for (int i = 0; i < lut_size; i++) {
-        EPD_TRY(epd_dat(lut_c[i]));
-    }
-
-    ESP_LOGD(TAG, "Loading LUT R (0x22)...");
-    EPD_TRY(epd_cmd(0x22));
-    for (int i = 0; i < lut_size; i++) {
-        EPD_TRY(epd_dat(lut_r[i]));
-    }
-
-    ESP_LOGD(TAG, "Loading LUT W (0x23)...");
-    EPD_TRY(epd_cmd(0x23));
-    for (int i = 0; i < lut_size; i++) {
-        EPD_TRY(epd_dat(lut_w[i]));
-    }
-
-    ESP_LOGD(TAG, "Loading LUT B (0x24)...");
-    EPD_TRY(epd_cmd(0x24));
-    for (int i = 0; i < lut_size; i++) {
-        EPD_TRY(epd_dat(lut_b[i]));
-    }
-    
-    ESP_LOGI(TAG, "LUT Loading Complete.");
-    return ESP_OK;
-	
-epd_fail:
-    return epd_failure(epd_err);
-}
 
 static esp_err_t jd79686a_583_bwr_init(void) {
     esp_err_t epd_err = ESP_OK;
@@ -4379,27 +4309,20 @@ static esp_err_t jd79686a_583_bwr_init(void) {
     ESP_LOGI(TAG, "Reset Done. BUSY: %d", (int)gpio_get_level(PIN_EPD_BUSY));
 
     // 2. 跳过 TDY 命令
-    // EPD_TRY(cmd2(0xF8, 0x60, 0xA5)); ... 
+    EPD_TRY(epd_cmd(0x08)); EPD_TRY(epd_dat(0x00));
+    EPD_TRY(epd_cmd(0xF8)); EPD_TRY(epd_dat(0x60)); EPD_TRY(epd_dat(0xA5));
+    EPD_TRY(epd_cmd(0xF8)); EPD_TRY(epd_dat(0x93)); EPD_TRY(epd_dat(0x18));
+    EPD_TRY(epd_cmd(0xF8)); EPD_TRY(epd_dat(0x73)); EPD_TRY(epd_dat(0x05));
+    EPD_TRY(epd_cmd(0xF8)); EPD_TRY(epd_dat(0x92)); EPD_TRY(epd_dat(0x08));
+    EPD_TRY(epd_cmd(0xF8)); EPD_TRY(epd_dat(0xA8)); EPD_TRY(epd_dat(0x3A));
+    EPD_TRY(epd_cmd(0xF8)); EPD_TRY(epd_dat(0x88)); EPD_TRY(epd_dat(0x06));
 
     // 3. 用户命令
-    EPD_TRY(epd_cmd(0x00)); EPD_TRY(epd_dat(0xAF)); // Panel Setting: BWR Mode
-    EPD_TRY(epd_cmd(0x01)); EPD_TRY(epd_dat(0x03)); EPD_TRY(epd_dat(0x00)); EPD_TRY(epd_dat(0x3F)); EPD_TRY(epd_dat(0x3F)); EPD_TRY(epd_dat(0x28)); // Power
-    EPD_TRY(epd_cmd(0x06)); EPD_TRY(epd_dat(0x57)); EPD_TRY(epd_dat(0x63)); EPD_TRY(epd_dat(0x31)); // Booster
-    EPD_TRY(epd_cmd(0x30)); EPD_TRY(epd_dat(0x3C)); // PLL
-    EPD_TRY(epd_cmd(0x50)); EPD_TRY(epd_dat(0x57)); // CDI
-    EPD_TRY(epd_cmd(0x26)); EPD_TRY(epd_dat(0x0F)); // SET_STG
-    EPD_TRY(epd_cmd(0x61)); EPD_TRY(epd_dat(0x02)); EPD_TRY(epd_dat(0x88)); EPD_TRY(epd_dat(0x01)); EPD_TRY(epd_dat(0xE0)); // Resolution 648x480
-    EPD_TRY(epd_cmd(0x82)); EPD_TRY(epd_dat(0x2C)); // VCOM
-    EPD_TRY(epd_cmd(0xE8)); EPD_TRY(epd_dat(0x40)); // Power Saving
-    EPD_TRY(epd_cmd(0x60)); EPD_TRY(epd_dat(0x04)); // TCON
-    
+    EPD_TRY(epd_cmd(0x00)); EPD_TRY(epd_dat(0x8F)); // Panel Setting: BWR Mode 0xAF for load lut
+
     ESP_LOGI(TAG, "User Cmds Done");
 
-    // 4. 加载 LUT
-    EPD_TRY(jd79686a_set_bwr_lut());
-    ESP_LOGI(TAG, "LUT Loaded");
-
-    // 5. 设置窗口
+    // 4. 设置窗口
     EPD_TRY(ref_uc81xx_full_window()); // 复用 UC8179 的窗口设置函数，因为寄存器地址一样
 
     ESP_LOGI(TAG, "Init Complete");
