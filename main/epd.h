@@ -126,6 +126,8 @@ esp_err_t    epd_ssd16xx_213_refresh_test(epd_refresh_mode_t candidate,
 /** Isolated GD7965/UC8179 7.5" 800x480 BW fast/partial LUT experiment. */
 esp_err_t    epd_gd7965_75_refresh_test(epd_refresh_mode_t candidate,
                                         epd_gd7965_75_test_result_t *result);
+/** 网页触发的 JD79686A 局刷试验：以当前基线为底，中央取反一块后走局刷路径。 */
+esp_err_t    epd_jd79686a_partial_test(epd_refresh_test_result_t *result);
 esp_err_t    epd_repair_ghosting(int cycles, int pattern);
 
 epd_panel_t  epd_get_panel(void);

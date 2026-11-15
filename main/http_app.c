@@ -1966,6 +1966,12 @@ static esp_err_t epd_test_post_handler(httpd_req_t *req)
         case EPD_PANEL_GD7965_UC8179_75_BW:
             err = epd_gd7965_75_refresh_test(candidate, &result);
             break;
+        case EPD_PANEL_JD79686A_583_BWR:
+            /* JD79686A：只提供局刷试验（以当前画面为基线，不重刷全屏基线） */
+            err = candidate == EPD_REFRESH_PARTIAL
+                      ? epd_jd79686a_partial_test(&result)
+                      : ESP_ERR_NOT_SUPPORTED;
+            break;
         default:
             err = ESP_ERR_NOT_SUPPORTED;
             break;
