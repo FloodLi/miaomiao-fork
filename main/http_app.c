@@ -2343,6 +2343,8 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/canvas_image_delete", HTTP_POST, canvas_image_delete_post, NULL },
         /* features (http_features.c) */
         { "/calendar_show",  HTTP_POST, feat_calendar_show_post,     NULL },
+        { "/school_config",  HTTP_GET,  feat_school_config_get,      NULL },
+        { "/school_config",  HTTP_POST, feat_school_config_post,     NULL },
         { "/timetable",      HTTP_GET,  feat_timetable_ui_get,       NULL },
         { "/timetable.json", HTTP_GET,  feat_timetable_json_get,     NULL },
         { "/timetable",      HTTP_POST, feat_timetable_post,         NULL },

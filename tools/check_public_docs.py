@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED = {
     "project_version": "2.3.7",
-    "http_routes": 81,
+    "http_routes": 83,
     "web_html": 12,
     "web_png": 1,
     "web_js": 2,
@@ -195,7 +195,7 @@ def check_http_routes(failures: list[str]) -> None:
         return
     body = text[start:end]
     entries = re.findall(r'\{\s*"([^"]+)"\s*,\s*(HTTP_[A-Z]+)\s*,', body)
-    check(len(entries) == EXPECTED["http_routes"], "HTTP route count is 81", failures, str(len(entries)))
+    check(len(entries) == EXPECTED["http_routes"], "HTTP route count is 83", failures, str(len(entries)))
 
 
 def check_panel_config_reboot(failures: list[str]) -> None:

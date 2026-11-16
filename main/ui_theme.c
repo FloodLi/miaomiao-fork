@@ -456,7 +456,8 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
     ui_draw_header_for(fb, (ui_color_page_t)-1, title, right, red_accent);
 }
 
-void ui_draw_footer(fb_t *fb, const char *left, const char *right)
+void ui_draw_footer_for(fb_t *fb, ui_color_page_t page, const char *left,
+                        const char *right, bool with_battery)
 {
     if (!fb)
         return;
@@ -472,20 +473,38 @@ void ui_draw_footer(fb_t *fb, const char *left, const char *right)
     ui_draw_dotted_hline(fb, 12 * s, line_y, W - 24 * s,
                          is_e6 ? COLOR_GREEN : COLOR_BLACK, 6);
 
+    /* 电量徽标占用右下角时，right 文字整体左移让位（与 header 右上角同一徽标） */
+    int right_edge = W - 14 * s;
+    if (with_battery) {
+        int bw = ui_draw_battery_badge_for(fb, page, right_edge, y);
+        if (bw > 0)
+            right_edge -= bw + 6 * s;
+    }
+
+    int rw = (right && right[0]) ? ui_fixed_text_width(fb, right, 1) : 0;
     int left_max_w = W - 28 * s;
-    if (right && right[0]) {
-        int rw = ui_fixed_text_width(fb, right, 1);
-        left_max_w = W - 34 * s - rw;
+    if (rw > 0) {
+        left_max_w = right_edge - 20 * s - rw;
+        if (left_max_w < 0)
+            left_max_w = 0;
     }
     if (left && left[0] && left_max_w > 0)
         ui_draw_fixed_text_maxw(fb, 14 * s, y, left,
                                 is_e6 ? COLOR_BLUE : COLOR_BLACK, 1, left_max_w);
 
-    if (right && right[0]) {
-        int rw = ui_fixed_text_width(fb, right, 1);
-        ui_draw_fixed_text(fb, W - 14 * s - rw, y, right,
-                           is_e6 ? COLOR_RED : COLOR_BLACK, 1);
+    if (rw > 0) {
+        int rx = right_edge - rw;
+        if (rx < 14 * s)
+            rx = 14 * s;
+        ui_draw_fixed_text_maxw(fb, rx, y, right,
+                                is_e6 ? COLOR_RED : COLOR_BLACK, 1,
+                                right_edge - rx);
     }
+}
+
+void ui_draw_footer(fb_t *fb, const char *left, const char *right)
+{
+    ui_draw_footer_for(fb, (ui_color_page_t)-1, left, right, false);
 }
 
 void ui_draw_card_for(fb_t *fb, ui_color_page_t page, int x, int y,

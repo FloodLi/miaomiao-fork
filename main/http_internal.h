@@ -169,3 +169,5 @@ esp_err_t feat_countdown_config_get(httpd_req_t *req);
 esp_err_t feat_countdown_config_post(httpd_req_t *req);
 esp_err_t feat_countdown_show_post(httpd_req_t *req);
 esp_err_t feat_calendar_show_post(httpd_req_t *req);
+esp_err_t feat_school_config_get(httpd_req_t *req);
+esp_err_t feat_school_config_post(httpd_req_t *req);
