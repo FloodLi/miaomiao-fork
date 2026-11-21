@@ -33,6 +33,7 @@
 #include "clock_display.h"
 #include "display_policy.h"
 #include "message_board.h"
+#include "wecom_bot.h"
 #include "canvas_board.h"
 #include "calendar_display.h"
 #include "timetable.h"
@@ -1228,6 +1229,7 @@ static esp_err_t msg_config_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "color", cfg.color);
     cJSON_AddNumberToObject(root, "x_offset", cfg.x_offset);
     cJSON_AddNumberToObject(root, "y_offset", cfg.y_offset);
+    cJSON_AddNumberToObject(root, "px", cfg.px);
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     if (!str) {
@@ -1285,6 +1287,11 @@ static esp_err_t msg_config_post_handler(httpd_req_t *req)
         cfg.x_offset = (int16_t)j->valueint;
     if ((j = cJSON_GetObjectItem(root, "y_offset")) && cJSON_IsNumber(j))
         cfg.y_offset = (int16_t)j->valueint;
+    /* px：显式给出则采用；只改 font_size（手动选档）时清零，恢复按档位渲染 */
+    if ((j = cJSON_GetObjectItem(root, "px")) && cJSON_IsNumber(j))
+        cfg.px = (uint8_t)j->valueint;
+    else if ((j = cJSON_GetObjectItem(root, "font_size")) && cJSON_IsNumber(j))
+        cfg.px = 0;
 
     cJSON_Delete(root);
 
@@ -1329,6 +1336,7 @@ static esp_err_t msg_show_post_handler(httpd_req_t *req)
 static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
 {
     if (!http_check_basic_auth(req)) return ESP_OK;
+    const uint32_t disp_seq = wecom_msg_seq(); /* 刷新开始时的来信序号快照 */
     if (!http_require_service_available(req, APP_SERVICE_MESSAGE))
         return ESP_OK;
     if (req->content_len <= 0) {
@@ -1411,19 +1419,23 @@ static esp_err_t msg_image_show_post_handler(httpd_req_t *req)
 
     if (cerr != ESP_OK) {
         (void)display_policy_finish_epoch(epoch, cerr, true);
+        wecom_notify_display_result(false, disp_seq); /* 微信来信回执：屏幕刷新失败 */
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "image convert failed");
         return ESP_OK;
     }
     if (derr != ESP_OK) {
         (void)display_policy_finish_epoch(epoch, derr, true);
+        wecom_notify_display_result(false, disp_seq); /* 微信来信回执：屏幕刷新失败 */
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "EPD display failed");
         return ESP_OK;
     }
     if (!display_policy_finish_epoch(epoch, ESP_OK, true)) {
+        wecom_notify_display_result(false, disp_seq); /* 被后续刷新顶掉 → 视为失败 */
         httpd_resp_set_status(req, "409 Conflict");
         httpd_resp_sendstr(req, "{\"ok\":false,\"msg\":\"display superseded\"}");
         return ESP_OK;
     }
+    wecom_notify_display_result(true, disp_seq); /* 微信来信回执：屏幕刷新成功 */
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
@@ -1525,6 +1537,14 @@ static esp_err_t panel_config_post_handler(httpd_req_t *req)
               reboot_scheduled ? "true" : "false");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static esp_err_t qr_js_get_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/javascript");
+    httpd_resp_send(req, (const char *)qr_js_start,
+                    (ssize_t)(qr_js_end - qr_js_start));
     return ESP_OK;
 }
 
@@ -2271,7 +2291,10 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
     config.recv_wait_timeout  = 8;
     config.send_wait_timeout  = 15;
     config.max_uri_handlers   = 88;
-    config.stack_size         = 16384;
+    /* TLS1.3 握手（≥10KB 峰值）+ X509/RSA4096 验签 + HTTP 解析 + cJSON
+     * handler 局部量同栈叠加：16KB 会擦边栈溢出并污染返回值
+     * （微信接口绑定/轮询的 HTTPS 都跑在这个任务里），提到 24KB。 */
+    config.stack_size         = 24576;
     config.lru_purge_enable   = true;
     config.max_open_sockets   = 7;
 
@@ -2345,6 +2368,13 @@ esp_err_t http_app_start(const http_app_config_t *cfg)
         { "/calendar_show",  HTTP_POST, feat_calendar_show_post,     NULL },
         { "/school_config",  HTTP_GET,  feat_school_config_get,      NULL },
         { "/school_config",  HTTP_POST, feat_school_config_post,     NULL },
+        /* wecom clawbot binding (wecom_bot.c) */
+        { "/wecom_status",   HTTP_GET,  wecom_status_get_handler,    NULL },
+        { "/wecom_bind",     HTTP_POST, wecom_bind_post_handler,      NULL },
+        /* wechat (personal) clawbot binding (wechat_bot.c) */
+        { "/wx_status",      HTTP_GET,  wechat_status_get_handler,   NULL },
+        { "/wx_bind",        HTTP_POST, wechat_bind_post_handler,     NULL },
+        { "/qr.js",          HTTP_GET,  qr_js_get_handler,           NULL },
         { "/timetable",      HTTP_GET,  feat_timetable_ui_get,       NULL },
         { "/timetable.json", HTTP_GET,  feat_timetable_json_get,     NULL },
         { "/timetable",      HTTP_POST, feat_timetable_post,         NULL },

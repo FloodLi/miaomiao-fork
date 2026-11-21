@@ -214,25 +214,41 @@ static esp_err_t ws_426_bw_cursor_home(void);
 static esp_err_t cursor_none(void);
 
 static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_42_BWR]     = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26,         "SSD1619 4.2\" BWR",         ssd1619_init_sequence, ssd1619_refresh, cursor_none },
+#endif
     [EPD_PANEL_583_BWR]    = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "UC8179 5.83\" BWR",         uc8179_init_sequence,  uc8179_refresh,  cursor_none },
     /* Waveshare EPD_4in26 full-refresh sequence; optional modes await this panel's real-screen validation. */
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_WS_426_BW]  = { 800, 480, false, 0, false, EPD_CMD_DATA_24_26,         "P426010 4.26\" BW",          ws_426_bw_init,        refresh_22_f7_20, ws_426_bw_cursor_home, .optional_refresh_caps = 0 },
+#endif
     [EPD_PANEL_WS_583_BWR] = { 648, 480, true,  1, true,  EPD_CMD_DATA_10_13,         "Waveshare 5.83\" BWR B V2", ws_583_bwr_init,      refresh_12,       cursor_none },
+#ifdef EPD_SIZE_13_37
     [EPD_PANEL_ATC_SSD1619_16_BWR] = { 200, 200, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 1.6\" BWR SSD1619", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 0, true },
+#endif
     [EPD_PANEL_ATC_SSD1619_22_BWR] = { 160, 296, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 2.2\" BWR SSD1619", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
     [EPD_PANEL_ATC_SSD1619_26_BWR] = { 184, 360, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 2.6\" BWR SSD1619", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
     [EPD_PANEL_HINK_SSD1619_29_BWR] = { HINK29_LOGICAL_W, HINK29_LOGICAL_H, true,  0, false, EPD_CMD_DATA_24_26, "HINK-E029A14-A1 2.9\" BWR SSD1619", hink_ssd1619_29_init, hink_ssd1619_29_refresh, hink_ssd1619_29_cursor_home, 8, false },
     [EPD_PANEL_ATC_UC8151_29_BWR]  = { 168, 384, true,  1, false, EPD_CMD_DATA_10_13_INV_BLACK_DUMMY, "ATC/Solum 2.9\" BWR UC8151", atc_ucvar29_init, refresh_power_on_12, cursor_none },
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_ATC_UCVAR43_BWR]    = { 152, 522, true,  1, false, EPD_CMD_DATA_10_13_DUMMY, "ATC/Solum 4.3\" BWR UC", atc_ucvar43_init, refresh_power_on_12, cursor_none },
+#endif
     [EPD_PANEL_ATC_DUALSSD_585_BWR] = { 792, 272, true, 0, false, EPD_CMD_DATA_DUAL_SSD, "ATC/Solum 5.85\" BWR dual SSD", atc_dualssd_init, refresh_atc_dualssd, cursor_none },
     [EPD_PANEL_ATC_DUALSSD_585_BW]  = { 792, 272, false, 0, false, EPD_CMD_DATA_DUAL_SSD, "ATC/Solum 5.85\" BW dual SSD", atc_dualssd_init, refresh_atc_dualssd, cursor_none },
     [EPD_PANEL_ATC_UC8159_60_BWR]  = { 600, 448, true,  1, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "ATC/Solum 6.0\" BWR UC8159", atc_uc8159_init, refresh_12, cursor_none },
     [EPD_PANEL_ATC_UC8179_74_BWR]  = { 800, 480, true,  1, false, EPD_CMD_DATA_10_13, "ATC/Solum 7.4\" BWR UC8179", atc_uc8179_init, refresh_power_on_12, cursor_none },
+#ifdef EPD_SIZE_97_10
     [EPD_PANEL_ATC_SSD_97_BWR]     = { 960, 672, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 9.7\" BWR SSD", atc_unissd_97_init, refresh_22_f7_20, atc_unissd_97_cursor_home },
+#endif
+#ifdef EPD_SIZE_13_37
     [EPD_PANEL_ATC_PEGHOOK_13_BWR] = { 144, 200, true,  0, false, EPD_CMD_DATA_24_26, "ATC/Solum 1.3\" peghook BWR SSD", atc_unissd_init, refresh_22_f7_20, atc_unissd_cursor_home, 8, false },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_UC8176_42_BW]      = { 400, 300, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "UC8176 4.2\" BW", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home, .optional_refresh_caps = EPD_REFRESH_CAP_FAST_BW | EPD_REFRESH_CAP_PARTIAL_BW },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_UC8176_42_BWR]     = { 400, 300, true,  1, false, EPD_CMD_DATA_UC81XX_REF, "UC 4.2\" BWR reference", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
+#endif
     [EPD_PANEL_REF_UC8179_75_BW]      = { 800, 480, false, 1, false, EPD_CMD_DATA_UC81XX_REF, "UC8179 7.5\" BW", ref_uc81xx_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home },
     [EPD_PANEL_REF_UC8179_75_BWR]     = { 800, 480, true,  1, true,  EPD_CMD_DATA_UC8179_75_BWR, "GDEY075Z08 7.5\" HD BWR UC8179", ref_uc8179_75_bwr_init, ref_uc8179_75_bwr_refresh, cursor_none, .optional_refresh_caps = EPD_REFRESH_CAP_PARTIAL_COLOR },
     /* EI0583T5PCZ09230H label maps to the WF0583T5PCZ09230HU59 600x448 BW family.
@@ -244,16 +260,34 @@ static const epd_panel_desc_t s_specs[EPD_PANEL_COUNT] = {
     [EPD_PANEL_REF_SSD1677_75_HD_BW]  = { 880, 528, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BW", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
     [EPD_PANEL_REF_SSD1677_75_HD_BWR] = { 880, 528, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1677 7.5\" HD BWR", ref_ssd1677_init, ref_ssd16xx_refresh, ref_ssd1677_cursor_home },
     [EPD_PANEL_REF_JD79665_75_BWRY]   = { 800, 480, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79665 7.5\" BWRY", ref_jd79665_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_SSD1619_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619A 4.2\" BW reference", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_SSD1619_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1619 4.2\" BWR", ref_ssd1619_init, ref_ssd16xx_refresh, ref_ssd1619_cursor_home },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_JD79668_42_BWRY]   = { 400, 300, true,  1, false, EPD_CMD_DATA_JD796XX_2BPP, "JD79668 4.2\" BWRY", ref_jd79668_init, ref_jd796xx_refresh, ref_jd796xx_cursor_home, .has_yellow = true },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_SSD1683_42_BWR]    = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BWR", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_SSD1683_42_LEGACY] = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BWR", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_REF_SSD1683_42_BW]     = { 400, 300, false, 0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1683 4.2\" BW", ref_ssd1683_init, ref_ssd1683_refresh, ref_ssd1683_cursor_home },
+#endif
+#ifdef EPD_SIZE_42_43
     [EPD_PANEL_FPC194_SSD1683_42_BWR] = { 400, 300, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "FPC-194 4.2\" BWR SSD1683", fpc194_ssd1683_init, fpc194_ssd1683_refresh, fpc194_ssd1683_cursor_home },
+#endif
+#ifdef EPD_SIZE_97_10
     [EPD_PANEL_REF_SSD1667_102_BWR]   = { 960, 640, true,  0, false, EPD_CMD_DATA_24_26_SSD16XX, "SSD1667 10.2\" BWR", ref_ssd1667_102_init, ref_ssd1667_102_refresh, ref_ssd1667_102_cursor_home },
+#endif
     [EPD_PANEL_E6_37_6C]              = { 792, 528, true,  1, false, EPD_CMD_DATA_E6_3IN7_6C, "E6 3.7\" six-color", e6_37_init, e6_37_refresh, cursor_none, .has_yellow = true },
+#ifdef EPD_SIZE_97_10
     [EPD_PANEL_REF_SSD2677_97_BWRY]   = { 960, 672, true,  1, false, EPD_CMD_DATA_SSD2677_2BPP, "SSD2677 9.7\" BWRY", ref_ssd2677_97_init, ref_ssd2677_97_refresh, ref_ssd2677_97_cursor_home, .has_yellow = true },
+#endif
     [EPD_PANEL_GDEY037T03_UC8253_BW]  = { 416, 240, false, 1, false, EPD_CMD_DATA_UC8253_BW, "GDEY037T03 3.7\" BW UC8253", uc8253_init, uc8253_refresh, cursor_none, .optional_refresh_caps = EPD_REFRESH_CAP_FAST_BW | EPD_REFRESH_CAP_PARTIAL_BW },
     /* Keep optional refresh disabled until a matching 640x384 BW waveform is verified. */
     [EPD_PANEL_REF_UC8159_75_LOW_BW]  = { 640, 384, false, 0, false, EPD_CMD_DATA_UC8159_INTERLEAVED, "UC8159 7.5\" low BW", ref_uc8159_init, ref_uc81xx_refresh, ref_uc81xx_cursor_home, .optional_refresh_caps = 0 },
@@ -274,8 +308,10 @@ static bool panel_valid(epd_panel_t panel)
 
 static const epd_panel_desc_t *panel_desc(void)
 {
+    /* 回退目标必须是未被尺寸宏裁剪的面板（旧 NVS 可能存着已裁剪的 id，
+     * panel_valid 会因 name==NULL 拦下并落到这里）。 */
     if (!panel_valid(s_panel))
-        s_panel = EPD_PANEL_42_BWR;
+        s_panel = EPD_PANEL_583_BWR;
     return &s_specs[s_panel];
 }
 
@@ -1106,6 +1142,7 @@ static esp_err_t cursor_none(void)
     return ESP_OK;
 }
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t ws_426_bw_cursor_home(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -1118,6 +1155,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t atc_unissd_cursor_home(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -1152,6 +1190,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_97_10
 static esp_err_t atc_unissd_97_cursor_home(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -1223,6 +1262,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t ref_send_tres(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -1284,6 +1324,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t ref_ssd1619_full_window(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -1362,6 +1403,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t ref_ssd1677_full_window(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -1416,6 +1458,7 @@ static esp_err_t ref_uc81xx_cursor_home(void)
     return ESP_OK;
 }
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t ref_ssd1619_cursor_home(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -1449,6 +1492,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t ref_ssd1677_cursor_home(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -2100,9 +2144,11 @@ static esp_err_t ref_ssd16xx_refresh(void)
     EPD_TRY(cmd1(0x22, 0xF7));
     EPD_TRY(epd_cmd(0x20));
     EPD_TRY(epd_wait_ready("refresh", true));
+#ifdef EPD_SIZE_42_43
     if (s_panel == EPD_PANEL_REF_SSD1619_42_BW || s_panel == EPD_PANEL_REF_SSD1619_42_BWR)
         EPD_TRY(ref_ssd1619_full_window());
     else
+#endif
         EPD_TRY(ref_ssd1677_full_window());
     EPD_TRY(cmd1(0x22, 0x83));
     EPD_TRY(epd_cmd(0x20));
@@ -2114,6 +2160,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t ref_ssd1683_update_once(uint8_t ctrl2, const char *label)
 {
     esp_err_t epd_err = ESP_OK;
@@ -2189,6 +2236,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t ref_jd796xx_refresh(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -2503,6 +2551,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_97_10
 static esp_err_t panel_write_ssd2677_2bpp(const uint8_t *bw, const uint8_t *red,
                                      const uint8_t *yellow,
                                      uint8_t bw_fill, uint8_t red_fill,
@@ -2517,6 +2566,7 @@ static esp_err_t panel_write_ssd2677_2bpp(const uint8_t *bw, const uint8_t *red,
 epd_fail:
     return epd_failure(epd_err);
 }
+#endif /* EPD_SIZE_97_10 */
 
 static const uint8_t e6_37_color_map_pass1[16] = {
     1, 1, 2, 3, 0, 1, 0, 1,
@@ -2527,7 +2577,6 @@ static const uint8_t e6_37_color_map_pass2[16] = {
     0, 1, 1, 3, 1, 2, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1
 };
-
 static void e6_37_log_elapsed(const char *stage, int64_t start_us)
 {
     ESP_LOGI(TAG, "E6 3.7: %s done in %lld ms",
@@ -2847,9 +2896,14 @@ static esp_err_t panel_write_bw_red_data(const uint8_t *bw, const uint8_t *red, 
     case EPD_CMD_DATA_JD796XX_2BPP:
         EPD_TRY(panel_write_jd796xx_2bpp(bw, red, NULL, 0xFF, 0x00, 0x00));
         break;
+#ifdef EPD_SIZE_97_10
     case EPD_CMD_DATA_SSD2677_2BPP:
         EPD_TRY(panel_write_ssd2677_2bpp(bw, red, NULL, 0xFF, 0x00, 0x00));
         break;
+#else
+    case EPD_CMD_DATA_SSD2677_2BPP: /* 面板未编译：空 case 保持 switch 全覆盖，运行时不可达 */
+        break;
+#endif
     case EPD_CMD_DATA_E6_3IN7_6C:
         EPD_TRY(panel_write_e6_37_6c(bw, red, NULL, NULL, NULL,
                              0xFF, 0x00, 0x00, 0x00, 0x00));
@@ -3173,6 +3227,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_97_10
 static esp_err_t file_send_ssd2677_2bpp(FILE *f, int pb, bool has_red_file,
                                         bool has_yellow_file)
 {
@@ -3183,6 +3238,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t e6_37_write_pass_from_file(FILE *f, int pb, bool has_red_file,
                                             bool has_yellow_file,
                                             bool has_blue_file,
@@ -3480,9 +3536,14 @@ static esp_err_t panel_write_bw_red_file(FILE *f, int pb, bool has_red_file,
     case EPD_CMD_DATA_JD796XX_2BPP:
         EPD_TRY(ret = file_send_jd796xx_2bpp(f, pb, has_red_file, has_yellow_file));
         break;
+#ifdef EPD_SIZE_97_10
     case EPD_CMD_DATA_SSD2677_2BPP:
         EPD_TRY(ret = file_send_ssd2677_2bpp(f, pb, has_red_file, has_yellow_file));
         break;
+#else
+    case EPD_CMD_DATA_SSD2677_2BPP: /* 面板未编译：空 case 保持 switch 全覆盖，运行时不可达 */
+        break;
+#endif
     case EPD_CMD_DATA_E6_3IN7_6C:
         EPD_TRY(ret = file_send_e6_37_6c(f, pb, has_red_file, has_yellow_file,
                                  has_blue_file, has_green_file));
@@ -3596,9 +3657,14 @@ static esp_err_t panel_fill_bw_red(uint8_t bw_byte, uint8_t red_byte, int pb)
     case EPD_CMD_DATA_JD796XX_2BPP:
         EPD_TRY(panel_write_jd796xx_2bpp(NULL, NULL, NULL, bw_byte, red_byte, 0x00));
         break;
+#ifdef EPD_SIZE_97_10
     case EPD_CMD_DATA_SSD2677_2BPP:
         EPD_TRY(panel_write_ssd2677_2bpp(NULL, NULL, NULL, bw_byte, red_byte, 0x00));
         break;
+#else
+    case EPD_CMD_DATA_SSD2677_2BPP: /* 面板未编译：空 case 保持 switch 全覆盖，运行时不可达 */
+        break;
+#endif
     case EPD_CMD_DATA_E6_3IN7_6C:
         EPD_TRY(panel_write_e6_37_6c(NULL, NULL, NULL, NULL, NULL,
                              bw_byte, red_byte, 0x00, 0x00, 0x00));
@@ -3766,6 +3832,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_97_10
 static esp_err_t atc_unissd_97_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -3890,6 +3957,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t e6_37_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -3980,6 +4048,7 @@ epd_fail:
  * P426010-MF1-B / Waveshare 4.26inch e-Paper, 800x480 BW.
  * Source sequence: waveshareteam/e-Paper EPD_4in26.c (full refresh).
  */
+#ifdef EPD_SIZE_42_43
 static esp_err_t ws_426_bw_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4011,6 +4080,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t atc_ucvar29_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4029,6 +4099,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t atc_ucvar43_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4053,6 +4124,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t atc_dualssd_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4204,6 +4276,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t ref_ssd1619_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4269,6 +4342,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t ref_ssd1677_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4320,6 +4394,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t ref_jd79668_init(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4357,6 +4432,7 @@ epd_fail:
  * JD79686A — 5.83" 648x480 BWR
  * ==================================================================== */
 
+#endif
 static esp_err_t jd79686a_583_bwr_init(void) {
     esp_err_t epd_err = ESP_OK;
 
@@ -4716,6 +4792,7 @@ esp_err_t epd_jd79686a_partial_test(epd_refresh_test_result_t *result)
  * SSD1619 — 4.2" 400×300
  * ═══════════════════════════════════════════════════════════════════ */
 
+#ifdef EPD_SIZE_42_43
 static esp_err_t ssd1619_cursor_home(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4836,6 +4913,8 @@ epd_fail:
  * UC8179 — 5.83" 648×480 BWR（参考 Waveshare 5.83 BWR）
  * ═══════════════════════════════════════════════════════════════════ */
 
+#endif
+#ifdef EPD_SIZE_97_10
 static esp_err_t ref_ssd1667_102_refresh(void)
 {
     esp_err_t epd_err = ESP_OK;
@@ -4913,6 +4992,7 @@ epd_fail:
     return epd_failure(epd_err);
 }
 
+#endif
 static esp_err_t e6_37_refresh(void)
 {
 
@@ -5513,9 +5593,11 @@ esp_err_t epd_display_test_pattern(void)
     EPD_TRY(panel_ensure_ready());
 
     if (epd_has_yellow() && panel_uses_bwry_2bpp()) {
+#ifdef EPD_SIZE_97_10
         if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
             EPD_TRY(panel_write_ssd2677_2bpp(buf, red, yellow, 0xFF, 0x00, 0x00));
         else
+#endif
             EPD_TRY(panel_write_jd796xx_2bpp(buf, red, yellow, 0xFF, 0x00, 0x00));
         EPD_TRY(panel_desc()->refresh());
     } else if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
@@ -6268,9 +6350,11 @@ static esp_err_t repair_display_pattern(const uint8_t *bw, const uint8_t *red,
 {
     esp_err_t epd_err = ESP_OK;
     if (epd_has_yellow() && panel_uses_bwry_2bpp()) {
+#ifdef EPD_SIZE_97_10
         if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
             EPD_TRY(panel_write_ssd2677_2bpp(bw, red, yellow, 0xFF, 0x00, 0x00));
         else
+#endif
             EPD_TRY(panel_write_jd796xx_2bpp(bw, red, yellow, 0xFF, 0x00, 0x00));
         EPD_TRY(panel_desc()->refresh());
     } else if (epd_has_yellow() && panel_desc()->data_mode == EPD_CMD_DATA_E6_3IN7_6C) {
@@ -6576,10 +6660,12 @@ static esp_err_t display_framebuffer_locked(const fb_t *fb,
                              0xFF, 0x00, 0x00, 0x00, 0x00));
         EPD_TRY(panel_desc()->refresh());
     } else if (panel_uses_bwry_2bpp() && epd_has_yellow()) {
+#ifdef EPD_SIZE_97_10
         if (panel_desc()->data_mode == EPD_CMD_DATA_SSD2677_2BPP)
             EPD_TRY(panel_write_ssd2677_2bpp(fb->black, fb->red, fb->yellow,
                                      0xFF, 0x00, 0x00));
         else
+#endif
             EPD_TRY(panel_write_jd796xx_2bpp(fb->black, fb->red, fb->yellow,
                                      0xFF, 0x00, 0x00));
         EPD_TRY(panel_desc()->refresh());

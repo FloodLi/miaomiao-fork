@@ -125,6 +125,8 @@ extern const uint8_t countdown_html_start[] asm("_binary_countdown_html_start");
 extern const uint8_t countdown_html_end[]   asm("_binary_countdown_html_end");
 extern const uint8_t feature_help_js_start[] asm("_binary_feature_help_js_start");
 extern const uint8_t feature_help_js_end[]   asm("_binary_feature_help_js_end");
+extern const uint8_t qr_js_start[] asm("_binary_qr_js_start");
+extern const uint8_t qr_js_end[]   asm("_binary_qr_js_end");
 extern const uint8_t image_processor_js_start[] asm("_binary_image_processor_js_start");
 extern const uint8_t image_processor_js_end[] asm("_binary_image_processor_js_end");
 extern const uint8_t miaooaim_mark_png_start[] asm("_binary_miaooaim_mark_png_start");
@@ -171,3 +173,9 @@ esp_err_t feat_countdown_show_post(httpd_req_t *req);
 esp_err_t feat_calendar_show_post(httpd_req_t *req);
 esp_err_t feat_school_config_get(httpd_req_t *req);
 esp_err_t feat_school_config_post(httpd_req_t *req);
+/* wecom_bot.c：微信 clawbot 绑定与状态 */
+esp_err_t wecom_status_get_handler(httpd_req_t *req);
+esp_err_t wecom_bind_post_handler(httpd_req_t *req);
+/* wechat_bot.c：个人微信 clawbot 绑定与状态 */
+esp_err_t wechat_status_get_handler(httpd_req_t *req);
+esp_err_t wechat_bind_post_handler(httpd_req_t *req);
