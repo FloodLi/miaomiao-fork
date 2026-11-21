@@ -38,6 +38,7 @@
 static const char *TAG = "calendar";
 static const char *NVS_NS = "calendar";
 static const char *NVS_KEY_STYLE = "style";
+static const char *NVS_KEY_SCHOOL = "school_md"; /* u16 = month*100 + day；0=未配置 */
 
 typedef enum {
     CAL_STYLE_CLASSIC = 0,
@@ -46,6 +47,8 @@ typedef enum {
 } calendar_style_t;
 
 static calendar_style_t s_style = CAL_STYLE_CLASSIC;
+static int s_school_month; /* 开学时间：0=未配置 */
+static int s_school_day;
 static int s_last_year;
 static int s_last_month;
 static int s_last_day;
@@ -102,6 +105,24 @@ static void cal_style_save_nvs(calendar_style_t style)
         ESP_LOGW(TAG, "NVS style save failed: %s", esp_err_to_name(err));
 }
 
+static void cal_school_load_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK)
+        return;
+
+    uint16_t md = 0;
+    if (nvs_get_u16(h, NVS_KEY_SCHOOL, &md) == ESP_OK) {
+        int mo = md / 100, dy = md % 100;
+        if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
+            s_school_month = mo;
+            s_school_day = dy;
+            ESP_LOGI(TAG, "NVS school start loaded: %d-%d", mo, dy);
+        }
+    }
+    nvs_close(h);
+}
+
 esp_err_t calendar_display_init(void)
 {
     s_mutex = xSemaphoreCreateBinary();
@@ -110,6 +131,7 @@ esp_err_t calendar_display_init(void)
     xSemaphoreGive(s_mutex);
     atomic_store(&s_render_result, ESP_ERR_INVALID_STATE);
     cal_style_load_nvs();
+    cal_school_load_nvs();
     return ESP_OK;
 }
 
@@ -302,6 +324,76 @@ static int cal_iso_week_number(int year, int month, int day)
     return week;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 开学时间 / 开学第X周（与网页 /school_config 约定）                          */
+/* 规则：开学日起为第1周（到当周周日为止），之后每周一到周日为下一周；          */
+/* 只存“月/日”，年份自动取不晚于今天的最近一次出现（跨年回溯到去年）。          */
+/* -------------------------------------------------------------------------- */
+
+void calendar_get_school_start(int *month, int *day)
+{
+    if (month) *month = s_school_month;
+    if (day)   *day   = s_school_day;
+}
+
+esp_err_t calendar_set_school_start(int month, int day)
+{
+    bool clear = (month == 0 && day == 0);
+    /* 用闰年(2024)取当月天数，2月可存29日 */
+    if (!clear && (month < 1 || month > 12 || day < 1 ||
+                   day > cal_days_in_month(2024, month)))
+        return ESP_ERR_INVALID_ARG;
+
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "NVS open failed while saving school start: %s",
+                 esp_err_to_name(err));
+        return err;
+    }
+    err = nvs_set_u16(h, NVS_KEY_SCHOOL, (uint16_t)(month * 100 + day));
+    if (err == ESP_OK)
+        err = nvs_commit(h);
+    nvs_close(h);
+
+    if (err == ESP_OK) {
+        s_school_month = month;
+        s_school_day = day;
+        ESP_LOGI(TAG, "NVS school start saved: %d-%d", month, day);
+    }
+    return err;
+}
+
+int calendar_school_week_now(void)
+{
+    if (s_school_month < 1 || s_school_day < 1)
+        return 0;
+    int y, m, d;
+    cal_today_ymd(&y, &m, &d);
+    if (y <= 0)
+        return 0; /* 时间未同步 */
+
+    /* 有效开学日 = 不晚于今天、离今天最近的一次（月/日）出现 */
+    int sy = y;
+    if (m < s_school_month || (m == s_school_month && d < s_school_day))
+        sy = y - 1;
+    int start_doy = cal_day_of_year(sy, s_school_month, s_school_day);
+    int days;
+    if (sy == y) {
+        days = cal_day_of_year(y, m, d) - start_doy;
+    } else {
+        int span = (sy % 4 == 0 && (sy % 100 != 0 || sy % 400 == 0)) ? 366 : 365;
+        days = span - start_doy + cal_day_of_year(y, m, d);
+    }
+
+    /* 第1周：开学日起到当周周日；之后每周一到周日为一周 */
+    int wd = cal_solar_weekday_sun0(sy, s_school_month, s_school_day); /* 0=周日 */
+    int to_sunday = (7 - wd) % 7;
+    if (days <= to_sunday)
+        return 1;
+    return 2 + (days - to_sunday - 1) / 7;
+}
+
 static int cal_isqrt_u32(uint32_t x)
 {
     if (x == 0)
@@ -423,8 +515,17 @@ static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month)
     bool is_xl = (L->fb_w >= 900 && L->fb_h >= 600);
     bool is_583 = (L->fb_w >= 600 && L->fb_w < 760 && L->fb_h >= 430);
 
-    char title[40];
+    char title[48];
     snprintf(title, sizeof(title), "%d年%d月", year, month);
+
+    /* 开学第X周：只在显示当前月份时展示（它表达“此刻开学第几周”） */
+    char school[24] = "";
+    int ty = 0, tm = 0, td = 0;
+    cal_today_ymd(&ty, &tm, &td);
+    int school_week = (ty && ty == year && tm == month) ? calendar_school_week_now() : 0;
+    if (school_week > 0)
+        snprintf(school, sizeof(school), "开学第%d周", school_week);
+
     char meta[48] = "";
 
     lunar_date_t ld;
@@ -437,19 +538,46 @@ static void cal_draw_title(fb_t *fb, const cal_layout_t *L, int year, int month)
                  2 * s, is_xl ? 30 : (is_583 ? 20 : 12 * s),
                  ui_color_resolve(UI_COLOR_PAGE_CALENDAR,
                                   UI_COLOR_ROLE_ACCENT, COLOR_RED));
-    if (is_xl)
-        ui_draw_text_px(fb, L->grid_x + 24, 18, title, COLOR_BLACK, 40);
-    else if (is_583)
-        ui_draw_text_px(fb, L->grid_x + 18, 14, title, COLOR_BLACK, 32);
-    else
-        ui_draw_fixed_text(fb, L->grid_x + 8 * s, 5 * s, title,
-                           COLOR_BLACK, s);
+
+    int title_x = is_xl ? L->grid_x + 24 : (is_583 ? L->grid_x + 18 : L->grid_x + 8 * s);
+    int title_y = is_xl ? 18 : (is_583 ? 14 : 5 * s);
+    int title_px = is_xl ? 40 : (is_583 ? 32 : 0); /* 0 = 固定字模路径 */
+    int title_w;
+    if (title_px) {
+        title_w = ui_draw_text_px(fb, title_x, title_y, title, COLOR_BLACK, title_px);
+    } else {
+        ui_draw_fixed_text(fb, title_x, title_y, title, COLOR_BLACK, s);
+        title_w = ui_fixed_text_width(fb, title, s);
+    }
+
+    /* 标题后紧跟“开学第X周”（强调色）；空间不足时右侧农历年先让位 */
+    int used_end = title_x + title_w;
+    if (school[0]) {
+        int gap = title_px ? 16 : 6 * s;
+        int school_x = title_x + title_w + gap;
+        fb_color_t accent = ui_color_resolve(UI_COLOR_PAGE_CALENDAR,
+                                             UI_COLOR_ROLE_ACCENT, COLOR_RED);
+        int school_w;
+        if (title_px) {
+            int school_px = is_xl ? 24 : 20;
+            school_w = ui_draw_text_px(fb, school_x,
+                                       title_y + (title_px - school_px) / 2,
+                                       school, accent, school_px);
+        } else {
+            ui_draw_fixed_text(fb, school_x, title_y, school, accent, s);
+            school_w = ui_fixed_text_width(fb, school, s);
+        }
+        used_end = school_x + school_w;
+    }
+
     if (meta[0]) {
         int meta_px = is_xl ? 24 : 16;
         int tw = ui_text_width_px(fb, meta, meta_px);
-        ui_draw_text_px(fb, W - tw - L->grid_x,
-                        is_xl ? 30 : (is_583 ? 24 : 5 * s),
-                        meta, COLOR_BLACK, meta_px);
+        int meta_x = W - tw - L->grid_x;
+        if (used_end + 8 <= meta_x)
+            ui_draw_text_px(fb, meta_x,
+                            is_xl ? 30 : (is_583 ? 24 : 5 * s),
+                            meta, COLOR_BLACK, meta_px);
     }
     ui_draw_dotted_hline(fb, L->grid_x,
                          (is_xl || is_583) ? L->title_h - 4 * s : L->title_h - 2 * s,
@@ -1003,9 +1131,15 @@ static void cal_render_month(fb_t *fb, int year, int month,
                           today_y, today_m, today_d);
     }
 
-    char today[40];
-    snprintf(today, sizeof(today), "%04d-%02d-%02d", today_y, today_m, today_d);
-    ui_draw_footer(fb, "日历", today);
+    /* 右下角：日期 + 本次刷新时间 + 电量徽标（与天气页右上角同款） */
+    char refresh[8] = "";
+    struct tm now;
+    if (time_sync_get_local_relaxed(&now))
+        snprintf(refresh, sizeof(refresh), " %02d:%02d", now.tm_hour, now.tm_min);
+    char today[64];
+    snprintf(today, sizeof(today), "%04d-%02d-%02d%s",
+             today_y, today_m, today_d, refresh);
+    ui_draw_footer_for(fb, UI_COLOR_PAGE_CALENDAR, "日历", today, true);
 }
 
 static void cal_state_note_shown(int year, int month, int day)

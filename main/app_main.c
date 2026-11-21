@@ -19,6 +19,8 @@
 #include "weather.h"
 #include "clock_display.h"
 #include "message_board.h"
+#include "wecom_bot.h"
+#include "wechat_bot.h"
 #include "canvas_board.h"
 #include "calendar_display.h"
 #include "timetable.h"
@@ -922,6 +924,8 @@ static void full_boot(void)
     init_optional_service(APP_SERVICE_SCHEDULER, scheduler_init);
     init_optional_service(APP_SERVICE_CLOCK, clock_display_init);
     init_optional_service(APP_SERVICE_MESSAGE, message_board_init);
+    wecom_bot_init(); /* 微信 clawbot：NVS 有凭证则自动重连；否则仅提供绑定状态 */
+    wechat_bot_init(); /* 个人微信 clawbot：NVS 有账号则启动长轮询 */
     init_optional_service(APP_SERVICE_CANVAS, canvas_board_init);
     init_optional_service(APP_SERVICE_CALENDAR, calendar_display_init);
     init_optional_service(APP_SERVICE_TIMETABLE, timetable_init);

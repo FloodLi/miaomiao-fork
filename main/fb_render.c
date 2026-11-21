@@ -799,6 +799,29 @@ static bool glyph16_is_empty(const uint8_t *glyph)
     return true;
 }
 
+bool fb_glyph_available(uint32_t cp, int target_px)
+{
+    /* 与 fb_draw_text_glyph_px 相同的取字链路探测：能取到字形才算可绘。
+     * 不可绘的字符若强画会得到“方框带x”占位（fb_missing_glyph），
+     * 调用方可据此过滤/替换文本中的字符。 */
+    cp = (uint32_t)normalize_compat_ascii((int)cp);
+    if (cp < 0x80)
+        return true; /* ASCII 全覆盖（font_ascii 32..126） */
+
+    int adv = 0;
+    if (target_px >= 24 && font_ext_probe_glyph_px(cp, target_px, &adv))
+        return true;
+
+    int scale = (target_px < 24) ? 1 : ((target_px + 15) / 16);
+    if (scale < 1)
+        scale = 1;
+    if (font_ext_probe_glyph(cp, scale, &adv))
+        return true;
+
+    const uint8_t *glyph = find_zh_glyph(cp);
+    return glyph && !glyph16_is_empty(glyph);
+}
+
 int fb_utf8(fb_t *fb, int x, int y, const char *s, fb_color_t c)
 {
     int cx = x;

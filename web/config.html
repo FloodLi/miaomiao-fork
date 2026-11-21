@@ -1890,8 +1890,8 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                 <label class="label-with-info"><span>屏幕型号</span><button type="button" class="info-dot" aria-label="查看屏幕型号说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="必须与实际屏幕控制器、分辨率和颜色通道一致。选错可能出现空白、偏色或刷新超时；保存后需要断电重启。"></button></label>
                 <select id="pnPanel">
                   <optgroup label="1.3 - 3.7 寸">
-                    <option value="25" hidden>1.3 寸 | 黑白红 | SSD / ATC Peghook | 144×200 | 实验</option>
-                    <option value="14" hidden>1.6 寸 | 黑白红 | SSD1619 / ATC-Solum | 200×200 | 实验</option>
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="25" hidden>1.3 寸 | 黑白红 | SSD / ATC Peghook | 144×200 | 实验</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="14" hidden>1.6 寸 | 黑白红 | SSD1619 / ATC-Solum | 200×200 | 实验</option> -->
                     <option value="15" hidden>2.2 寸 | 黑白红 | SSD1619 / ATC-Solum | 160×296 | 实验</option>
                     <option value="16" hidden>2.6 寸 | 黑白红 | SSD1619 / ATC-Solum | 184×360 | 实验</option>
                     <option value="17">2.9 寸 | 黑白红 | SSD1619 / HINK-E029A14-A1 | 128×296</option>
@@ -1901,23 +1901,24 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                     <option value="43">3.7 寸 | 六色 | E6 | 792×528 | 实验</option>
                   </optgroup>
                   <optgroup label="4.2 - 4.3 寸">
-                    <option value="8">4.26 寸 | 黑白 | P426010-MF1-B / 微雪 | 800×480 | 实验（仅全刷）</option>
-                    <option value="35">4.2 寸 | 黑白 | SSD1619A | 400×300 | 参考</option>
-                    <option value="40" hidden>4.2 寸 | 黑白 | SSD1683 | 400×300 | 实验</option>
-                    <option value="26">4.2 寸 | 黑白 | UC8176 / 威峰 WFH0420CZ35 | 400×300 | 实验</option>
-                    <option value="0" selected>4.2 寸 | 黑白红 | SSD1619 | 400×300</option>
-                    <option value="36" hidden>4.2 寸 | 黑白红 | SSD1619 | 400×300 | 参考</option>
-                    <option value="38">4.2 寸 | 黑白红 | SSD1683 | 400×300</option>
-                    <option value="39" hidden>4.2 寸 | 黑白红 | SSD1683 | 400×300 | 旧配置</option>
-                    <option value="41">4.2 寸 | 黑白红 | SSD1683 / FPC-194 | 400×300</option>
-                    <option value="27">4.2 寸 | 黑白红 | UC 系列 | 400×300 | 参考</option>
-                    <option value="37">4.2 寸 | 黑白红黄 | JD79668（红黄独立 2bpp） | 400×300 | 实验</option>
-                    <option value="19" hidden>4.3 寸 | 黑白红 | UC 系列 / ATC-Solum | 152×522 | 实验</option>
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="8">4.26 寸 | 黑白 | P426010-MF1-B / 微雪 | 800×480 | 实验（仅全刷）</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="35">4.2 寸 | 黑白 | SSD1619A | 400×300 | 参考</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="40" hidden>4.2 寸 | 黑白 | SSD1683 | 400×300 | 实验</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="26">4.2 寸 | 黑白 | UC8176 / 威峰 WFH0420CZ35 | 400×300 | 实验</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="0">4.2 寸 | 黑白红 | SSD1619 | 400×300</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="36" hidden>4.2 寸 | 黑白红 | SSD1619 | 400×300 | 参考</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="38">4.2 寸 | 黑白红 | SSD1683 | 400×300</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="39" hidden>4.2 寸 | 黑白红 | SSD1683 | 400×300 | 旧配置</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="41">4.2 寸 | 黑白红 | SSD1683 / FPC-194 | 400×300</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="27">4.2 寸 | 黑白红 | UC 系列 | 400×300 | 参考</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="37">4.2 寸 | 黑白红黄 | JD79668（红黄独立 2bpp） | 400×300 | 实验</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="19" hidden>4.3 寸 | 黑白红 | UC 系列 / ATC-Solum | 152×522 | 实验</option> -->
                   </optgroup>
                   <optgroup label="5.83 - 7.5 寸">
                     <option value="30">5.83 寸 | 黑白 | 视峰 EI0583T5PCZ / UC8159 兼容 | 600×448 | 实验（仅全刷）</option>
                     <option value="1">5.83 寸 | 黑白红 | UC8179 | 648×480</option>
                     <option value="10">5.83 寸 | 黑白红 | 微雪 B V2 | 648×480 | 已验证</option>
+                    <option value="49" selected>5.83 寸 | 黑白红 | JD79686A | 648×480 | 支持局刷</option>
                     <option value="21" hidden>5.85 寸 | 黑白 | 双 SSD / ATC-Solum | 792×272 | 实验</option>
                     <option value="20" hidden>5.85 寸 | 黑白红 | 双 SSD / ATC-Solum | 792×272 | 实验</option>
                     <option value="22" hidden>6.0 寸 | 黑白红 | UC8159 / ATC-Solum | 600×448 | 实验</option>
@@ -1932,9 +1933,9 @@ body.page-config .theme-caption{color:var(--ui-muted);font-size:11px;font-weight
                     <option value="34">7.5 寸 | 黑白红黄 | JD79665（红黄独立 2bpp） | 800×480 | 实验</option>
                   </optgroup>
                   <optgroup label="9.7 - 10.2 寸">
-                    <option value="24" hidden>9.7 寸 | 黑白红 | SSD / ATC-Solum | 960×672 | 实验</option>
-                    <option value="44">9.7 寸 | 黑白红黄 | SSD2677 | 960×672 | 实验</option>
-                    <option value="42">10.2 寸 | 黑白红 | SSD1667 | 960×640 | 实验</option>
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="24" hidden>9.7 寸 | 黑白红 | SSD / ATC-Solum | 960×672 | 实验</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="44">9.7 寸 | 黑白红黄 | SSD2677 | 960×672 | 实验</option> -->
+                    <!-- [EPD_SIZE 门控：启用对应宏后放开此选项] <option value="42">10.2 寸 | 黑白红 | SSD1667 | 960×640 | 实验</option> -->
                   </optgroup>
                 </select>
               </div>
@@ -2614,7 +2615,7 @@ function updateUiColorVisibility(){
   panel.hidden=!visible;
   if(visible)loadUiColorConfig();
   const refreshTest=document.getElementById('experimentalRefreshTestPanel');
-  if(refreshTest)refreshTest.hidden=pnActivePanel!==46&&pnActivePanel!==47&&pnActivePanel!==48;
+  if(refreshTest)refreshTest.hidden=pnActivePanel!==46&&pnActivePanel!==47&&pnActivePanel!==48&&pnActivePanel!==49;
 }
 
 function applyPanelBusyDefault(){
@@ -2779,21 +2780,28 @@ async function clearEpdScreen(){
 }
 
 async function testExperimentalRefresh(mode){
-  if(pnActivePanel!==46&&pnActivePanel!==47&&pnActivePanel!==48){pnLog('当前屏幕没有隔离的刷新候选测试。','bad');return;}
+  if(pnActivePanel!==46&&pnActivePanel!==47&&pnActivePanel!==48&&pnActivePanel!==49){pnLog('当前屏幕没有隔离的刷新候选测试。','bad');return;}
+  const isJd=pnActivePanel===49;
+  if(isJd&&mode!=='partial'){pnLog('JD79686A 仅提供局刷试验，没有快刷候选。','bad');return;}
   const isPartial=mode==='partial';
-  const name=isPartial?'中央局刷候选':'全屏快刷候选';
+  const name=isJd?'中央局刷试验':(isPartial?'中央局刷候选':'全屏快刷候选');
   const isZjy=pnActivePanel===47;
   const isGd7965=pnActivePanel===48;
-  const detail=isPartial
-    ?(isZjy?'第二次只写入中央 64×80 区域。':(isGd7965?'第二次只写入中央 400×180 区域。':'第二次只写入中央 320×144 区域。'))
-    :'第二次仍写满全屏，用于比较连续刷新耗时。';
-  const waveform=isZjy
-    ?'候选采用 2.13 寸 SSD16xx OTP 快刷命令。'
-    :(isGd7965?'候选采用 GDEW075T7/GD7965 兼容的寄存器快刷 LUT；当前屏体仍需实机确认。':'当前没有专用快刷/局刷 LUT。');
-  if(!confirm('将先执行一次全刷基线，再执行'+name+'。'+detail+waveform+' 请在屏幕旁观察闪烁范围和残影。继续？'))return;
+  const detail=isJd
+    ?'将以当前画面为基线，在中央翻转一块 104×64 区域并执行局刷，不会先刷全屏。'
+    :(isPartial
+      ?(isZjy?'第二次只写入中央 64×80 区域。':(isGd7965?'第二次只写入中央 400×180 区域。':'第二次只写入中央 320×144 区域。'))
+      :'第二次仍写满全屏，用于比较连续刷新耗时。');
+  const waveform=isJd
+    ?'正式局刷波形（直驱目标110帧+浮空15帧，约2.5秒；红色LUT全浮空防渐淡）。请重点观察维护全刷后的第一次局刷是否还有残影。'
+    :(isZjy
+      ?'候选采用 2.13 寸 SSD16xx OTP 快刷命令。'
+      :(isGd7965?'候选采用 GDEW075T7/GD7965 兼容的寄存器快刷 LUT；当前屏体仍需实机确认。':'当前没有专用快刷/局刷 LUT。'));
+  const lead=isJd?'':'将先执行一次全刷基线，再执行';
+  if(!confirm(lead+name+'。'+detail+waveform+' 请在屏幕旁观察闪烁范围和残影。继续？'))return;
   const buttons=document.querySelectorAll('[data-refresh-test]');
   buttons.forEach(function(button){button.disabled=true;});
-  pnLog('正在执行 '+name+'：先全刷基线，再运行候选刷新，请观察屏幕…');
+  pnLog('正在执行 '+name+'：'+(isJd?'直接在当前画面上局刷':'先全刷基线，再运行候选刷新')+'，请观察屏幕…');
   try{
     const r=await fetch('/epd_test?mode='+encodeURIComponent(mode),epdFetchOpts({method:'POST'}));
     const text=await r.text();
@@ -2801,7 +2809,11 @@ async function testExperimentalRefresh(mode){
     if(!r.ok||!j.ok)throw new Error(j.error||j.msg||('HTTP '+r.status));
     const rect=(j.rect||[]).join('×');
     const busy=(j.baseline_busy_ok&&j.candidate_busy_ok)?'BUSY 正常':'BUSY 有超时/回退';
-    pnLog(name+'完成：全刷基线 '+(j.baseline_ms/1000).toFixed(1)+' 秒，候选 '+(j.candidate_ms/1000).toFixed(1)+' 秒，区域 '+rect+'，'+busy+'。请记录实际闪烁范围、残影和是否完整更新。','ok');
+    if(isJd){
+      pnLog(name+'完成：耗时 '+(j.candidate_ms/1000).toFixed(1)+' 秒，区域 '+rect+'，'+busy+'。请观察是否只有框内变化、有无残影或花屏。','ok');
+    }else{
+      pnLog(name+'完成：全刷基线 '+(j.baseline_ms/1000).toFixed(1)+' 秒，候选 '+(j.candidate_ms/1000).toFixed(1)+' 秒，区域 '+rect+'，'+busy+'。请记录实际闪烁范围、残影和是否完整更新。','ok');
+    }
   }catch(e){pnLog(name+'失败：'+e.message+'。测试已结束，下一次显示会重新完整初始化。','bad');}
   finally{buttons.forEach(function(button){button.disabled=false;});}
 }

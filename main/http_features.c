@@ -123,6 +123,59 @@ esp_err_t feat_calendar_show_post(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ── GET/POST /school_config：开学时间（月/日） ────────────────────── */
+
+esp_err_t feat_school_config_get(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+    int month = 0, day = 0;
+    calendar_get_school_start(&month, &day);
+    char json[64];
+    snprintf(json, sizeof(json), "{\"month\":%d,\"day\":%d}", month, day);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+esp_err_t feat_school_config_post(httpd_req_t *req)
+{
+    if (!http_check_basic_auth(req)) return ESP_OK;
+
+    char buf[96];
+    if (req->content_len <= 0 || !http_read_request_body(req, buf, sizeof(buf), "请求体错误")) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"err\":\"missing body\"}");
+        return ESP_OK;
+    }
+
+    int month = -1, day = -1;
+    cJSON *root = cJSON_Parse(buf);
+    if (root) {
+        cJSON *jm = cJSON_GetObjectItem(root, "month");
+        cJSON *jd = cJSON_GetObjectItem(root, "day");
+        if (jm && cJSON_IsNumber(jm)) month = jm->valueint;
+        if (jd && cJSON_IsNumber(jd)) day = jd->valueint;
+        cJSON_Delete(root);
+    }
+
+    esp_err_t err = (month >= 0 && day >= 0)
+                        ? calendar_set_school_start(month, day)
+                        : ESP_ERR_INVALID_ARG;
+    const char *why = "";
+    if (err == ESP_ERR_INVALID_ARG)
+        why = "invalid date";
+    else if (err != ESP_OK)
+        why = "save failed";
+
+    char json[96];
+    snprintf(json, sizeof(json), "{\"ok\":%s,\"err\":\"%s\"}",
+             err == ESP_OK ? "true" : "false", why);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
 /* ── countdown ────────────────────────────────────────────────────── */
 
 esp_err_t feat_countdown_ui_get(httpd_req_t *req)

@@ -131,7 +131,8 @@ esp_err_t spi_device_transmit(spi_device_handle_t handle, spi_transaction_t *tx)
     (void)checksum;
     if (dc_level == 0) {
         last_cmd = *(const uint8_t *)tx->tx_buffer;
-        bool update = last_cmd == 0x12 || last_cmd == 0x20 || last_cmd == 0x17 || last_cmd == 0xA0;
+        bool update = last_cmd == 0x12 || last_cmd == 0x20 || last_cmd == 0x17 ||
+                      last_cmd == 0xA0 || last_cmd == 0x16;
         if (update) {
             refreshes++;
             if (stuck_on_refresh == refreshes) busy_mode = BUSY_STUCK;
@@ -229,6 +230,7 @@ static void assert_failed(esp_err_t actual, esp_err_t expected)
 {
     assert(actual == expected);
     assert(!s_panel_seq_done && !s_previous_bw_valid && !s_uc8179_red_signature_valid);
+    assert(!s_jd79686a_red_signature_valid);
     assert(atomic_load(&s_force_full_refresh_next));
     assert(!mutex_depth && !complete_count && !calls_after_error);
 }
@@ -483,8 +485,9 @@ static void test_epoch_cancellation(void)
 
 static void test_partial_failure_recovery(void)
 {
-    const epd_panel_t panels[] = { EPD_PANEL_REF_UC8176_42_BW, EPD_PANEL_REF_UC8179_75_BWR, EPD_PANEL_GDEY037T03_UC8253_BW };
-    for (size_t i = 0; i < 3; ++i) {
+    const epd_panel_t panels[] = { EPD_PANEL_REF_UC8176_42_BW, EPD_PANEL_REF_UC8179_75_BWR,
+                                   EPD_PANEL_GDEY037T03_UC8253_BW, EPD_PANEL_JD79686A_583_BWR };
+    for (size_t i = 0; i < sizeof(panels) / sizeof(panels[0]); ++i) {
         reset_fake(panels[i]);
         fb_t *fb = fb_create();
         assert(epd_display_from_buffer(fb) == ESP_OK && s_previous_bw_valid);
@@ -502,6 +505,32 @@ static void test_partial_failure_recovery(void)
         assert_failed(epd_display_from_buffer_mode(fb,EPD_REFRESH_PARTIAL),ESP_ERR_TIMEOUT);
         fb_destroy(fb);
     }
+}
+
+/* JD79686A 局刷：正式路径（时钟同款 mode=partial）+ 网页试验按钮直连路径。 */
+static void test_jd79686a_partial(void)
+{
+    reset_fake(EPD_PANEL_JD79686A_583_BWR);
+    assert(epd_refresh_mode_supported(EPD_REFRESH_PARTIAL));
+    assert(!epd_refresh_mode_supported(EPD_REFRESH_FAST));
+    fb_t *fb = fb_create();
+    assert(epd_display_from_buffer(fb) == ESP_OK && s_previous_bw_valid);
+    assert(s_jd79686a_red_signature_valid && s_jd79686a_partial_refresh_count == 0);
+
+    /* 正式路径：resolve → jd79686a_display_partial，0x16 计入刷新计数 */
+    int full_refreshes = refreshes;
+    fb->black[0] &= 0x7F;
+    assert(epd_display_from_buffer_mode(fb, EPD_REFRESH_PARTIAL) == ESP_OK);
+    assert(refreshes == full_refreshes + 1 && s_jd79686a_partial_refresh_count == 1);
+
+    /* 网页试验按钮的直连路径（以当前基线为底、中央取反一块） */
+    epd_refresh_test_result_t result;
+    assert(epd_jd79686a_partial_test(&result) == ESP_OK);
+    assert(refreshes == full_refreshes + 2);
+    assert(result.candidate_busy_ok && result.w == epd_width());
+    assert(s_jd79686a_partial_refresh_count == 2 && s_previous_bw_valid);
+
+    fb_destroy(fb);
 }
 
 static void test_image_profiles(void)
@@ -534,6 +563,7 @@ int main(void)
     test_repair_and_patterns(); test_transfer_fault_sweep(); test_files();
     test_epoch_cancellation();
     test_partial_failure_recovery();
+    test_jd79686a_partial();
     previous_bw_release(); assert(!alloc_count && !mutex_depth);
     puts("EPD production-source fault tests passed");
     return 0;

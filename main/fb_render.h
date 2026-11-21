@@ -85,6 +85,9 @@ int         fb_utf8_scaled_styled_maxw(fb_t *fb, int x, int y, const char *s,
 int         fb_utf8_px(fb_t *fb, int x, int y, const char *s,
                        fb_color_t c, int target_px);
 int         fb_utf8_px_width(const char *s, int target_px);
+/** 字符在当前字库（fontfs + 内置表）是否可绘制；不可绘时 fb_utf8_px 会画
+ *  “方框带x”缺字占位，调用方可先过滤文本。cp 为 Unicode 码点。 */
+bool        fb_glyph_available(uint32_t cp, int target_px);
 int         fb_utf8_px_maxw(fb_t *fb, int x, int y, const char *s,
                             fb_color_t c, int target_px, int max_w);
 

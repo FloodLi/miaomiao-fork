@@ -28,6 +28,8 @@ idf_component_register(
         "clock_display.c"
         "display_policy.c"
         "message_board.c"
+        "wecom_bot.c"
+        "wechat_bot.c"
         "lunar.c"
         "calendar_display.c"
         "timetable.c"
@@ -59,6 +61,7 @@ idf_component_register(
         "${PROJECT_DIR}/web/countdown.html"
         "${PROJECT_DIR}/web/board.html"
         "${PROJECT_DIR}/web/feature_help.js"
+        "${PROJECT_DIR}/web/qr.js"
         "${PROJECT_DIR}/web/image_processor.js"
         "${PROJECT_DIR}/web/miaooaim-mark.png"
     PRIV_REQUIRES
@@ -74,6 +77,7 @@ idf_component_register(
         esp_driver_spi
         app_update
         esp_http_client
+        esp_websocket_client
         esp-tls
         esp_timer
         esp_adc
@@ -85,6 +89,13 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     LODEPNG_NO_COMPILE_ANCILLARY_CHUNKS=1
     LODEPNG_NO_COMPILE_CPP=1
 )
+
+# 屏幕尺寸裁剪：默认三个宏都不定义 = 对应尺寸的驱动与表项不编译（省 flash）。
+# 需要某档屏幕时取消对应注释重新编译（同时放开 web/config.html 里
+# “[EPD_SIZE 门控]” 标记的面板选项）：
+# target_compile_definitions(${COMPONENT_LIB} PRIVATE EPD_SIZE_13_37)   # 1.3-1.7"
+# target_compile_definitions(${COMPONENT_LIB} PRIVATE EPD_SIZE_42_43)   # 4.2-4.3"（含4.26"）
+# target_compile_definitions(${COMPONENT_LIB} PRIVATE EPD_SIZE_97_10)   # 9.7-10.02"（含10.2"）
 
 # Under -Os (CONFIG_COMPILER_OPTIMIZATION_SIZE) GCC's stricter static analysis
 # emits false-positive -Wformat-truncation/-Wformat-overflow on snprintf calls

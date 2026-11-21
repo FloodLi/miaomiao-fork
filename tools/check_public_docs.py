@@ -20,10 +20,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED = {
     "project_version": "2.3.7",
-    "http_routes": 81,
+    "http_routes": 88,
     "web_html": 12,
     "web_png": 1,
-    "web_js": 2,
+    "web_js": 3,
     "release_bin_sha256": "9D054AF8CFA6071F256A8FED979E1361E7A2CA047B61AEAA6DF06EDF65C7BD08",
     "release_zip_sha256": "B840D6754F632118697F0802C5484B43C0F828959786DC4F2AE1CEBF6AE1A5E3",
     "web_upgrade_bin_sha256": "AD87F647C9FFCB5122BC343D88758AF9399EB4B1BF6F39F4521EB70948BB73B4",
@@ -129,7 +129,7 @@ def check_web_embed(failures: list[str]) -> None:
     js = [p for p in embedded if p.endswith(".js")]
     check(len(html) == EXPECTED["web_html"], "embedded HTML count is 12", failures, str(html))
     check(len(png) == EXPECTED["web_png"], "embedded PNG count is 1", failures, str(png))
-    check(len(js) == EXPECTED["web_js"], "embedded JavaScript count is 2", failures, str(js))
+    check(len(js) == EXPECTED["web_js"], "embedded JavaScript count is 3", failures, str(js))
     for name in embedded:
         check((ROOT / "web" / name).exists(), f"embedded web resource exists: {name}", failures)
 
@@ -195,7 +195,7 @@ def check_http_routes(failures: list[str]) -> None:
         return
     body = text[start:end]
     entries = re.findall(r'\{\s*"([^"]+)"\s*,\s*(HTTP_[A-Z]+)\s*,', body)
-    check(len(entries) == EXPECTED["http_routes"], "HTTP route count is 81", failures, str(len(entries)))
+    check(len(entries) == EXPECTED["http_routes"], "HTTP route count is 88", failures, str(len(entries)))
 
 
 def check_panel_config_reboot(failures: list[str]) -> None:

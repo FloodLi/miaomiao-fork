@@ -209,6 +209,44 @@ body.page-message .log{margin-top:14px;min-height:40px}
     </div>
     <div class="log" id="msgLog">加载中…</div>
   </div></div>
+
+<div class="card"><div class="hd"><div class="title" style="font-size:16px">微信 Clawbot 绑定</div></div><div class="bd">
+  <div class="msg-panel">
+    <span class="msg-panel-title">企业微信</span>
+    <div class="msg-panel-desc" id="wecomStatus">加载中…</div>
+    <div class="msg-actions" style="margin-top:10px">
+      <button class="btn" id="wecomBindBtn" onclick="wecomStartBind()">企业微信扫码绑定</button>
+      <button class="btn ghost sm" id="wecomReconnBtn" onclick="wecomReconnect()" style="display:none">重新连接</button>
+      <button class="btn ghost sm" id="wecomUnbindBtn" onclick="wecomUnbind()" style="display:none">解绑</button>
+    </div>
+    <div id="wecomQr" style="display:none;margin-top:12px">
+      <div class="msg-panel-desc">请用微信“扫一扫”扫码完成绑定（5 分钟内有效）：</div>
+      <iframe id="wecomQrFrame" title="微信绑定二维码" src="about:blank" style="width:100%;max-width:340px;height:340px;margin-top:8px;border:1px solid var(--sb);border-radius:12px;background:#fff"></iframe>
+      <div class="msg-actions" style="margin-top:8px">
+        <a class="btn ghost sm" id="wecomQrLink" href="#" target="_blank" rel="noopener">二维码打不开？新窗口打开</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="msg-panel" style="margin-top:14px">
+    <span class="msg-panel-title">个人微信</span>
+    <div class="msg-panel-desc" id="wxStatus">加载中…</div>
+    <div class="msg-actions" style="margin-top:10px">
+      <button class="btn" id="wxBindBtn" onclick="wxStartBind()">个人微信扫码绑定</button>
+      <button class="btn ghost sm" id="wxUnbindAllBtn" onclick="wxUnbindAll()" style="display:none">全部解绑</button>
+    </div>
+    <div id="wxQr" style="display:none;margin-top:12px">
+      <div class="msg-panel-desc">请用个人微信“扫一扫”扫码完成绑定：</div>
+      <div id="wxQrBox" style="width:280px;height:280px;margin-top:8px;background:#fff;border:1px solid var(--sb);border-radius:12px;overflow:hidden"></div>
+    </div>
+    <div id="wxAccounts" class="kv" style="margin-top:10px;display:none"></div>
+    <div class="msg-note" style="margin-top:10px">支持绑定最多 3 个个人微信账号（cn_im_hub 同款协议），收发逻辑与企业微信一致。</div>
+  </div>
+
+  <div class="msg-note" style="margin-top:10px">绑定成功后，微信发来的文字会<b>无需浏览器、设备自动上屏</b>（默认字体 / 字号25 / 黑色 / 左对齐，标题“留言板”后自动带“更新时间：MM月DD日 hh:mm”），刷新结果回执到微信。页面打开时会把最新消息同步到上方内容框。</div>
+  <div class="log" id="wecomLog">就绪</div>
+</div></div>
+
   <footer class="epd-credit" role="contentinfo">由 <strong>喵喵</strong> 设计并开发 · 智能墨水屏终端 · <a href="https://gitee.com/gxp666111/miaomiao" target="_blank" rel="noopener noreferrer">源码仓库</a></footer>
 </div>
 <script>
@@ -226,7 +264,10 @@ function quantizeWebCanvas(c,colorMode,threshold){const ctx=c.getContext('2d');c
 function renderWebMessage(){
   const c=document.getElementById('webMsgCanvas');if(!c)return;
   syncCanvasSize();const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
-  const text=document.getElementById('msgText').value||'在此输入要显示的文字…';
+  const base=document.getElementById('msgText').value||'在此输入要显示的文字…';
+  const now=new Date(),p2=n=>String(n).padStart(2,'0');
+  /* 屏幕底部固定追加“更新时间：MM月DD日 hh:mm”（不写入内容框/不保存） */
+  const text=base+'\n更新时间：'+p2(now.getMonth()+1)+'月'+p2(now.getDate())+' '+p2(now.getHours())+':'+p2(now.getMinutes());
   const px=Math.max(12,Math.min(180,parseInt(document.getElementById('webFontPx').value,10)||48));
   const lhMul=parseFloat(document.getElementById('webLineHeight').value)||1.18;
   const lineH=Math.max(px,Math.round(px*lhMul));
@@ -250,9 +291,215 @@ function webCanvasBlob(){return new Promise((resolve,reject)=>{renderWebMessage(
 async function showWebRenderedMsg(){const text=document.getElementById('msgText').value;if(!text.trim()){msgLog('请先输入留言内容','bad');return;}const btn=document.getElementById('webShowBtn');if(btn)btn.disabled=true;msgLog('正在用网页字体渲染图片并发送到墨水屏，请稍候…');try{const blob=await webCanvasBlob();const r=await fetch('/msg_image_show',epdFetchOpts({method:'POST',headers:{'Content-Type':'image/png'},body:blob}));const t=await r.text();msgLog(r.ok?'网页字体图片已发送到墨水屏。':'发送失败：'+t,r.ok?'ok':'bad');}catch(e){msgLog('网页字体渲染失败: '+e,'bad');}finally{if(btn)btn.disabled=false;}}
 ['msgText','msgAlign','msgXOff','msgYOff','webFontFamily','webCustomFont','webFontPx','webFontWeight','webLineHeight','webMargin','webVAlign','webColor','webThreshold'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener((el.tagName==='SELECT')?'change':'input',renderWebMessage);});
 async function loadStatusForPreview(){try{const r=await fetch('/status',epdFetchOpts());const j=await r.json();if(j.panel_width&&j.panel_height){epdPanelW=j.panel_width;epdPanelH=j.panel_height;}epdPanelHasRed=!!j.panel_has_red;epdPanelHasYellow=!!j.panel_has_yellow;epdPanelIsE6=epdPanelHasYellow&&Number(j.panel)===43;syncCanvasSize();renderWebMessage();}catch(e){syncCanvasSize();renderWebMessage();}}
-async function loadMsg(){try{const r=await fetch('/msg_config',epdFetchOpts());const j=await r.json();document.getElementById('msgText').value=j.text||'';document.getElementById('msgFont').value=String(j.font_size||0);document.getElementById('msgAlign').value=String(j.align||0);document.getElementById('msgColor').value=String(j.color||0);document.getElementById('webColor').value=webColorNameFromCfg(j.color||0);document.getElementById('msgXOff').value=j.x_offset||0;document.getElementById('msgYOff').value=j.y_offset||0;renderWebMessage();msgLog('设置已加载。');}catch(e){renderWebMessage();msgLog('加载失败: '+e,'bad');}}
+async function loadMsg(){try{const r=await fetch('/msg_config',epdFetchOpts());const j=await r.json();document.getElementById('msgText').value=j.text||'';document.getElementById('msgFont').value=String(j.font_size||0);document.getElementById('msgAlign').value=String(j.align||0);document.getElementById('msgColor').value=String(j.color||0);document.getElementById('webColor').value=webColorNameFromCfg(j.color||0);if(j.px>0)document.getElementById('webFontPx').value=j.px;document.getElementById('msgXOff').value=j.x_offset||0;document.getElementById('msgYOff').value=j.y_offset||0;renderWebMessage();msgLog('设置已加载。');}catch(e){renderWebMessage();msgLog('加载失败: '+e,'bad');}}
 async function saveMsg(){const text=document.getElementById('msgText').value;if(text.length>500){msgLog('文字过长，最多 500 字符','bad');return false;}const cfg={text:text,font_size:parseInt(document.getElementById('msgFont').value),align:parseInt(document.getElementById('msgAlign').value),color:parseInt(document.getElementById('msgColor').value),x_offset:parseInt(document.getElementById('msgXOff').value)||0,y_offset:parseInt(document.getElementById('msgYOff').value)||0};msgLog('保存中…');try{const r=await fetch('/msg_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}));const j=await r.json();if(j.ok){msgLog('设置已保存。','ok');await loadMsg();return true;}msgLog('保存失败','bad');}catch(e){msgLog('请求失败: '+e,'bad');}return false;}
 async function showMsg(){const text=document.getElementById('msgText').value;if(!text.trim()){msgLog('请先输入留言内容','bad');return;}if(!(await saveMsg())) return;msgLog('正在渲染…请稍候（约 15 秒刷新）');try{const r=await fetch('/msg_show',epdFetchOpts({method:'POST'}));const j=await r.json();if(j.ok) msgLog('留言已显示在墨水屏上！','ok');else msgLog('显示失败，请确保已输入文字内容。','bad');}catch(e){msgLog('请求失败: '+e,'bad');}}
+/* ── 微信 Clawbot 绑定 ─────────────────────────────────────────────── */
+let wecomPollTimer=null,wecomPollCount=0;
+function wecomLog(m,cls){const el=document.getElementById('wecomLog');if(!el)return;el.className='log'+(cls?' '+cls:'');el.textContent=m;}
+function wecomStateText(j){
+  const bs={idle:'未绑定',pending:'二维码已生成，等待扫码…',ok:'已绑定',expired:'二维码已过期（5 分钟），请重新获取',error:'获取二维码失败'};
+  const cs={disconnected:'未连接',connecting:'连接中…',authenticated:'已连接，正在监听微信消息',auth_failed:'认证失败（60 秒后自动重试）',kicked:'连接被断开（可能被其它客户端占用），可点“重新连接”'};
+  let s=bs[j.bind_state]||j.bind_state;
+  if(j.bound) s='已绑定：'+(j.bot_id||'')+' · '+(cs[j.conn]||j.conn);
+  if(j.error) s+='（'+j.error+'）';
+  return s;
+}
+function wecomRender(j){
+  const el=document.getElementById('wecomStatus');
+  if(el) el.textContent=wecomStateText(j);
+  const bound=!!j.bound;
+  const un=document.getElementById('wecomUnbindBtn'); if(un) un.style.display=bound?'':'none';
+  const rc=document.getElementById('wecomReconnBtn'); if(rc) rc.style.display=(bound&&(j.conn==='disconnected'||j.conn==='auth_failed'||j.conn==='kicked'))?'':'none';
+  const qr=document.getElementById('wecomQr');
+  if(qr){
+    const showQr=j.bind_state==='pending'&&!!j.page_url;
+    qr.style.display=showQr?'':'none';
+    const f=document.getElementById('wecomQrFrame');
+    if(showQr){
+      if(f.getAttribute('src')!==j.page_url) f.setAttribute('src',j.page_url);
+      document.getElementById('wecomQrLink').setAttribute('href',j.page_url);
+    } else {
+      f.setAttribute('src','about:blank');
+    }
+  }
+}
+async function wecomRequest(action){
+  const r=await fetch('/wecom_bind',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}));
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}
+function wecomStopPoll(){ if(wecomPollTimer){clearTimeout(wecomPollTimer);wecomPollTimer=null;} wecomPollCount=0; }
+function wecomPollTick(){
+  wecomRequest('poll').then(j=>{
+    wecomRender(j);
+    if(j.bind_state==='pending'){
+      if(++wecomPollCount<120){ wecomPollTimer=setTimeout(wecomPollTick,3000); }
+      else { wecomStopPoll(); wecomLog('等待超时，请重新点击绑定。','bad'); }
+    } else if(j.bind_state==='ok'){
+      wecomStopPoll(); wecomLog('绑定成功！微信发给 clawbot 的文字会自动上屏。','ok');
+    } else if(j.bind_state==='expired'){
+      wecomStopPoll(); wecomLog('二维码已过期，请重新点击绑定。','bad');
+    } else {
+      wecomStopPoll(); wecomLog('查询失败：'+(j.error||j.bind_state),'bad');
+    }
+  }).catch(e=>{
+    if(++wecomPollCount<120){ wecomPollTimer=setTimeout(wecomPollTick,3000); }
+    else { wecomStopPoll(); wecomLog('查询失败: '+e,'bad'); }
+  });
+}
+async function wecomStartBind(){
+  wecomStopPoll();
+  const btn=document.getElementById('wecomBindBtn');
+  if(btn) btn.disabled=true;
+  wecomLog('正在获取二维码…');
+  try{
+    const j=await wecomRequest('start');
+    wecomRender(j);
+    if(j.bind_state==='pending'){
+      wecomLog('二维码已生成：请用微信“扫一扫”扫码（5 分钟内有效）。','ok');
+      wecomPollCount=0;
+      wecomPollTimer=setTimeout(wecomPollTick,3000);
+    } else {
+      wecomLog('获取二维码失败：'+(j.error||('state='+j.bind_state)),'bad');
+    }
+  }catch(e){ wecomLog('请求失败: '+e,'bad'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+async function wecomUnbind(){
+  if(!confirm('确定解除绑定？之后微信消息不再上屏。')) return;
+  wecomStopPoll();
+  try{ const j=await wecomRequest('unbind'); wecomRender(j); wecomLog('已解除绑定。','ok'); }
+  catch(e){ wecomLog('请求失败: '+e,'bad'); }
+}
+async function wecomReconnect(){
+  wecomStopPoll();
+  wecomLog('正在重新连接…');
+  try{ const j=await wecomRequest('reconnect'); wecomRender(j); wecomLog(j.conn==='disconnected'?'连接请求已发出，稍后刷新状态查看。':'连接中…','ok'); }
+  catch(e){ wecomLog('请求失败: '+e,'bad'); }
+}
+async function wecomLoadStatus(){
+  try{ const r=await fetch('/wecom_status',epdFetchOpts()); wecomRender(await r.json()); }
+  catch(e){ wecomLog('状态加载失败: '+e,'bad'); }
+}
+wecomLoadStatus();
+
+/* ── 个人微信 Clawbot 绑定（cn_im_hub 同款 ilink 协议，支持多账号） ── */
+let wxPollTimer=null,wxPollCount=0,wxQrObj=null;
+function wxLog(m,cls){wecomLog(m,cls);}
+function wxStateText(j){
+  const bs={idle:'未绑定',pending:'二维码已生成，等待扫码…',need_verify:'需要手机验证码：请在微信里确认',blocked:'验证码被拦截，请稍后重试',ok:'已绑定',expired:'二维码已过期，请重新获取',already:'该微信号此前已绑定，无需重复扫码',error:'获取二维码失败'};
+  let s=bs[j.bind_state]||j.bind_state;
+  if(j.bound>0) s+=' · 已绑定 '+j.bound+' 个账号';
+  if(j.error) s+='（'+j.error+'）';
+  return s;
+}
+function wxRenderAccounts(j){
+  const box=document.getElementById('wxAccounts'); if(!box) return;
+  const all=document.getElementById('wxUnbindAllBtn'); if(all) all.style.display=j.bound>0?'':'none';
+  if(!j.accounts||!j.accounts.length){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='';
+  box.innerHTML=j.accounts.map(a=>
+    '<div class="k">账号 '+(a.slot+1)+'</div><div class="v">'+(a.account_id||a.user_id||'')+
+    ' <button class="btn ghost sm" onclick="wxUnbind('+a.slot+')">解绑</button></div>').join('');
+}
+function wxRender(j){
+  const el=document.getElementById('wxStatus'); if(el) el.textContent=wxStateText(j);
+  wxRenderAccounts(j);
+  const qr=document.getElementById('wxQr');
+  const showQr=(j.bind_state==='pending'||j.bind_state==='need_verify'||j.bind_state==='blocked')&&!!j.qr_content;
+  if(qr) qr.style.display=showQr?'':'none';
+  if(showQr){
+    const box=document.getElementById('wxQrBox');
+    if(window.QRCode&&box){
+      if(!wxQrObj) wxQrObj=new QRCode(box,{text:j.qr_content,width:280,height:280,correctLevel:QRCode.CorrectLevel.M});
+      else wxQrObj.makeCode(j.qr_content);
+    }
+  }
+}
+async function wxRequest(body){
+  const r=await fetch('/wx_bind',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}
+function wxStopPoll(){ if(wxPollTimer){clearTimeout(wxPollTimer);wxPollTimer=null;} wxPollCount=0; }
+function wxPollTick(){
+  wxRequest({action:'poll'}).then(j=>{
+    wxRender(j);
+    if(j.bind_state==='pending'||j.bind_state==='need_verify'||j.bind_state==='blocked'){
+      if(++wxPollCount<240){ wxPollTimer=setTimeout(wxPollTick,3000); }
+      else { wxStopPoll(); wxLog('等待超时，请重新点击绑定。','bad'); }
+    } else if(j.bind_state==='ok'){
+      wxStopPoll(); wxLog('个人微信绑定成功！发给 clawbot 的文字会自动上屏。','ok');
+    } else {
+      wxStopPoll(); wxLog('绑定结束：'+wxStateText(j), j.bind_state==='already'?'ok':'bad');
+    }
+  }).catch(e=>{
+    if(++wxPollCount<240){ wxPollTimer=setTimeout(wxPollTick,3000); }
+    else { wxStopPoll(); wxLog('查询失败: '+e,'bad'); }
+  });
+}
+async function wxStartBind(){
+  wxStopPoll();
+  const btn=document.getElementById('wxBindBtn'); if(btn) btn.disabled=true;
+  wxLog('正在获取个人微信二维码…');
+  try{
+    const j=await wxRequest({action:'start'});
+    wxRender(j);
+    if(j.bind_state==='pending'){
+      wxLog('二维码已生成：请用个人微信“扫一扫”扫码。','ok');
+      wxPollCount=0;
+      wxPollTimer=setTimeout(wxPollTick,3000);
+    } else {
+      wxLog('获取二维码失败：'+(j.error||('state='+j.bind_state)),'bad');
+    }
+  }catch(e){ wxLog('请求失败: '+e,'bad'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+async function wxUnbind(slot){
+  if(!confirm('确定解绑该账号？之后该微信号的消息不再上屏。')) return;
+  try{ wxRender(await wxRequest({action:'unbind',slot:slot})); wxLog('已解绑。','ok'); }
+  catch(e){ wxLog('请求失败: '+e,'bad'); }
+}
+async function wxUnbindAll(){
+  if(!confirm('确定解绑全部个人微信账号？')) return;
+  try{ wxRender(await wxRequest({action:'unbind',slot:-1})); wxLog('已全部解绑。','ok'); }
+  catch(e){ wxLog('请求失败: '+e,'bad'); }
+}
+async function wxLoadStatus(){
+  try{ const r=await fetch('/wx_status',epdFetchOpts()); wxRender(await r.json()); }
+  catch(e){ wxLog('个人微信状态加载失败: '+e,'bad'); }
+}
+wxLoadStatus();
+
+/* 微信来信镜像到内容框：设备端已自动渲染上屏（缓冲区直显，与按钮同原语），
+ * 这里只把最新消息/样式同步到页面内容框展示，不再重复刷屏。 */
+let wecomLastSeq=0;
+setInterval(async ()=>{
+  try{
+    const sr=await fetch('/wecom_status',epdFetchOpts()); if(!sr.ok) return;
+    const s=await sr.json();
+    if(!s.msg_seq || s.msg_seq===wecomLastSeq) return;   /* 没有新消息 */
+    const ta=document.getElementById('msgText'); if(!ta) return;
+    if(document.activeElement===ta) return;             /* 正在输入时不打扰，下一拍再试 */
+    const r=await fetch('/msg_config',epdFetchOpts()); if(!r.ok) return;
+    const j=await r.json(); if(!j.text) return;
+    wecomLastSeq=s.msg_seq;
+    ta.value=j.text;
+    document.getElementById('msgAlign').value=String(j.align||0);          /* 左对齐 */
+    document.getElementById('msgFont').value=String(j.font_size||0);
+    document.getElementById('msgColor').value=String(j.color||0);
+    document.getElementById('webColor').value=webColorNameFromCfg(j.color||0); /* 黑色 */
+    if(j.px>0) document.getElementById('webFontPx').value=j.px;   /* 字号25 */
+    document.getElementById('webCustomFont').value='';            /* 字体默认 */
+    document.getElementById('webFontFamily').selectedIndex=0;     /* 字体默认 */
+    document.getElementById('msgXOff').value=j.x_offset||0;
+    document.getElementById('msgYOff').value=j.y_offset||0;
+    renderWebMessage();
+    msgLog('收到微信新消息，设备已自动上屏（结果回执微信）。','ok');
+  }catch(e){}
+},5000);
+
 loadStatusForPreview().then(loadMsg);
 </script>
 <style id="mobile-page-picker-v2">
@@ -265,6 +512,7 @@ loadStatusForPreview().then(loadMsg);
 }
 </style>
 <script id="mobile-nav-comfort-v2">(function(){function init(){var n=document.querySelector('.nav');if(!n||document.querySelector('.mobile-page-picker-wrap'))return;var links=n.querySelectorAll('a[href]'),wrap=document.createElement('div'),label=document.createElement('span'),select=document.createElement('select');wrap.className='mobile-page-picker-wrap';label.className='mobile-page-picker-label';label.textContent='切换页面';select.className='mobile-page-picker';select.setAttribute('aria-label','切换页面');for(var i=0;i<links.length;i++){var o=document.createElement('option');o.value=links[i].getAttribute('href');o.textContent=links[i].textContent.trim();o.selected=links[i].classList.contains('active');select.appendChild(o)}select.addEventListener('change',function(){if(this.value)location.href=this.value});wrap.appendChild(label);wrap.appendChild(select);n.parentNode.insertBefore(wrap,n)}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init()})();</script>
+<script src="qr.js"></script>
 <script src="feature_help.js"></script>
 </body>
 </html>

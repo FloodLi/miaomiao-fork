@@ -60,6 +60,9 @@ void ui_draw_header(fb_t *fb, const char *title, const char *right, bool red_acc
 void ui_draw_header_for(fb_t *fb, ui_color_page_t page, const char *title,
                         const char *right, bool accent);
 void ui_draw_footer(fb_t *fb, const char *left, const char *right);
+/** 页脚变体：右侧可选电量徽标（先画徽标，right 文字在其左侧锚定）。 */
+void ui_draw_footer_for(fb_t *fb, ui_color_page_t page, const char *left,
+                        const char *right, bool with_battery);
 void ui_draw_card(fb_t *fb, int x, int y, int w, int h, bool red_accent);
 void ui_draw_card_for(fb_t *fb, ui_color_page_t page, int x, int y,
                       int w, int h, bool accent);

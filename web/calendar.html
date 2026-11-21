@@ -102,6 +102,16 @@ body .epd-credit{width:100%;max-width:100%!important;margin-left:auto!important;
 
   <div class="card"><div class="hd"><div class="title help-heading" style="font-size:16px"><span>万年历</span><button type="button" class="info-dot" aria-label="查看万年历说明" aria-controls="featureHelpPopover" aria-expanded="false" data-help="年份和月份决定本次推送的月历；留空时使用设备已同步的本地日期。上月、下月会修改输入值并立即推送。"></button></div><div class="sub">显示月历视图，含公历、农历、节气、节日。周末和今日用红色高亮。</div></div><div class="bd">
     <div class="form-row"><label>年份</label><input type="number" id="calYear" min="1900" max="2100" placeholder="留空=当前年" style="max-width:140px"></div>
+    <div class="form-row"><label>开学时间</label>
+      <div class="row" style="gap:6px">
+        <input type="number" id="schMonth" min="1" max="12" placeholder="月" style="width:70px;flex:0 0 auto">
+        <span>月</span>
+        <input type="number" id="schDay" min="1" max="31" placeholder="日" style="width:70px;flex:0 0 auto">
+        <span>日</span>
+        <button class="btn sm" onclick="saveSchoolStart()">保存</button>
+      </div>
+      <div class="sub" style="margin-top:4px">用于在日历标题显示“开学第X周”：开学日起为第1周（到当周周日），之后每周一到周日为一周；年份自动取最近一次。月、日都留空再保存即清除。</div>
+    </div>
     <div class="form-row"><label>月份</label><input type="number" id="calMonth" min="1" max="12" placeholder="留空=当前月" style="max-width:140px"></div>
     <div class="row"><button class="btn" onclick="showCalendar()">显示万年历</button><button class="btn ghost sm" onclick="showCalendarPrev()">上月</button><button class="btn ghost sm" onclick="showCalendarNext()">下月</button></div><div class="log" id="calLog">就绪</div>
   </div></div>
@@ -115,7 +125,20 @@ function calLog(s,cls){const el=document.getElementById('calLog');el.className='
 async function showCalendar(){const y=parseInt(document.getElementById('calYear').value)||0;const m=parseInt(document.getElementById('calMonth').value)||0;calLog('正在渲染万年历…请稍候（约 20 秒刷新）');try{const body={};if(y) body.year=y;if(m) body.month=m;const r=await fetch('/calendar_show',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));const j=await r.json();if(j.ok) calLog('万年历已显示在墨水屏上！','ok');else calLog('显示失败','bad');}catch(e){calLog('请求失败: '+e,'bad');}}
 function calStep(delta){let y=parseInt(document.getElementById('calYear').value)||new Date().getFullYear();let m=parseInt(document.getElementById('calMonth').value)||new Date().getMonth()+1;m+=delta;if(m>12){m=1;y++;}if(m<1){m=12;y--;}document.getElementById('calYear').value=y;document.getElementById('calMonth').value=m;showCalendar();}
 function showCalendarPrev(){calStep(-1);}function showCalendarNext(){calStep(1);}
-(function(){const d=new Date();document.getElementById('calYear').value=d.getFullYear();document.getElementById('calMonth').value=d.getMonth()+1;})();
+async function loadSchoolStart(){try{const r=await fetch('/school_config',epdFetchOpts());const j=await r.json();if(j&&j.month>0){document.getElementById('schMonth').value=j.month;document.getElementById('schDay').value=j.day;}}catch(e){}}
+async function saveSchoolStart(){
+  const m=parseInt(document.getElementById('schMonth').value)||0;
+  const d=parseInt(document.getElementById('schDay').value)||0;
+  if((m>0)!==(d>0)){calLog('请同时填写月和日；两项都留空表示清除','bad');return;}
+  if(m&&(m<1||m>12||d<1||d>31)){calLog('日期无效','bad');return;}
+  try{
+    const r=await fetch('/school_config',epdFetchOpts({method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({month:m,day:d})}));
+    const j=await r.json();
+    if(j.ok) calLog(m?('已保存开学时间 '+m+'月'+d+'日；点「显示万年历」查看开学周数'):'已清除开学时间','ok');
+    else calLog('保存失败：'+(j.err||''),'bad');
+  }catch(e){calLog('请求失败: '+e,'bad');}
+}
+(function(){const d=new Date();document.getElementById('calYear').value=d.getFullYear();document.getElementById('calMonth').value=d.getMonth()+1;loadSchoolStart();})();
 </script>
 <style id="mobile-page-picker-v2">
 .mobile-page-picker-wrap{display:none}
